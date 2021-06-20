@@ -1,2 +1,2 @@
 # RakNet
-A fully functional RakNet implementation for Deno written in rust.
+A fully functional RakNet implementation in rust.
