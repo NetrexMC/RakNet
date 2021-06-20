@@ -1,0 +1,13 @@
+[package]
+name = "rakrs"
+version = "0.1.0"
+authors = ["Bavfalcon9 <olybear9@gmail.com>"]
+edition = "2018"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+tokio = { version = "1.0.1", features = [ "net" , "sync", "rt" ] }
+rand = "0.8.3"
+binary_utils = { git = "https://github.com/NetrexMC/BinaryUtil", branch = "master" }
