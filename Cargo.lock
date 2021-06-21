@@ -8,8 +8,8 @@ checksum = "cdb031dd78e28731d87d56cc8ffef4a8f36ca26c38fe2de700543e627f8a464a"
 
 [[package]]
 name = "binary_utils"
-version = "0.1.0"
-source = "git+https://github.com/NetrexMC/BinaryUtil#57f34e7119c468c20af807d981713b67c4322229"
+version = "0.1.1"
+source = "git+https://github.com/NetrexMC/BinaryUtil?branch=master#b6da0d1024a06b9db4685755d4c184a9c53bca42"
 
 [[package]]
 name = "cfg-if"
