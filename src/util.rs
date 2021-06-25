@@ -1,6 +1,7 @@
 use binary_utils::stream::*;
 use binary_utils::{ IBufferRead, IBufferWrite };
 use std::net::{ SocketAddr, IpAddr };
+use crate::MAGIC;
 
 // Raknet utilities
 pub trait IPacketStreamWrite {
@@ -17,7 +18,7 @@ pub trait IPacketStreamRead {
 
 impl IPacketStreamWrite for BinaryStream {
      fn write_magic(&mut self) {
-
+          self.write_slice(&MAGIC);
      }
 
      fn write_address(&mut self, add: SocketAddr) {
@@ -29,12 +30,18 @@ impl IPacketStreamWrite for BinaryStream {
 
           let ipst = add.ip().to_string();
           let ipts: Vec<&str> = ipst.split(".").collect();
+
+          for p in ipts {
+               let byte = u16::from_str_radix(p, 10).unwrap();
+               self.write_byte(byte);
+          }
+          self.write_byte(add.port());
      }
 }
 
 impl IPacketStreamRead for BinaryStream {
      fn read_magic(&mut self) -> Vec<u8> {
-          crate::MAGIC.to_vec()
+          self.read_slice(Some(16))
      }
 
      fn read_address(&mut self) -> SocketAddr {
