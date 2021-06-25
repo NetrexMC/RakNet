@@ -8,6 +8,7 @@ edition = "2018"
 crate-type = ["cdylib"]
 
 [dependencies]
-tokio = { version = "1.0.1", features = [ "net" , "sync", "rt" ] }
+tokio = { version = "1.7.1", features = [ "net" , "sync", "rt" ] }
 rand = "0.8.3"
 binary_utils = { git = "https://github.com/NetrexMC/BinaryUtil", branch = "master" }
+async-trait = "0.1.50"

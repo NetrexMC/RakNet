@@ -1,10 +1,9 @@
 #![allow(dead_code)]
 
-use super::{IClientBound, IServerBound};
-use crate::{IPacketStreamWrite, IPacketStreamRead};
-use binary_utils::{stream::*, IBufferRead, IBufferWrite};
-use std::net::{IpAddr, SocketAddr};
-use std::fmt::Binary;
+use super::{ IClientBound, IServerBound };
+use crate::{ IPacketStreamWrite, IPacketStreamRead };
+use binary_utils::{ stream::*, IBufferRead, IBufferWrite };
+use std::net::{ SocketAddr };
 
 pub enum OfflinePackets {
      UnconnectedPing = 0x01,
@@ -100,7 +99,7 @@ impl IServerBound<SessionInfo> for SessionInfo {
      fn from(mut stream: BinaryStream) -> SessionInfo {
          Self {
              magic: stream.read_magic(),
-             address: SocketAddr::from((0, 0, 0, 0)),
+             address: stream.read_address(),
              mtu: stream.read_short() as usize,
              client_id: stream.read_long(),
          }
@@ -120,9 +119,9 @@ impl IClientBound<SessionInfoReply> for SessionInfoReply {
      fn to(packet: SessionInfoReply) -> BinaryStream {
          let mut stream: BinaryStream = BinaryStream::new();
          stream.write_byte(OfflinePackets::SessionInfoReply as u16);
-         stream.write_magic(packet.magic);
-         stream.read_long(packet.server_id);
-         stream.read_long(packet.client_id);
+         stream.write_magic();
+         stream.write_long(packet.server_id);
+         stream.write_long(packet.client_id);
          stream.write_usize(packet.mtu);
          stream.write_bool(packet.security);
          stream
