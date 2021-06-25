@@ -1,7 +1,7 @@
-use std::{ thread, io, net::{ SocketAddr, IpAddr }, sync::{ Mutex, Arc, mpsc::* } };
+use std::{ thread, net::{ SocketAddr}, sync::{ Arc, mpsc::* } };
 // use tokio::net::UdpSocket;
 use std::net::UdpSocket;
-use rand::random;
+// use rand::random;
 use binary_utils::*;
 use super::conn::Connection;
 
@@ -42,41 +42,39 @@ impl IRakServer for RakServer {
           self.recv = Some(chan_recv_r);
 
           // sending thread
-          let threads = {
-               let res = Arc::clone(&resource);
-               let send_thread = thread::spawn(move || {
-                    loop {
-                         let (address, stream) = match chan_send_r.try_recv() {
-                              Ok(t) => t,
-                              Err(TryRecvError) => panic!("Could not send to client.")
-                         };
-                         let mut st = BinaryStream::init(&stream.get_buffer());
+          let res = Arc::clone(&resource);
+          thread::spawn(move || {
+               loop {
+                    let (address, stream) = match chan_send_r.try_recv() {
+                         Ok(t) => t,
+                         Err(TryRecvError) => panic!("Could not send to client.")
+                    };
+                    let mut st = BinaryStream::init(&stream.get_buffer());
 
-                         if address.ip().is_loopback() && st.read_byte() == 0xCE && st.read_long() == THREAD_QUIT {
-                              println!("Recieved quit message");
-                              break;
+                    if address.ip().is_loopback() && st.read_byte() == 0xCE && st.read_long() == THREAD_QUIT {
+                         println!("Recieved quit message");
+                         break;
+                    }
+
+                    // let tr = resource.lock().unwrap();
+                    res.as_ref().send_to(&*stream.get_buffer(), address).expect("Could not send bytes to client.");
+               }
+          });
+
+          thread::spawn(move || {
+               let mut buf = [0; 65535];
+               loop {
+                    // let tr = resource.lock().unwrap();
+                    let (len, rem) = match resource.as_ref().recv_from(&mut buf) {
+                         Ok(v) => v,
+                         Err(e) => {
+                              continue;
                          }
+                    };
 
-                         // let tr = resource.lock().unwrap();
-                         res.as_ref().send_to(&*stream.get_buffer(), address).expect("Could not send bytes to client.");
-                    }
-               });
-
-               let recieve_thread = thread::spawn(move || {
-                    let mut buf = [0; 65535];
-                    loop {
-                         // let tr = resource.lock().unwrap();
-                         let (len, rem) = match resource.as_ref().recv_from(&mut buf) {
-                              Ok(v) => v,
-                              Err(e) => {
-                                   continue;
-                              }
-                         };
-
-                         let data = &buf[..len];
-                         chan_recv_s.send((rem, BinaryStream::init(&data.to_vec()))).unwrap();
-                    }
-               });
-          };
+                    let data = &buf[..len];
+                    chan_recv_s.send((rem, BinaryStream::init(&data.to_vec()))).unwrap();
+               }
+          });
      }
 }
