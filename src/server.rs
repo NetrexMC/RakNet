@@ -41,7 +41,7 @@ impl IRakServer for RakServer {
           self.send = Some(chan_send_s);
           self.recv = Some(chan_recv_r);
 
-          // sending thread
+          // ClientBound
           let res = Arc::clone(&resource);
           thread::spawn(move || {
                loop {
@@ -56,15 +56,14 @@ impl IRakServer for RakServer {
                          break;
                     }
 
-                    // let tr = resource.lock().unwrap();
                     res.as_ref().send_to(&*stream.get_buffer(), address).expect("Could not send bytes to client.");
                }
           });
 
+          // ServerBound
           thread::spawn(move || {
                let mut buf = [0; 65535];
                loop {
-                    // let tr = resource.lock().unwrap();
                     let (len, rem) = match resource.as_ref().recv_from(&mut buf) {
                          Ok(v) => v,
                          Err(e) => {
