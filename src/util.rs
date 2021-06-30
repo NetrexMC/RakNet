@@ -1,6 +1,7 @@
 use binary_utils::stream::*;
 use binary_utils::{ IBufferRead, IBufferWrite };
 use std::net::{ SocketAddr, IpAddr };
+use std::marker::Sync;
 use crate::MAGIC;
 use crate::conn::Connection;
 
@@ -58,27 +59,30 @@ impl IPacketStreamRead for BinaryStream {
 }
 
 /// Events
-pub enum RakEvent {
+/// Events are READ ONLY and can only be COPIED
+pub enum RakEv {
      ClientConnect(Connection),
      KillServer(bool),
      Recieve(SocketAddr, BinaryStream),
      Send(SocketAddr, BinaryStream)
 }
 
-pub trait IRakEventListener {
+pub type RakEvClosure = Box<dyn Fn(&RakEv) + Send + Sync>;
+
+pub trait IRakEmit {
      fn new() -> Self;
-     fn register(&mut self, listener: Box<dyn FnMut(RakEvent)>) -> bool;
+     fn register(&mut self, listener: RakEvClosure) -> bool;
 
      /// Reserved for raknet
-     fn broadcast(&self, event: RakEvent);
+     fn broadcast(&self, event: &RakEv);
 }
 
-pub struct RakEventListener {
-     listeners: Vec<Box<dyn FnMut(RakEvent)>>,
+pub struct RakEmitter {
+     listeners: Vec<RakEvClosure>,
      max: u8
 }
 
-impl IRakEventListener for RakEventListener {
+impl IRakEmit for RakEmitter {
      fn new() -> Self {
           Self {
                listeners: Vec::new(),
@@ -86,14 +90,14 @@ impl IRakEventListener for RakEventListener {
           }
      }
 
-     fn register(&mut self, listener: Box<dyn FnMut(RakEvent)>) -> bool {
+     fn register(&mut self, listener: RakEvClosure) -> bool {
           self.listeners.push(listener);
           return true
      }
 
-     fn broadcast(&self, ev: RakEvent) {
-          for listener in self.listeners {
-               listener(ev);
+     fn broadcast(&self, ev: &RakEv) {
+          for listener in &self.listeners {
+               listener(&ev);
           }
      }
 }
