@@ -7,5 +7,18 @@ pub const MAGIC: [u8; 16] = [0x00, 0xff, 0xff, 0x0, 0xfe, 0xfe, 0xfe, 0xfe, 0xfd
 
 pub use self::{
      protocol::*,
-     util::*
+     util::*,
+     server::*
 };
+
+#[cfg(test)]
+mod tests {
+     use crate::{ RakServer, IRakServer };
+
+     #[test]
+     fn rak_serv() {
+          // pls work :(
+          let mut serv = RakServer::new(String::from("0.0.0.0:19132"), 8);
+          serv.start();
+     }
+}
