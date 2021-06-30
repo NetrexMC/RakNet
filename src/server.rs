@@ -10,7 +10,7 @@ pub const THREAD_QUIT: i64 = 982939013934;
 
 pub trait IRakServer {
      fn new(address: String, version: u8) -> Self;
-     fn start(&mut self) -> (&mut RakServer, Arc<RakEmitter>);
+     fn start(&mut self) -> Arc<RakEmitter>;
 }
 
 pub struct RakServer {
@@ -28,12 +28,12 @@ impl IRakServer for RakServer {
           }
      }
 
-     fn start(&mut self) -> (&mut RakServer, Arc<RakEmitter>) {
+     fn start(&mut self) -> Arc<RakEmitter> {
           return start(self);
      }
 }
 
-pub fn start(serv: &mut RakServer) -> (&mut RakServer, Arc<RakEmitter>) {
+pub fn start(serv: &mut RakServer) -> Arc<RakEmitter> {
      let socket = UdpSocket::bind(serv.address.parse::<SocketAddr>().unwrap());
      let resource: Arc<UdpSocket> = Arc::new(socket.unwrap());
      let res = Arc::clone(&resource);
@@ -81,5 +81,5 @@ pub fn start(serv: &mut RakServer) -> (&mut RakServer, Arc<RakEmitter>) {
           }
      });
 
-     return (serv, ec2);
+     return ec2;
 }
