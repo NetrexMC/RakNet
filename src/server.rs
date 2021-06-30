@@ -4,6 +4,7 @@ use std::net::UdpSocket;
 // use rand::random;
 use binary_utils::*;
 use super::conn::Connection;
+use crate::{ util::* };
 
 pub const THREAD_QUIT: i64 = 982939013934;
 
@@ -17,8 +18,7 @@ pub struct RakServer {
      address: String,
      version: u8,
      connections: Vec<Connection>,
-     send: Option<Sender<(SocketAddr, BinaryStream)>>,
-     recv: Option<Receiver<(SocketAddr, BinaryStream)>>
+     channel: RakEventListener,
 }
 
 impl IRakServer for RakServer {
@@ -27,38 +27,15 @@ impl IRakServer for RakServer {
                version,
                address,
                connections: Vec::new(),
-               send: None,
-               recv: None
+               channel: RakEventListener::new()
           }
      }
 
      fn start(&mut self) {
           let socket = UdpSocket::bind(self.address.parse::<SocketAddr>().unwrap());
           let resource: Arc<UdpSocket> = Arc::new(socket.unwrap());
-          let (chan_send_s, chan_send_r) = channel::<(SocketAddr, BinaryStream)>();
-          let (chan_recv_s, chan_recv_r) = channel::<(SocketAddr, BinaryStream)>();
-
-          self.send = Some(chan_send_s);
-          self.recv = Some(chan_recv_r);
-
-          // ClientBound
           let res = Arc::clone(&resource);
-          thread::spawn(move || {
-               loop {
-                    let (address, stream) = match chan_send_r.try_recv() {
-                         Ok(t) => t,
-                         Err(TryRecvError) => panic!("Could not send to client.")
-                    };
-                    let mut st = BinaryStream::init(&stream.get_buffer());
-
-                    if address.ip().is_loopback() && st.read_byte() == 0xCE && st.read_long() == THREAD_QUIT {
-                         println!("Recieved quit message");
-                         break;
-                    }
-
-                    res.as_ref().send_to(&*stream.get_buffer(), address).expect("Could not send bytes to client.");
-               }
-          });
+          let channels = (Arc::new(&self.channel), Arc::new(&self.channel)); // we'll use this across threads.
 
           // ServerBound
           thread::spawn(move || {
@@ -72,7 +49,30 @@ impl IRakServer for RakServer {
                     };
 
                     let data = &buf[..len];
-                    chan_recv_s.send((rem, BinaryStream::init(&data.to_vec()))).unwrap();
+                    channels.0.as_ref().broadcast(RakEvent::Recieve(rem, BinaryStream::init(&data.to_vec())));
+               }
+          });
+
+          // thing to get shit from server
+          let (sr, rc) = channel::<(SocketAddr, BinaryStream)>();
+
+          thread::spawn(move || {
+               loop {
+                    let (address, stream) = match rc.try_recv() {
+                         Ok(t) => t,
+                         Err(TryRecvError) => {
+                              println!("Could not recieve any data from mspc as channel is probably closed.");
+                              continue;
+                         }
+                    };
+                    let mut st = BinaryStream::init(&stream.get_buffer());
+
+                    if address.ip().is_loopback() && st.read_byte() == 0xCE && st.read_long() == THREAD_QUIT {
+                         println!("Recieved quit message");
+                         break;
+                    }
+
+                    res.as_ref().send_to(&*stream.get_buffer(), address).expect("Could not send bytes to client.");
                }
           });
      }

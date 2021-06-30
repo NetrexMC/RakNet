@@ -4,9 +4,6 @@ version = "0.1.0"
 authors = ["Bavfalcon9"]
 edition = "2018"
 
-[lib]
-crate-type = ["cdylib"]
-
 [dependencies]
 tokio = { version = "1.7.1", features = [ "net" , "sync", "rt" ] }
 rand = "0.8.3"

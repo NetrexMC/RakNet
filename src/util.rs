@@ -2,6 +2,7 @@ use binary_utils::stream::*;
 use binary_utils::{ IBufferRead, IBufferWrite };
 use std::net::{ SocketAddr, IpAddr };
 use crate::MAGIC;
+use crate::conn::Connection;
 
 // Raknet utilities
 pub trait IPacketStreamWrite {
@@ -52,6 +53,47 @@ impl IPacketStreamRead for BinaryStream {
                SocketAddr::new(IpAddr::from([parts[0], parts[1], parts[2], parts[3]]), port)
           } else {
                SocketAddr::new(IpAddr::from([0,0,0,0]), 0)
+          }
+     }
+}
+
+/// Events
+pub enum RakEvent {
+     ClientConnect(Connection),
+     KillServer(bool),
+     Recieve(SocketAddr, BinaryStream),
+     Send(SocketAddr, BinaryStream)
+}
+
+pub trait IRakEventListener {
+     fn new() -> Self;
+     fn register(&mut self, listener: Box<dyn FnMut(RakEvent)>) -> bool;
+
+     /// Reserved for raknet
+     fn broadcast(&self, event: RakEvent);
+}
+
+pub struct RakEventListener {
+     listeners: Vec<Box<dyn FnMut(RakEvent)>>,
+     max: u8
+}
+
+impl IRakEventListener for RakEventListener {
+     fn new() -> Self {
+          Self {
+               listeners: Vec::new(),
+               max: 5
+          }
+     }
+
+     fn register(&mut self, listener: Box<dyn FnMut(RakEvent)>) -> bool {
+          self.listeners.push(listener);
+          return true
+     }
+
+     fn broadcast(&self, ev: RakEvent) {
+          for listener in self.listeners {
+               listener(ev);
           }
      }
 }
