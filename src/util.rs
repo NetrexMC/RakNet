@@ -58,46 +58,8 @@ impl IPacketStreamRead for BinaryStream {
      }
 }
 
-/// Events
-/// Events are READ ONLY and can only be COPIED
-pub enum RakEv {
-     ClientConnect(Connection),
-     KillServer(bool),
-     Recieve(SocketAddr, BinaryStream),
-     Send(SocketAddr, BinaryStream)
-}
-
-pub type RakEvClosure = Box<dyn Fn(&RakEv) + Send + Sync>;
-
-pub trait IRakEmit {
-     fn new() -> Self;
-     fn register(&mut self, listener: RakEvClosure) -> bool;
-
-     /// Reserved for raknet
-     fn broadcast(&self, event: &RakEv);
-}
-
-pub struct RakEmitter {
-     listeners: Vec<RakEvClosure>,
-     max: u8
-}
-
-impl IRakEmit for RakEmitter {
-     fn new() -> Self {
-          Self {
-               listeners: Vec::new(),
-               max: 5
-          }
-     }
-
-     fn register(&mut self, listener: RakEvClosure) -> bool {
-          self.listeners.push(listener);
-          return true
-     }
-
-     fn broadcast(&self, ev: &RakEv) {
-          for listener in &self.listeners {
-               listener(&ev);
-          }
-     }
+pub fn tokenize_addr(remote: SocketAddr) -> String {
+     let mut address = remote.port().to_string();
+     address.push_str(remote.ip().to_string().as_str());
+     return address;
 }
