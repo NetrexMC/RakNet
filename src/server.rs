@@ -1,85 +1,107 @@
-use std::{ thread, net::{ SocketAddr }, sync::{ Arc, mpsc::* } };
-// use tokio::net::UdpSocket;
+use std::collections::HashMap;
+use std::thread;
+use std::sync::{ Arc, Mutex, MutexGuard };
+use std::cell::RefCell;
 use std::net::UdpSocket;
-// use rand::random;
 use binary_utils::*;
-use super::conn::Connection;
-use crate::{ util::* };
+use crate::conn::Connection;
+use crate::conn::ConnectionAPI;
+use crate::util::tokenize_addr;
 
-pub const THREAD_QUIT: i64 = 982939013934;
-
-pub trait IRakServer {
-     fn new(address: String, version: u8) -> Self;
-     fn start(&mut self) -> Arc<RakEmitter>;
+pub enum RakNetVersion {
+     MinecraftRecent,
+     V10,
+     V6
 }
 
-pub struct RakServer {
-     address: String,
-     version: u8,
-     connections: Vec<Connection>
+impl RakNetVersion {
+     pub fn to_u8(&self) -> u8 {
+          match self {
+               RakNetVersion::MinecraftRecent => 10,
+               RakNetVersion::V10 => 10,
+               RakNetVersion::V6 => 6
+          }
+     }
 }
 
-impl IRakServer for RakServer {
-     fn new(address: String, version: u8) -> Self {
+pub struct RakNetServer {
+     pub id: u64,
+     pub address: String,
+     pub version: RakNetVersion,
+     pub connections: Arc<Mutex<HashMap<String, Connection>>>
+}
+
+impl RakNetServer {
+     pub fn new(address: String) -> Self {
           Self {
-               version,
+               id: rand::random::<u64>(),
                address,
-               connections: Vec::new()
+               version: RakNetVersion::MinecraftRecent,
+               connections: Arc::new(Mutex::new(HashMap::new()))
           }
      }
 
-     fn start(&mut self) -> Arc<RakEmitter> {
-          return start(self);
-     }
-}
+     pub fn start(&mut self) -> (thread::JoinHandle<()>, thread::JoinHandle<()>) {
+          let socket = UdpSocket::bind(self.address.clone());
+          let server_socket: Arc<UdpSocket> = Arc::new(socket.unwrap());
+          let server_socket_1: Arc<UdpSocket> = Arc::clone(&server_socket);
+          let clients = Arc::clone(&self.connections);
+          let clients_mut = Arc::clone(&self.connections);
 
-pub fn start(serv: &mut RakServer) -> Arc<RakEmitter> {
-     let socket = UdpSocket::bind(serv.address.parse::<SocketAddr>().unwrap());
-     let resource: Arc<UdpSocket> = Arc::new(socket.unwrap());
-     let res = Arc::clone(&resource);
-     let ev_channel = RakEmitter::new();
-     let ec1 = Arc::new(ev_channel);
-     let ec2 = Arc::clone(&ec1);
+          let recv_thread = thread::spawn(move || {
+               let mut buf = [0; 1024];
 
-     // ServerBound
-     thread::spawn(move || {
-          let mut buf = [0; 65535];
-          loop {
-               let (len, rem) = match resource.as_ref().recv_from(&mut buf) {
-                    Ok(v) => v,
-                    Err(_e) => {
-                         continue;
+               loop {
+                    let (len, remote) = match server_socket.as_ref().recv_from(&mut buf) {
+                         Ok(v) => v,
+                         Err(_e) => continue
+                    };
+
+                    let data = &buf[..len];
+                    let stream = BinaryStream::init(&data.to_vec());
+                    let mut sclients = clients.lock().unwrap();
+
+                    println!("Got Packet [{}]: {:?}", remote.to_string(), stream);
+
+                    let exists = match sclients.get(&remote.to_string()) {
+                         Some(v) => true,
+                         None => false
+                    };
+
+                    // check if a connection exists
+                    if !exists {
+                         // connection doesn't exist, make it
+                         sclients.insert(tokenize_addr(remote), Connection::new(remote));
                     }
-               };
 
-               let data = &buf[..len];
-               let ev = RakEv::Recieve(rem, BinaryStream::init(&data.to_vec()));
-               ec1.as_ref().broadcast(&ev);
-          }
-     });
-
-     // mspc channels recievers don't work on threads?
-     let (_sr, rc) = channel::<(SocketAddr, BinaryStream)>();
-
-     thread::spawn(move || {
-          loop {
-               let (address, stream) = match rc.try_recv() {
-                    Ok(t) => t,
-                    Err(_e) => {
-                         println!("Could not recieve any data from mspc as channel is probably closed.");
-                         continue;
-                    }
-               };
-               let mut st = BinaryStream::init(&stream.get_buffer());
-
-               if address.ip().is_loopback() && st.read_byte() == 0xCE && st.read_long() == THREAD_QUIT {
-                    println!("Recieved quit message");
-                    break;
+                    let client = match sclients.get_mut(&remote.to_string()) {
+                         Some(c) => c,
+                         None => continue
+                    };
+                    client.receive(&stream);
                }
+          });
 
-               res.as_ref().send_to(&*stream.get_buffer(), address).expect("Could not send bytes to client.");
-          }
-     });
+          let sender_thread = thread::spawn(move || {
+               loop {
+                    let mut clients = clients_mut.lock().unwrap();
+                    for (addr, _connect) in clients.clone().into_iter() {
+                         let c = clients.get_mut(&addr).unwrap();
+                         if c.send_queue.len() == 0 {
+                              continue;
+                         }
+                         for pk in c.send_queue.clone().into_iter() {
+                              match server_socket_1.send_to(pk.get_buffer().as_slice(), &addr) {
+                                   // Add proper handling!
+                                   Err(_) => continue,
+                                   Ok(_) => continue
+                              }
+                         }
+                         c.send_queue.clear();
+                    }
+               }
+          });
 
-     return ec2;
+          return (sender_thread, recv_thread);
+     }
 }

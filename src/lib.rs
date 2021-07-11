@@ -13,18 +13,10 @@ pub use self::{
 
 #[cfg(test)]
 mod tests {
-     use crate::{ RakServer, IRakServer, RakEv, IRakEmit };
+     use crate::{ RakNetServer };
 
      #[test]
      fn rak_serv() {
-          // pls work :(
-          let mut serv = RakServer::new(String::from("0.0.0.0:19132"), 8);
-          let channel = serv.start();
-          channel.as_ref().register(Box::new(|ev| {
-               match *ev {
-                    RakEv::Recieve(_, _s) => println!("Got a buffer"),
-                    _ => return
-               }
-          }));
+          let mut serve = RakNetServer::new(String::from("0.0.0.0:19132"));
      }
 }
