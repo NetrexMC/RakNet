@@ -4,10 +4,11 @@ use std::sync::{ Arc, Mutex, MutexGuard };
 use std::cell::RefCell;
 use std::net::UdpSocket;
 use binary_utils::*;
+use crate::SERVER_ID;
+use crate::protocol::{ IClientBound, IServerBound };
 use crate::conn::Connection;
 use crate::conn::ConnectionAPI;
 use crate::util::tokenize_addr;
-
 pub enum RakNetVersion {
      MinecraftRecent,
      V10,
@@ -25,7 +26,6 @@ impl RakNetVersion {
 }
 
 pub struct RakNetServer {
-     pub id: u64,
      pub address: String,
      pub version: RakNetVersion,
      pub connections: Arc<Mutex<HashMap<String, Connection>>>
@@ -34,7 +34,6 @@ pub struct RakNetServer {
 impl RakNetServer {
      pub fn new(address: String) -> Self {
           Self {
-               id: rand::random::<u64>(),
                address,
                version: RakNetVersion::MinecraftRecent,
                connections: Arc::new(Mutex::new(HashMap::new()))
@@ -58,7 +57,7 @@ impl RakNetServer {
                     };
 
                     let data = &buf[..len];
-                    let stream = BinaryStream::init(&data.to_vec());
+                    let mut stream = BinaryStream::init(&data.to_vec());
                     let mut sclients = clients.lock().unwrap();
 
                     println!("Got Packet [{}]: {:?}", remote.to_string(), stream);
@@ -78,7 +77,7 @@ impl RakNetServer {
                          Some(c) => c,
                          None => continue
                     };
-                    client.receive(&stream);
+                    client.receive(&mut stream);
                }
           });
 
