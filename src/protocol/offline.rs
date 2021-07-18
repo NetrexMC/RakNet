@@ -4,10 +4,11 @@ use std::net::{ SocketAddr };
 use std::fmt::{ Formatter, Result as FResult };
 use std::convert::TryInto;
 use super::{ IClientBound, IServerBound };
-use crate::{ IPacketStreamWrite, IPacketStreamRead };
+use crate::{IPacketStreamWrite, IPacketStreamRead, MTU_SIZE, USE_SECURITY};
 use crate::conn::{ Connection, ConnectionAPI };
 use crate::{ SERVER_ID, MAGIC, Motd };
 use binary_utils::{ stream::*, IBufferRead, IBufferWrite };
+use crate::offline::OfflinePackets::UnknownPacket;
 
 pub enum OfflinePackets {
      UnconnectedPing,
@@ -62,9 +63,9 @@ impl std::fmt::Display for OfflinePackets {
 /// Open Connection Reply
 /// Sent to the client when the server accepts a client.
 pub struct OpenConnectReply {
-     server_id: u64,
+     server_id: i64,
      security: bool,
-     mtu: u16,
+     mtu: i16,
 }
 
 impl IClientBound<OpenConnectReply> for OpenConnectReply {
@@ -72,9 +73,9 @@ impl IClientBound<OpenConnectReply> for OpenConnectReply {
          let mut stream = BinaryStream::new();
          stream.write_byte(OfflinePackets::OpenConnectReply.to_byte());
          stream.write_magic();
-         stream.write_long(self.server_id);
+         stream.write_signed_long(self.server_id);
          stream.write_bool(self.security);
-         stream.write_short(self.mtu);
+         stream.write_signed_short(self.mtu);
          stream
     }
 }
@@ -155,7 +156,7 @@ impl IServerBound<SessionInfo> for SessionInfo {
 /// Session Info Reply, also known as Open Connect Reply 2
 pub struct SessionInfoReply {
      magic: Vec<u8>,
-     server_id: u64,
+     server_id: i64,
      client_id: u64,
      mtu: usize,
      security: bool,
@@ -166,7 +167,7 @@ impl IClientBound<SessionInfoReply> for SessionInfoReply {
          let mut stream: BinaryStream = BinaryStream::new();
          stream.write_byte(OfflinePackets::SessionInfoReply.to_byte());
          stream.write_magic();
-         stream.write_long(self.server_id);
+         stream.write_signed_long(self.server_id);
          stream.write_long(self.client_id);
          stream.write_usize(self.mtu);
          stream.write_bool(self.security);
@@ -174,13 +175,27 @@ impl IClientBound<SessionInfoReply> for SessionInfoReply {
     }
 }
 
-pub fn handle_pong(connection: &mut Connection, time: u128, _stream: &mut BinaryStream) -> BinaryStream {
-     let rs = UnconnectedPong {
-          magic: MAGIC.to_vec(),
-          server_id: SERVER_ID,
-          timestamp: time,
-          motd: connection.gen_motd()
-     };
+pub fn handle_offline(connection: &mut Connection, pk: OfflinePackets, _stream: &mut BinaryStream) -> BinaryStream {
+    match pk {
+        OfflinePackets::UnconnectedPing => {
+            let pong = UnconnectedPong {
+                magic: MAGIC.to_vec(),
+                server_id: SERVER_ID,
+                timestamp: connection.time.elapsed().unwrap().as_millis(),
+                motd: connection.gen_motd()
+            };
 
-     rs.to()
+            pong.to()
+        },
+        OfflinePackets::OpenConnectRequest => {
+            let reply = OpenConnectReply {
+                server_id: SERVER_ID,
+                security: USE_SECURITY,
+                mtu: MTU_SIZE
+            };
+
+            reply.to()
+        },
+        _ => BinaryStream::new() //TODO: Throw an UnknownPacket here rather than sending an empty binary stream
+    }
 }
