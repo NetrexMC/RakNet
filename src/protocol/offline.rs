@@ -1,25 +1,26 @@
 #![allow(dead_code)]
 
+use std::net::{ SocketAddr };
+use std::fmt::{ Formatter, Result as FResult };
+use std::convert::TryInto;
 use super::{ IClientBound, IServerBound };
 use crate::{ IPacketStreamWrite, IPacketStreamRead };
 use crate::conn::{ Connection, ConnectionAPI };
-use crate::util::*;
 use crate::{ SERVER_ID, MAGIC, Motd };
 use binary_utils::{ stream::*, IBufferRead, IBufferWrite };
-use std::net::{ SocketAddr };
 
 pub enum OfflinePackets {
-     UnconnectedPing = 0x01,
-     OpenConnectRequest = 0x05,
-     OpenConnectReply = 0x06,
-     SessionInfo = 0x07,
-     SessionInfoReply = 0x08,
-     UnconnectedPong = 0x1c,
-     UnknownPacket = 0xAE
+     UnconnectedPing,
+     OpenConnectRequest,
+     OpenConnectReply,
+     SessionInfo,
+     SessionInfoReply,
+     UnconnectedPong,
+     UnknownPacket(u8)
 }
 
 impl OfflinePackets {
-     pub fn recv(byte: u16) -> Self {
+     pub fn recv(byte: u8) -> Self {
           match byte {
                0x01 => OfflinePackets::UnconnectedPing,
                0x05 => OfflinePackets::OpenConnectRequest,
@@ -27,7 +28,33 @@ impl OfflinePackets {
                0x07 => OfflinePackets::SessionInfo,
                0x08 => OfflinePackets::SessionInfoReply,
                0x1c => OfflinePackets::UnconnectedPong,
-               _ => OfflinePackets::UnknownPacket
+               _ => OfflinePackets::UnknownPacket(byte)
+          }
+     }
+
+     pub fn to_byte(&self) -> u8 {
+          match *self {
+               OfflinePackets::UnconnectedPing => 0x01,
+               OfflinePackets::OpenConnectRequest => 0x05,
+               OfflinePackets::OpenConnectReply => 0x06,
+               OfflinePackets::SessionInfo => 0x07,
+               OfflinePackets::SessionInfoReply => 0x08,
+               OfflinePackets::UnconnectedPong => 0x1c,
+               OfflinePackets::UnknownPacket(byte) => byte
+          }
+     }
+}
+
+impl std::fmt::Display for OfflinePackets {
+     fn fmt(&self, f: &mut Formatter<'_>) -> FResult {
+          match *self {
+               OfflinePackets::UnconnectedPing => write!(f, "{}", self.to_byte()),
+               OfflinePackets::OpenConnectRequest => write!(f, "{}", self.to_byte()),
+               OfflinePackets::OpenConnectReply => write!(f, "{}", self.to_byte()),
+               OfflinePackets::SessionInfo => write!(f, "{}", self.to_byte()),
+               OfflinePackets::SessionInfoReply => write!(f, "{}", self.to_byte()),
+               OfflinePackets::UnconnectedPong => write!(f, "{}", self.to_byte()),
+               OfflinePackets::UnknownPacket(byte) => write!(f, "{}", byte)
           }
      }
 }
@@ -35,7 +62,7 @@ impl OfflinePackets {
 /// Open Connection Reply
 /// Sent to the client when the server accepts a client.
 pub struct OpenConnectReply {
-     server_id: i64,
+     server_id: u64,
      security: bool,
      mtu: u16,
 }
@@ -43,7 +70,7 @@ pub struct OpenConnectReply {
 impl IClientBound<OpenConnectReply> for OpenConnectReply {
      fn to(&self) -> BinaryStream {
          let mut stream = BinaryStream::new();
-         stream.write_byte(OfflinePackets::OpenConnectReply as u16);
+         stream.write_byte(OfflinePackets::OpenConnectReply.to_byte());
          stream.write_magic();
          stream.write_long(self.server_id);
          stream.write_bool(self.security);
@@ -60,7 +87,7 @@ pub struct OpenConnectRequest {
 
 impl IServerBound<OpenConnectRequest> for OpenConnectRequest {
      fn recv(mut s: BinaryStream) -> OpenConnectRequest {
-         let p = s.read_byte();
+         let p = s.read_short();
          let mtu = s.get_length() + 1 + 28;
          OpenConnectRequest {
              protocol: p,
@@ -79,16 +106,16 @@ pub struct UnconnectedPing {
 impl IServerBound<UnconnectedPing> for UnconnectedPing {
      fn recv(mut stream: BinaryStream) -> UnconnectedPing {
          Self {
-             timestamp: stream.read_long(),
+             timestamp: stream.read_signed_long(),
              magic: stream.read_magic(),
-             client_id: stream.read_long(),
+             client_id: stream.read_signed_long(),
          }
      }
 }
 
 /// Unconnected Pong
 pub struct UnconnectedPong {
-     timestamp: i64,
+     timestamp: u128,
      magic: Vec<u8>,
      server_id: i64,
      motd: Motd,
@@ -97,9 +124,10 @@ pub struct UnconnectedPong {
 impl IClientBound<UnconnectedPong> for UnconnectedPong {
       fn to(&self) -> BinaryStream {
           let mut stream = BinaryStream::new();
-          stream.write_long(self.timestamp);
+          stream.write_byte(OfflinePackets::UnconnectedPong.to_byte());
+          stream.write_long(self.timestamp.try_into().unwrap());
+          stream.write_signed_long(self.server_id);
           stream.write_magic();
-          stream.write_long(self.server_id);
           stream.write_string(self.motd.parse());
           return stream;
       }
@@ -119,7 +147,7 @@ impl IServerBound<SessionInfo> for SessionInfo {
              magic: stream.read_magic(),
              address: stream.read_address(),
              mtu: stream.read_short() as usize,
-             client_id: stream.read_long(),
+             client_id: stream.read_signed_long(),
          }
      }
 }
@@ -127,8 +155,8 @@ impl IServerBound<SessionInfo> for SessionInfo {
 /// Session Info Reply, also known as Open Connect Reply 2
 pub struct SessionInfoReply {
      magic: Vec<u8>,
-     server_id: i64,
-     client_id: i64,
+     server_id: u64,
+     client_id: u64,
      mtu: usize,
      security: bool,
 }
@@ -136,7 +164,7 @@ pub struct SessionInfoReply {
 impl IClientBound<SessionInfoReply> for SessionInfoReply {
      fn to(&self) -> BinaryStream {
          let mut stream: BinaryStream = BinaryStream::new();
-         stream.write_byte(OfflinePackets::SessionInfoReply as u16);
+         stream.write_byte(OfflinePackets::SessionInfoReply.to_byte());
          stream.write_magic();
          stream.write_long(self.server_id);
          stream.write_long(self.client_id);
@@ -146,14 +174,13 @@ impl IClientBound<SessionInfoReply> for SessionInfoReply {
     }
 }
 
-pub fn handle_pong(connection: &mut Connection, stream: &mut BinaryStream) {
-     let rx = UnconnectedPing::recv(stream.clone());
+pub fn handle_pong(connection: &mut Connection, time: u128, _stream: &mut BinaryStream) -> BinaryStream {
      let rs = UnconnectedPong {
           magic: MAGIC.to_vec(),
           server_id: SERVER_ID,
-          timestamp: rx.timestamp,
+          timestamp: time,
           motd: connection.gen_motd()
      };
 
-     connection.send_queue.push_front(rs.to());
+     rs.to()
 }
