@@ -20,7 +20,7 @@ checksum = "cdb031dd78e28731d87d56cc8ffef4a8f36ca26c38fe2de700543e627f8a464a"
 [[package]]
 name = "binary_utils"
 version = "0.1.1"
-source = "git+https://github.com/NetrexMC/BinaryUtil?branch=master#af3552f88450286aeda0089f106d328ed6cc3d24"
+source = "git+https://github.com/NetrexMC/BinaryUtil?branch=master#f52638a0303d81313ce278da6a0f8d68922b78a2"
 
 [[package]]
 name = "cfg-if"

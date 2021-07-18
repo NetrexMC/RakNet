@@ -1,5 +1,6 @@
 use std::net::SocketAddr;
 use std::collections::VecDeque;
+use std::time::SystemTime;
 use crate::{ SERVER_ID, Motd };
 use crate::protocol::offline::*;
 use binary_utils::*;
@@ -14,15 +15,17 @@ pub struct Connection {
      // read by raknet
      pub send_queue: VecDeque<BinaryStream>,
      pub connected: bool,
-     address: SocketAddr,
+     pub address: SocketAddr,
+     pub time: SystemTime
 }
 
 impl Connection {
-     pub fn new(address: SocketAddr) -> Self {
+     pub fn new(address: SocketAddr, start_time: SystemTime) -> Self {
           Self {
                send_queue: VecDeque::new(),
-               connected: true,
-               address
+               connected: false,
+               address,
+               time: start_time
           }
      }
 }
@@ -32,22 +35,24 @@ impl ConnectionAPI for Connection {
      fn receive(&mut self, stream: &mut BinaryStream) {
           // They are not connected, perform connection sequence
           if !self.connected {
-               let pk_id = stream.read_byte();
-               let pk = OfflinePackets::recv(pk_id);
+               let pk = OfflinePackets::recv(stream.read_byte());
 
                match pk {
-                    OfflinePackets::UnconnectedPing => handle_pong(&mut self, &mut stream)
+                    OfflinePackets::UnconnectedPing => {
+                         let pk_send = handle_pong(self, self.time.elapsed().unwrap().as_millis(), stream);
+                         self.send_queue.push_back(pk_send.clone());
+                    },
+                    _ => println!("\n\nUnknown packet [{:?}] of {}", self.address, pk)
                }
+          } else {
           }
-
-
      }
 
      fn gen_motd(&mut self) -> Motd {
           Motd {
                name: String::from("Netrex Server"),
-               player_count: 0,
-               player_max: 0,
+               player_count: 10,
+               player_max: 100,
                protocol: 420,
                gamemode: String::from("Creative"),
                version: String::from("1.17.0"),

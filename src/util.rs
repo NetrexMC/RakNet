@@ -1,9 +1,7 @@
 use binary_utils::stream::*;
 use binary_utils::{ IBufferRead, IBufferWrite };
 use std::net::{ SocketAddr, IpAddr };
-use std::marker::Sync;
 use crate::MAGIC;
-use crate::conn::Connection;
 
 // Raknet utilities
 pub trait IPacketStreamWrite {
@@ -34,10 +32,10 @@ impl IPacketStreamWrite for BinaryStream {
           let ipts: Vec<&str> = ipst.split(".").collect();
 
           for p in ipts {
-               let byte = u16::from_str_radix(p, 10).unwrap();
+               let byte = u8::from_str_radix(p, 10).unwrap();
                self.write_byte(byte);
           }
-          self.write_byte(add.port());
+          self.write_short(add.port());
      }
 }
 

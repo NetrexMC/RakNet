@@ -22,7 +22,7 @@ pub struct Packet {
 
 pub struct Motd {
      pub name: String,
-     pub protocol: u8,
+     pub protocol: u16,
      pub version: String,
      pub player_count: u16,
      pub player_max: u16,
@@ -33,16 +33,23 @@ pub struct Motd {
 impl Motd {
      pub fn parse(&self) -> String {
           let mut parsed = String::new();
+          let prot = self.protocol.to_string();
+          let pcount = self.player_count.to_string();
+          let pmax = self.player_max.to_string();
+          let server_id = SERVER_ID.to_string();
           let props = vec![
                "MCPE",
                "Netrex",
-               self.protocol.to_string().as_str(),
+               prot.as_str(),
                self.version.as_str(),
-               self.player_count.to_string().as_str(),
-               self.player_max.to_string().as_str(),
-               SERVER_ID.to_string().as_str(),
+               pcount.as_str(),
+               pmax.as_str(),
+               server_id.as_str(),
                self.name.as_str(),
-               self.gamemode.as_str()
+               self.gamemode.as_str(),
+               "0",
+               "19132",
+               "19133"
           ];
 
           for prop in props.iter() {
