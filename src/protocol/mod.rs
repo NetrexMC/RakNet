@@ -47,7 +47,7 @@ impl Motd {
                server_id.as_str(),
                self.name.as_str(),
                self.gamemode.as_str(),
-               "0",
+               "1",
                "19132",
                "19133"
           ];
