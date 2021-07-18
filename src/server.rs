@@ -5,7 +5,6 @@ use std::time::SystemTime;
 use std::net::UdpSocket;
 use binary_utils::*;
 use crate::conn::Connection;
-use crate::conn::ConnectionAPI;
 use crate::util::tokenize_addr;
 pub enum RakNetVersion {
      MinecraftRecent,

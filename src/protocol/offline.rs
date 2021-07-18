@@ -5,10 +5,10 @@ use std::fmt::{ Formatter, Result as FResult };
 use std::convert::TryInto;
 use super::{ IClientBound, IServerBound };
 use crate::{IPacketStreamWrite, IPacketStreamRead, MTU_SIZE, USE_SECURITY};
-use crate::conn::{ Connection, ConnectionAPI };
+use crate::conn::{ Connection };
 use crate::{ SERVER_ID, MAGIC, Motd };
 use binary_utils::{ stream::*, IBufferRead, IBufferWrite };
-use crate::offline::OfflinePackets::UnknownPacket;
+// use crate::offline::OfflinePackets::UnknownPacket;
 
 pub enum OfflinePackets {
      UnconnectedPing,
@@ -182,7 +182,7 @@ pub fn handle_offline(connection: &mut Connection, pk: OfflinePackets, _stream: 
                 magic: MAGIC.to_vec(),
                 server_id: SERVER_ID,
                 timestamp: connection.time.elapsed().unwrap().as_millis(),
-                motd: connection.gen_motd()
+                motd: connection.motd.clone()
             };
 
             pong.to()

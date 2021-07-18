@@ -6,7 +6,13 @@ use crate::protocol::offline::*;
 use binary_utils::*;
 
 pub trait ConnectionAPI {
-     fn receive(&mut self, stream: &mut BinaryStream);
+     /// Called when a packet is recieved from raknet
+     /// This is called on each **Frame**
+     fn recive_packet(&mut self, stream: &mut BinaryStream);
+
+     /// Called when RakNet wants to generate a **Motd**
+     /// for the server, if this fails, the `default_motd`
+     /// function is called instead.
      fn gen_motd(&mut self) -> Motd;
 }
 
@@ -16,7 +22,8 @@ pub struct Connection {
      pub send_queue: VecDeque<BinaryStream>,
      pub connected: bool,
      pub address: SocketAddr,
-     pub time: SystemTime
+     pub time: SystemTime,
+     pub motd: Motd
 }
 
 impl Connection {
@@ -25,14 +32,13 @@ impl Connection {
                send_queue: VecDeque::new(),
                connected: false,
                address,
-               time: start_time
+               time: start_time,
+               motd: Motd::default()
           }
      }
-}
 
-impl ConnectionAPI for Connection {
-     /// generic reciever
-     fn receive(&mut self, stream: &mut BinaryStream) {
+     /// Used internally by raknet for **each** packet recieved
+     pub fn receive(&mut self, stream: &mut BinaryStream) {
           // They are not connected, perform connection sequence
           if !self.connected {
                let pk = OfflinePackets::recv(stream.read_byte());
@@ -40,18 +46,6 @@ impl ConnectionAPI for Connection {
 
                self.send_queue.push_back(handler.clone());
           } else {
-          }
-     }
-
-     fn gen_motd(&mut self) -> Motd {
-          Motd {
-               name: String::from("Netrex Server"),
-               player_count: 10,
-               player_max: 100,
-               protocol: 420,
-               gamemode: String::from("Creative"),
-               version: String::from("1.17.0"),
-               server_id: SERVER_ID
           }
      }
 }

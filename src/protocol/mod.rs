@@ -1,5 +1,6 @@
 use binary_utils::BinaryStream;
 use crate::SERVER_ID;
+use crate::{ conn::Connection, conn::ConnectionAPI };
 pub mod offline;
 pub mod online;
 
@@ -20,6 +21,7 @@ pub struct Packet {
      pub id: u16
 }
 
+#[derive(Clone, Debug)]
 pub struct Motd {
      pub name: String,
      pub protocol: u16,
@@ -31,6 +33,18 @@ pub struct Motd {
 }
 
 impl Motd {
+     pub fn default() -> Self {
+          Self {
+               name: String::from("Netrex Server"),
+               player_count: 10,
+               player_max: 100,
+               protocol: 420,
+               gamemode: String::from("Creative"),
+               version: String::from("1.17.0"),
+               server_id: SERVER_ID
+          }
+     }
+
      pub fn parse(&self) -> String {
           let mut parsed = String::new();
           let prot = self.protocol.to_string();
