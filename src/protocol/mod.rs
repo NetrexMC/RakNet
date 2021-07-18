@@ -1,6 +1,5 @@
 use binary_utils::BinaryStream;
 use crate::SERVER_ID;
-use crate::{ conn::Connection, conn::ConnectionAPI };
 pub mod offline;
 pub mod online;
 

@@ -1,14 +1,16 @@
 use std::net::SocketAddr;
 use std::collections::VecDeque;
 use std::time::SystemTime;
-use crate::{ SERVER_ID, Motd };
+use crate::{ Motd };
 use crate::protocol::offline::*;
 use binary_utils::*;
+
+pub type RecievePacketFn = dyn FnMut(&mut Connection, &mut BinaryStream) -> std::io::Result<()>;
 
 pub trait ConnectionAPI {
      /// Called when a packet is recieved from raknet
      /// This is called on each **Frame**
-     fn recive_packet(&mut self, stream: &mut BinaryStream);
+     fn recieve_packet(&mut self, stream: &mut BinaryStream);
 
      /// Called when RakNet wants to generate a **Motd**
      /// for the server, if this fails, the `default_motd`
