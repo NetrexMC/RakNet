@@ -36,14 +36,9 @@ impl ConnectionAPI for Connection {
           // They are not connected, perform connection sequence
           if !self.connected {
                let pk = OfflinePackets::recv(stream.read_byte());
+               let handler = handle_offline(self, pk, stream);
 
-               match pk {
-                    OfflinePackets::UnconnectedPing => {
-                         let pk_send = handle_pong(self, self.time.elapsed().unwrap().as_millis(), stream);
-                         self.send_queue.push_back(pk_send.clone());
-                    },
-                    _ => println!("\n\nUnknown packet [{:?}] of {}", self.address, pk)
-               }
+               self.send_queue.push_back(handler.clone());
           } else {
           }
      }
