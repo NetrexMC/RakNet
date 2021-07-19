@@ -144,7 +144,7 @@ impl IClientBound<OpenConnectReply> for OpenConnectReply {
 pub struct SessionInfoRequest {
      magic: Vec<u8>,
      address: SocketAddr,
-     mtu_size: u16,
+     mtu_size: i16,
      client_id: i64,
 }
 
@@ -153,7 +153,7 @@ impl IServerBound<SessionInfoRequest> for SessionInfoRequest {
           Self {
                magic: stream.read_magic(),
                address: stream.read_address(),
-               mtu_size: stream.read_ushort(),
+               mtu_size: stream.read_short(),
                client_id: stream.read_long(),
           }
      }
@@ -163,7 +163,7 @@ impl IServerBound<SessionInfoRequest> for SessionInfoRequest {
 pub struct SessionInfoReply {
      server_id: i64,
      client_address: SocketAddr,
-     mtu_size: u16,
+     mtu_size: i16,
      security: bool,
 }
 
@@ -174,7 +174,7 @@ impl IClientBound<SessionInfoReply> for SessionInfoReply {
           stream.write_magic();
           stream.write_long(self.server_id);
           stream.write_address(self.client_address);
-          stream.write_ushort(self.mtu_size);
+          stream.write_short(self.mtu_size);
           stream.write_bool(self.security);
           stream
      }
