@@ -4,6 +4,7 @@ use std::time::SystemTime;
 use crate::{ Motd };
 use crate::protocol::offline::*;
 use binary_utils::*;
+use crate::online::{handle_online, OnlinePackets};
 
 pub type RecievePacketFn = dyn FnMut(&mut Connection, &mut BinaryStream) -> std::io::Result<()>;
 
@@ -25,7 +26,7 @@ pub struct Connection {
      pub connected: bool,
      pub address: SocketAddr,
      pub time: SystemTime,
-     pub motd: Motd
+     pub motd: Motd,
 }
 
 impl Connection {
@@ -35,7 +36,7 @@ impl Connection {
                connected: false,
                address,
                time: start_time,
-               motd: Motd::default()
+               motd: Motd::default(),
           }
      }
 
@@ -48,6 +49,10 @@ impl Connection {
 
                self.send_queue.push_back(handler.clone());
           } else {
+               let pk = OnlinePackets::recv(stream.read_byte());
+               let handler = handle_online(self, pk, stream);
+
+               self.send_queue.push_back(handler.clone());
           }
      }
 }

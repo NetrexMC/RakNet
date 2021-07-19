@@ -6,10 +6,11 @@ use std::net::UdpSocket;
 use binary_utils::*;
 use crate::conn::Connection;
 use crate::util::tokenize_addr;
+
 pub enum RakNetVersion {
      MinecraftRecent,
      V10,
-     V6
+     V6,
 }
 
 impl RakNetVersion {
@@ -17,7 +18,7 @@ impl RakNetVersion {
           match self {
                RakNetVersion::MinecraftRecent => 10,
                RakNetVersion::V10 => 10,
-               RakNetVersion::V6 => 6
+               RakNetVersion::V6 => 6,
           }
      }
 }
@@ -26,7 +27,7 @@ pub struct RakNetServer {
      pub address: String,
      pub version: RakNetVersion,
      pub connections: Arc<Mutex<HashMap<String, Connection>>>,
-     pub start_time: SystemTime
+     pub start_time: SystemTime,
 }
 
 impl RakNetServer {
@@ -35,7 +36,7 @@ impl RakNetServer {
                address,
                version: RakNetVersion::MinecraftRecent,
                connections: Arc::new(Mutex::new(HashMap::new())),
-               start_time: SystemTime::now()
+               start_time: SystemTime::now(),
           }
      }
 

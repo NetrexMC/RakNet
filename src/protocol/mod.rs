@@ -17,7 +17,7 @@ pub trait IServerBound<Pk = Packet> {
 
 pub struct Packet {
      pub stream: BinaryStream,
-     pub id: u16
+     pub id: u16,
 }
 
 #[derive(Clone, Debug)]
@@ -28,7 +28,7 @@ pub struct Motd {
      pub player_count: u16,
      pub player_max: u16,
      pub gamemode: String,
-     pub server_id: i64
+     pub server_id: i64,
 }
 
 impl Motd {
@@ -37,10 +37,10 @@ impl Motd {
                name: String::from("Netrex Server"),
                player_count: 10,
                player_max: 100,
-               protocol: 420,
+               protocol: 448,
                gamemode: String::from("Creative"),
-               version: String::from("1.18.0"),
-               server_id: SERVER_ID
+               version: String::from("1.17.10"),
+               server_id: SERVER_ID,
           }
      }
 
