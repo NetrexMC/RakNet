@@ -2,7 +2,7 @@
 
 use super::{IClientBound, IServerBound};
 use crate::conn::Connection;
-use crate::{IPacketStreamRead, IPacketStreamWrite, MTU_SIZE, USE_SECURITY};
+use crate::{IPacketStreamRead, IPacketStreamWrite, MTU_SIZE, USE_SECURITY, RakNetVersion};
 use crate::{Motd, SERVER_ID};
 use binary_utils::{stream::*, IBufferRead, IBufferWrite};
 use std::convert::TryInto;
@@ -214,7 +214,7 @@ pub fn handle_offline(
           OfflinePackets::OpenConnectRequest => {
                let request = OpenConnectRequest::recv(stream.clone());
 
-               if request.protocol != 10 {
+               if request.protocol != RakNetVersion::MinecraftRecent.to_u8() {
                     let incompatible = IncompatibleProtocolVersion {
                          protocol: request.protocol,
                          server_id: SERVER_ID
