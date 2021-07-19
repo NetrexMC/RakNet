@@ -17,6 +17,7 @@ pub enum OfflinePackets {
      SessionInfoRequest,
      SessionInfoReply,
      UnconnectedPong,
+     IncompatibleProtocolVersion,
      UnknownPacket(u8),
 }
 
@@ -29,6 +30,7 @@ impl OfflinePackets {
                0x07 => OfflinePackets::SessionInfoRequest,
                0x08 => OfflinePackets::SessionInfoReply,
                0x1c => OfflinePackets::UnconnectedPong,
+               0x19 => OfflinePackets::IncompatibleProtocolVersion,
                _ => OfflinePackets::UnknownPacket(byte),
           }
      }
@@ -41,6 +43,7 @@ impl OfflinePackets {
                OfflinePackets::SessionInfoRequest => 0x07,
                OfflinePackets::SessionInfoReply => 0x08,
                OfflinePackets::UnconnectedPong => 0x1c,
+               OfflinePackets::IncompatibleProtocolVersion => 0x19,
                OfflinePackets::UnknownPacket(byte) => byte,
           }
      }
@@ -55,6 +58,7 @@ impl std::fmt::Display for OfflinePackets {
                OfflinePackets::SessionInfoRequest => write!(f, "{}", self.to_byte()),
                OfflinePackets::SessionInfoReply => write!(f, "{}", self.to_byte()),
                OfflinePackets::UnconnectedPong => write!(f, "{}", self.to_byte()),
+               OfflinePackets::IncompatibleProtocolVersion => write!(f, "{}", self.to_byte()),
                OfflinePackets::UnknownPacket(byte) => write!(f, "{}", byte),
           }
      }
@@ -173,6 +177,22 @@ impl IClientBound<SessionInfoReply> for SessionInfoReply {
      }
 }
 
+pub struct IncompatibleProtocolVersion {
+     protocol: u8,
+     server_id: i64,
+}
+
+impl IClientBound<IncompatibleProtocolVersion> for IncompatibleProtocolVersion {
+     fn to(&self) -> BinaryStream {
+          let mut stream: BinaryStream = BinaryStream::new();
+          stream.write_byte(OfflinePackets::IncompatibleProtocolVersion.to_byte());
+          stream.write_byte(self.protocol);
+          stream.write_magic();
+          stream.write_signed_long(self.server_id);
+          stream
+     }
+}
+
 pub fn handle_offline(
      connection: &mut Connection,
      pk: OfflinePackets,
@@ -192,7 +212,12 @@ pub fn handle_offline(
                let request = OpenConnectRequest::recv(stream.clone());
 
                if request.protocol != 10 {
-                    // disconnect
+                    let incompatible = IncompatibleProtocolVersion {
+                         protocol: request.protocol as u8,
+                         server_id: SERVER_ID
+                    };
+
+                    return incompatible.to();
                }
 
                let reply = OpenConnectReply {
