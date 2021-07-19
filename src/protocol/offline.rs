@@ -2,13 +2,12 @@
 
 use super::{IClientBound, IServerBound};
 use crate::conn::Connection;
-use crate::{IPacketStreamRead, IPacketStreamWrite, MTU_SIZE, USE_SECURITY, RakNetVersion};
+use crate::{IPacketStreamRead, IPacketStreamWrite, USE_SECURITY, RakNetVersion};
 use crate::{Motd, SERVER_ID};
 use binary_utils::{stream::*, IBufferRead, IBufferWrite};
 use std::convert::TryInto;
 use std::fmt::{Formatter, Result as FResult};
 use std::net::SocketAddr;
-// use crate::offline::OfflinePackets::UnknownPacket;
 
 pub enum OfflinePackets {
      UnconnectedPing,
@@ -112,7 +111,7 @@ impl IServerBound<OpenConnectRequest> for OpenConnectRequest {
           let magic = s.read_magic();
           let p = s.read_byte();
           let mtu = s.get_length() + 1 + 28;
-          OpenConnectRequest {
+          Self {
                magic,
                protocol: p,
                mtu_size: mtu as i16,
@@ -239,8 +238,10 @@ pub fn handle_offline(
                     mtu_size: request.mtu_size,
                     security: USE_SECURITY,
                };
+
+               connection.connected = true;
                reply.to()
           }
-          _ => BinaryStream::new(), //TODO: Throw an UnknownPacket here rather than sending an empty binary stream
+          _ => BinaryStream::new(),
      }
 }
