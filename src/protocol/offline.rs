@@ -3,7 +3,7 @@
 use super::{IClientBound, IServerBound};
 use crate::conn::Connection;
 use crate::{IPacketStreamRead, IPacketStreamWrite, MTU_SIZE, USE_SECURITY};
-use crate::{Motd, MAGIC, SERVER_ID};
+use crate::{Motd, SERVER_ID};
 use binary_utils::{stream::*, IBufferRead, IBufferWrite};
 use std::convert::TryInto;
 use std::fmt::{Formatter, Result as FResult};
@@ -14,7 +14,7 @@ pub enum OfflinePackets {
      UnconnectedPing,
      OpenConnectRequest,
      OpenConnectReply,
-     SessionInfo,
+     SessionInfoRequest,
      SessionInfoReply,
      UnconnectedPong,
      UnknownPacket(u8),
@@ -26,7 +26,7 @@ impl OfflinePackets {
                0x01 => OfflinePackets::UnconnectedPing,
                0x05 => OfflinePackets::OpenConnectRequest,
                0x06 => OfflinePackets::OpenConnectReply,
-               0x07 => OfflinePackets::SessionInfo,
+               0x07 => OfflinePackets::SessionInfoRequest,
                0x08 => OfflinePackets::SessionInfoReply,
                0x1c => OfflinePackets::UnconnectedPong,
                _ => OfflinePackets::UnknownPacket(byte),
@@ -38,7 +38,7 @@ impl OfflinePackets {
                OfflinePackets::UnconnectedPing => 0x01,
                OfflinePackets::OpenConnectRequest => 0x05,
                OfflinePackets::OpenConnectReply => 0x06,
-               OfflinePackets::SessionInfo => 0x07,
+               OfflinePackets::SessionInfoRequest => 0x07,
                OfflinePackets::SessionInfoReply => 0x08,
                OfflinePackets::UnconnectedPong => 0x1c,
                OfflinePackets::UnknownPacket(byte) => byte,
@@ -52,10 +52,63 @@ impl std::fmt::Display for OfflinePackets {
                OfflinePackets::UnconnectedPing => write!(f, "{}", self.to_byte()),
                OfflinePackets::OpenConnectRequest => write!(f, "{}", self.to_byte()),
                OfflinePackets::OpenConnectReply => write!(f, "{}", self.to_byte()),
-               OfflinePackets::SessionInfo => write!(f, "{}", self.to_byte()),
+               OfflinePackets::SessionInfoRequest => write!(f, "{}", self.to_byte()),
                OfflinePackets::SessionInfoReply => write!(f, "{}", self.to_byte()),
                OfflinePackets::UnconnectedPong => write!(f, "{}", self.to_byte()),
                OfflinePackets::UnknownPacket(byte) => write!(f, "{}", byte),
+          }
+     }
+}
+
+/// Unconnected Ping
+pub struct UnconnectedPing {
+     timestamp: i64,
+     magic: Vec<u8>,
+     client_id: i64,
+}
+
+impl IServerBound<UnconnectedPing> for UnconnectedPing {
+     fn recv(mut stream: BinaryStream) -> UnconnectedPing {
+          Self {
+               timestamp: stream.read_signed_long(),
+               magic: stream.read_magic(),
+               client_id: stream.read_signed_long(),
+          }
+     }
+}
+
+/// Unconnected Pong
+pub struct UnconnectedPong {
+     timestamp: i64,
+     server_id: i64,
+     motd: Motd,
+}
+
+impl IClientBound<UnconnectedPong> for UnconnectedPong {
+     fn to(&self) -> BinaryStream {
+          let mut stream = BinaryStream::new();
+          stream.write_byte(OfflinePackets::UnconnectedPong.to_byte());
+          stream.write_signed_long(self.timestamp.try_into().unwrap());
+          stream.write_signed_long(self.server_id);
+          stream.write_magic();
+          stream.write_string(self.motd.parse());
+          stream
+     }
+}
+
+/// A connection request recv the client.
+pub struct OpenConnectRequest {
+     protocol: u16,
+     mtu_size: usize,
+}
+
+impl IServerBound<OpenConnectRequest> for OpenConnectRequest {
+     fn recv(mut s: BinaryStream) -> OpenConnectRequest {
+          let p = s.read_short();
+          let mtu = s.get_length() + 1 + 28;
+          OpenConnectRequest {
+               protocol: p,
+               mtu_size: mtu,
           }
      }
 }
@@ -80,74 +133,20 @@ impl IClientBound<OpenConnectReply> for OpenConnectReply {
      }
 }
 
-/// A connection request recv the client.
-pub struct OpenConnectRequest {
-     protocol: u16,
-     mtu_size: usize,
-}
-
-impl IServerBound<OpenConnectRequest> for OpenConnectRequest {
-     fn recv(mut s: BinaryStream) -> OpenConnectRequest {
-          let p = s.read_short();
-          let mtu = s.get_length() + 1 + 28;
-          OpenConnectRequest {
-               protocol: p,
-               mtu_size: mtu,
-          }
-     }
-}
-
-/// Unconnected Ping
-pub struct UnconnectedPing {
-     timestamp: i64,
-     magic: Vec<u8>,
-     client_id: i64,
-}
-
-impl IServerBound<UnconnectedPing> for UnconnectedPing {
-     fn recv(mut stream: BinaryStream) -> UnconnectedPing {
-          Self {
-               timestamp: stream.read_signed_long(),
-               magic: stream.read_magic(),
-               client_id: stream.read_signed_long(),
-          }
-     }
-}
-
-/// Unconnected Pong
-pub struct UnconnectedPong {
-     timestamp: u128,
-     magic: Vec<u8>,
-     server_id: i64,
-     motd: Motd,
-}
-
-impl IClientBound<UnconnectedPong> for UnconnectedPong {
-     fn to(&self) -> BinaryStream {
-          let mut stream = BinaryStream::new();
-          stream.write_byte(OfflinePackets::UnconnectedPong.to_byte());
-          stream.write_long(self.timestamp.try_into().unwrap());
-          stream.write_signed_long(self.server_id);
-          stream.write_magic();
-          stream.write_string(self.motd.parse());
-          return stream;
-     }
-}
-
 /// Session info, also known as Open Connect Request 2
-pub struct SessionInfo {
+pub struct SessionInfoRequest {
      magic: Vec<u8>,
      address: SocketAddr,
-     mtu: usize,
+     mtu: u16,
      client_id: i64,
 }
 
-impl IServerBound<SessionInfo> for SessionInfo {
-     fn recv(mut stream: BinaryStream) -> SessionInfo {
+impl IServerBound<SessionInfoRequest> for SessionInfoRequest {
+     fn recv(mut stream: BinaryStream) -> SessionInfoRequest {
           Self {
                magic: stream.read_magic(),
                address: stream.read_address(),
-               mtu: stream.read_short() as usize,
+               mtu: stream.read_short(),
                client_id: stream.read_signed_long(),
           }
      }
@@ -155,10 +154,9 @@ impl IServerBound<SessionInfo> for SessionInfo {
 
 /// Session Info Reply, also known as Open Connect Reply 2
 pub struct SessionInfoReply {
-     magic: Vec<u8>,
      server_id: i64,
      client_address: SocketAddr,
-     mtu: usize,
+     mtu: u16,
      security: bool,
 }
 
@@ -169,7 +167,7 @@ impl IClientBound<SessionInfoReply> for SessionInfoReply {
           stream.write_magic();
           stream.write_signed_long(self.server_id);
           stream.write_address(self.client_address);
-          stream.write_short(self.mtu as u16);
+          stream.write_short(self.mtu);
           stream.write_bool(self.security);
           stream
      }
@@ -183,9 +181,8 @@ pub fn handle_offline(
      match pk {
           OfflinePackets::UnconnectedPing => {
                let pong = UnconnectedPong {
-                    magic: MAGIC.to_vec(),
                     server_id: SERVER_ID,
-                    timestamp: connection.time.elapsed().unwrap().as_millis(),
+                    timestamp: connection.time.elapsed().unwrap().as_millis() as i64,
                     motd: connection.motd.clone(),
                };
 
@@ -206,14 +203,13 @@ pub fn handle_offline(
 
                reply.to()
           },
-          OfflinePackets::SessionInfo => {
-               let request = SessionInfo::recv(stream.clone());
+          OfflinePackets::SessionInfoRequest => {
+               let request = SessionInfoRequest::recv(stream.clone());
                let reply = SessionInfoReply {
-                    magic: MAGIC.to_vec(),
                     server_id: SERVER_ID,
                     client_address: connection.address.clone(),
                     mtu: request.mtu,
-                    security: false,
+                    security: USE_SECURITY,
                };
                reply.to()
           }
