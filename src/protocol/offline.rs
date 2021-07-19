@@ -242,6 +242,6 @@ pub fn handle_offline(
                connection.connected = true;
                reply.to()
           }
-          _ => BinaryStream::new(),
+          _ => BinaryStream::new(), //TODO: Throw an UnknownPacket here rather than sending an empty binary stream
      }
 }
