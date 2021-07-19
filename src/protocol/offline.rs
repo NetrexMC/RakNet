@@ -102,13 +102,13 @@ impl IClientBound<UnconnectedPong> for UnconnectedPong {
 
 /// A connection request recv the client.
 pub struct OpenConnectRequest {
-     protocol: u16,
+     protocol: u8,
      mtu_size: usize,
 }
 
 impl IServerBound<OpenConnectRequest> for OpenConnectRequest {
      fn recv(mut s: BinaryStream) -> OpenConnectRequest {
-          let p = s.read_ushort();
+          let p = s.read_byte();
           let mtu = s.get_length() + 1 + 28;
           OpenConnectRequest {
                protocol: p,
@@ -213,7 +213,7 @@ pub fn handle_offline(
 
                if request.protocol != 10 {
                     let incompatible = IncompatibleProtocolVersion {
-                         protocol: request.protocol as u8,
+                         protocol: request.protocol,
                          server_id: SERVER_ID
                     };
 
