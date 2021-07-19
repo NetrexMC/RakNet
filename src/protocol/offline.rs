@@ -74,9 +74,9 @@ pub struct UnconnectedPing {
 impl IServerBound<UnconnectedPing> for UnconnectedPing {
      fn recv(mut stream: BinaryStream) -> UnconnectedPing {
           Self {
-               timestamp: stream.read_signed_long(),
+               timestamp: stream.read_long(),
                magic: stream.read_magic(),
-               client_id: stream.read_signed_long(),
+               client_id: stream.read_long(),
           }
      }
 }
@@ -92,8 +92,8 @@ impl IClientBound<UnconnectedPong> for UnconnectedPong {
      fn to(&self) -> BinaryStream {
           let mut stream = BinaryStream::new();
           stream.write_byte(OfflinePackets::UnconnectedPong.to_byte());
-          stream.write_signed_long(self.timestamp.try_into().unwrap());
-          stream.write_signed_long(self.server_id);
+          stream.write_long(self.timestamp.try_into().unwrap());
+          stream.write_long(self.server_id);
           stream.write_magic();
           stream.write_string(self.motd.parse());
           stream
@@ -108,7 +108,7 @@ pub struct OpenConnectRequest {
 
 impl IServerBound<OpenConnectRequest> for OpenConnectRequest {
      fn recv(mut s: BinaryStream) -> OpenConnectRequest {
-          let p = s.read_short();
+          let p = s.read_ushort();
           let mtu = s.get_length() + 1 + 28;
           OpenConnectRequest {
                protocol: p,
@@ -130,9 +130,9 @@ impl IClientBound<OpenConnectReply> for OpenConnectReply {
           let mut stream = BinaryStream::new();
           stream.write_byte(OfflinePackets::OpenConnectReply.to_byte());
           stream.write_magic();
-          stream.write_signed_long(self.server_id);
+          stream.write_long(self.server_id);
           stream.write_bool(self.security);
-          stream.write_signed_short(self.mtu);
+          stream.write_short(self.mtu);
           stream
      }
 }
@@ -150,8 +150,8 @@ impl IServerBound<SessionInfoRequest> for SessionInfoRequest {
           Self {
                magic: stream.read_magic(),
                address: stream.read_address(),
-               mtu: stream.read_short(),
-               client_id: stream.read_signed_long(),
+               mtu: stream.read_ushort(),
+               client_id: stream.read_long(),
           }
      }
 }
@@ -169,9 +169,9 @@ impl IClientBound<SessionInfoReply> for SessionInfoReply {
           let mut stream: BinaryStream = BinaryStream::new();
           stream.write_byte(OfflinePackets::SessionInfoReply.to_byte());
           stream.write_magic();
-          stream.write_signed_long(self.server_id);
+          stream.write_long(self.server_id);
           stream.write_address(self.client_address);
-          stream.write_short(self.mtu);
+          stream.write_ushort(self.mtu);
           stream.write_bool(self.security);
           stream
      }
@@ -188,7 +188,7 @@ impl IClientBound<IncompatibleProtocolVersion> for IncompatibleProtocolVersion {
           stream.write_byte(OfflinePackets::IncompatibleProtocolVersion.to_byte());
           stream.write_byte(self.protocol);
           stream.write_magic();
-          stream.write_signed_long(self.server_id);
+          stream.write_long(self.server_id);
           stream
      }
 }

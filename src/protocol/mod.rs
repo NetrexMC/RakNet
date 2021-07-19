@@ -39,7 +39,7 @@ impl Motd {
                player_max: 100,
                protocol: 420,
                gamemode: String::from("Creative"),
-               version: String::from("1.17.0"),
+               version: String::from("1.18.0"),
                server_id: SERVER_ID
           }
      }
