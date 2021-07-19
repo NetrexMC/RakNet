@@ -102,17 +102,20 @@ impl IClientBound<UnconnectedPong> for UnconnectedPong {
 
 /// A connection request recv the client.
 pub struct OpenConnectRequest {
+     magic: Vec<u8>,
      protocol: u8,
-     mtu_size: usize,
+     mtu_size: i16,
 }
 
 impl IServerBound<OpenConnectRequest> for OpenConnectRequest {
      fn recv(mut s: BinaryStream) -> OpenConnectRequest {
+          let magic = s.read_magic();
           let p = s.read_byte();
           let mtu = s.get_length() + 1 + 28;
           OpenConnectRequest {
+               magic,
                protocol: p,
-               mtu_size: mtu,
+               mtu_size: mtu as i16,
           }
      }
 }
@@ -122,7 +125,7 @@ impl IServerBound<OpenConnectRequest> for OpenConnectRequest {
 pub struct OpenConnectReply {
      server_id: i64,
      security: bool,
-     mtu: i16,
+     mtu_size: i16,
 }
 
 impl IClientBound<OpenConnectReply> for OpenConnectReply {
@@ -132,7 +135,7 @@ impl IClientBound<OpenConnectReply> for OpenConnectReply {
           stream.write_magic();
           stream.write_long(self.server_id);
           stream.write_bool(self.security);
-          stream.write_short(self.mtu);
+          stream.write_short(self.mtu_size);
           stream
      }
 }
@@ -141,7 +144,7 @@ impl IClientBound<OpenConnectReply> for OpenConnectReply {
 pub struct SessionInfoRequest {
      magic: Vec<u8>,
      address: SocketAddr,
-     mtu: u16,
+     mtu_size: u16,
      client_id: i64,
 }
 
@@ -150,7 +153,7 @@ impl IServerBound<SessionInfoRequest> for SessionInfoRequest {
           Self {
                magic: stream.read_magic(),
                address: stream.read_address(),
-               mtu: stream.read_ushort(),
+               mtu_size: stream.read_ushort(),
                client_id: stream.read_long(),
           }
      }
@@ -160,7 +163,7 @@ impl IServerBound<SessionInfoRequest> for SessionInfoRequest {
 pub struct SessionInfoReply {
      server_id: i64,
      client_address: SocketAddr,
-     mtu: u16,
+     mtu_size: u16,
      security: bool,
 }
 
@@ -171,7 +174,7 @@ impl IClientBound<SessionInfoReply> for SessionInfoReply {
           stream.write_magic();
           stream.write_long(self.server_id);
           stream.write_address(self.client_address);
-          stream.write_ushort(self.mtu);
+          stream.write_ushort(self.mtu_size);
           stream.write_bool(self.security);
           stream
      }
@@ -223,7 +226,7 @@ pub fn handle_offline(
                let reply = OpenConnectReply {
                     server_id: SERVER_ID,
                     security: USE_SECURITY,
-                    mtu: MTU_SIZE,
+                    mtu_size: request.mtu_size,
                };
 
                reply.to()
@@ -233,7 +236,7 @@ pub fn handle_offline(
                let reply = SessionInfoReply {
                     server_id: SERVER_ID,
                     client_address: connection.address.clone(),
-                    mtu: request.mtu,
+                    mtu_size: request.mtu_size,
                     security: USE_SECURITY,
                };
                reply.to()
