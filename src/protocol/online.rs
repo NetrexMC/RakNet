@@ -109,6 +109,6 @@ pub fn handle_online(
 
                accept.to()
           },
-          _ => BinaryStream::new(), //TODO: Throw an UnknownPacket here rather than sending an empty binary stream
+          _ => BinaryStream::new(), // TODO: Throw an UnknownPacket here rather than sending an empty binary stream
      }
 }
