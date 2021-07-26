@@ -1,8 +1,9 @@
 pub mod reliability;
-use crate::{IServerBound};
+use crate::{IServerBound, IClientBound};
 use binary_utils::*;
 use reliability::*;
 
+#[derive(Copy, Clone)]
 pub struct FragmentInfo {
      fragment_size: i16,
      fragment_id: u16,
@@ -88,5 +89,45 @@ impl IServerBound<Frame> for Frame {
           }
 
           frame
+     }
+}
+
+impl IClientBound<Frame> for Frame {
+     fn to(&self) -> BinaryStream {
+          let mut stream = BinaryStream::new();
+          let mut flags = self.reliability.to_byte() << 5;
+
+          if self.fragment_info.is_some() {
+               if self.fragment_info.unwrap().fragment_size > 0 {
+                    flags = flags | 0x10;
+               }
+          }
+
+          stream.write_byte(flags);
+          stream.write_ushort((self.body.get_length() as u16) * 8);
+
+          if self.reliable_index.is_some() {
+               stream.write_triad(self.reliable_index.unwrap());
+          }
+
+          if self.sequence_index.is_some() {
+               stream.write_triad(self.sequence_index.unwrap());
+          }
+
+          if self.order_index.is_some() {
+               stream.write_triad(self.order_index.unwrap());
+               stream.write_byte(self.order_channel.unwrap());
+          }
+
+          if self.fragment_info.is_some() {
+               if self.fragment_info.unwrap().fragment_size > 0 {
+                    stream.write_int(self.fragment_info.unwrap().fragment_size);
+                    stream.write_ushort(self.fragment_info.unwrap().fragment_id);
+                    stream.write_int(self.fragment_info.unwrap().fragment_index);
+               }
+          }
+
+          stream.write_slice(&self.body.get_buffer());
+          stream
      }
 }
