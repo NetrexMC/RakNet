@@ -2,8 +2,8 @@
 # It is not intended for manual editing.
 [[package]]
 name = "binary_utils"
-version = "0.1.1"
-source = "git+https://github.com/NetrexMC/BinaryUtil?branch=master#f52638a0303d81313ce278da6a0f8d68922b78a2"
+version = "0.1.2"
+source = "git+https://github.com/NetrexMC/BinaryUtil?branch=master#ac3805dd30cbe93703d78ba16f62a451436846c1"
 
 [[package]]
 name = "cfg-if"
