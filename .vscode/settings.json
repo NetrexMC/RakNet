@@ -6,5 +6,6 @@
      "deno.unstable": true,
      "deno.import_intellisense_origins": {
           "https://deno.land": true
-     }
+     },
+     "discord.enabled": true
 }
