@@ -131,3 +131,49 @@ impl IClientBound<Frame> for Frame {
           stream
      }
 }
+
+pub struct FramePacket {
+     pub seq: u32,
+     pub frames: Vec<Frame>
+}
+
+impl FramePacket {
+     pub fn new() -> Self {
+          Self {
+               seq: 0,
+               frames: Vec::new()
+          }
+     }
+}
+
+impl IClientBound<FramePacket> for FramePacket {
+     fn to(&self) -> BinaryStream {
+          let mut stream = BinaryStream::new();
+          stream.write_byte(0x80);
+          stream.write_triad(self.seq);
+
+          for f in self.frames.iter() {
+               stream.write_slice(&f.to().get_buffer());
+          }
+          stream
+     }
+}
+
+impl IServerBound<FramePacket> for FramePacket {
+     fn recv(mut stream: BinaryStream) -> FramePacket {
+          let mut packet = FramePacket::new();
+          stream.read_byte();
+          packet.seq = stream.read_triad();
+
+          loop {
+               if stream.get_offset() >= stream.get_length() {
+                    break;
+               }
+
+               let offset = stream.get_offset();
+               let frm = Frame::recv(stream.clamp(offset, None));
+               packet.frames.push(frm);
+          }
+          packet
+     }
+}
