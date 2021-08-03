@@ -1,15 +1,11 @@
+pub mod fragment;
 pub mod reliability;
 use crate::{IServerBound, IClientBound};
 use binary_utils::*;
 use reliability::*;
+use fragment::*;
 
-#[derive(Copy, Clone)]
-pub struct FragmentInfo {
-     fragment_size: i16,
-     fragment_id: u16,
-     fragment_index: i16
-}
-
+#[derive(Clone, Debug)]
 pub struct Frame {
      // This is a triad
      pub sequence: u64,
@@ -54,7 +50,9 @@ impl IServerBound<Frame> for Frame {
      fn recv(mut stream: BinaryStream) -> Frame {
           let mut frame: Frame = Frame::init();
           let flags = stream.read_byte();
+
           frame.reliability = Reliability::from_bit(flags);
+
           let fragmented = (flags & 0x10) > 0;
           let bit_length = stream.read_ushort();
 
@@ -167,13 +165,17 @@ impl IServerBound<FramePacket> for FramePacket {
 
           loop {
                if stream.get_offset() >= stream.get_length() {
-                    break;
+                    return packet;
                }
 
                let offset = stream.get_offset();
-               let frm = Frame::recv(stream.clamp(offset, None));
-               packet.frames.push(frm);
+               let frm = Frame::recv(stream.slice(offset - 1, None));
+               packet.frames.push(frm.clone());
+               if frm.to().get_length() + stream.get_offset() >= stream.get_length() {
+                    return packet;
+               } else {
+                    stream.increase_offset(Some(frm.to().get_length()));
+               }
           }
-          packet
      }
 }
