@@ -1,3 +1,4 @@
+#[derive(Clone, Debug)]
 pub struct Reliability {
      flag: ReliabilityFlag,
      /// Only if reliable
@@ -69,6 +70,7 @@ impl Reliability {
      }
 }
 
+#[derive(Clone, Debug)]
 pub enum ReliabilityFlag {
      Unreliable,
      UnreliableSeq,

@@ -3,7 +3,7 @@
 [[package]]
 name = "binary_utils"
 version = "0.1.2"
-source = "git+https://github.com/NetrexMC/BinaryUtil?branch=master#ac3805dd30cbe93703d78ba16f62a451436846c1"
+source = "git+https://github.com/NetrexMC/BinaryUtil?branch=master#af2b36db1bcd65b393fa9880f7cad3136a6981c1"
 
 [[package]]
 name = "cfg-if"

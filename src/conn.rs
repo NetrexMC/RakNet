@@ -1,5 +1,5 @@
 use std::net::SocketAddr;
-use std::collections::VecDeque;
+use std::collections::{VecDeque};
 use std::time::SystemTime;
 use crate::{ Motd };
 use crate::protocol::offline::*;
@@ -26,7 +26,7 @@ pub struct Connection {
      pub connected: bool,
      pub address: SocketAddr,
      pub time: SystemTime,
-     pub motd: Motd,
+     pub motd: Motd
 }
 
 impl Connection {
@@ -36,7 +36,7 @@ impl Connection {
                connected: false,
                address,
                time: start_time,
-               motd: Motd::default(),
+               motd: Motd::default()
           }
      }
 
@@ -51,7 +51,6 @@ impl Connection {
           } else {
                let pk = OnlinePackets::recv(stream.read_byte());
                let handler = handle_online(self, pk, stream);
-
                self.send_queue.push_back(handler.clone());
           }
      }

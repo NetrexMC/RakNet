@@ -11,7 +11,8 @@ pub const USE_SECURITY: bool = false;
 pub use self::{
      protocol::*,
      util::*,
-     server::*
+     server::*,
+     frame::*
 };
 
 #[cfg(test)]
