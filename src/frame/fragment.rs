@@ -48,6 +48,18 @@ impl FragmentList<'_> {
           }
      }
 
+     /// Adds a binary stream to the fragment list.
+     pub fn add_stream(&mut self, buf: BinaryStream) {
+          // create a fragment from a stream
+          let frag = Fragment {
+               buffer: &buf.get_buffer()[0..buf.get_length()],
+               index: self.fragments.len() as i16
+          };
+
+          self.fragments.push(frag);
+          self.size = self.size + frag.as_stream().get_length() as i16;
+     }
+
      /// Gets the **wanted** size of fragments
      pub fn get_size(&self) -> i16 {
           self.size.clone()
@@ -73,7 +85,7 @@ impl FragmentList<'_> {
 /// Handles fragments from incoming packets and resolves an entire Frame packet when compelete.
 pub struct FragmentQueue<'a> {
      /// A map of current fragments.
-     fragment_table: HashMap<u16, FragmentList<'a>>,
+     pub fragment_table: HashMap<u16, FragmentList<'a>>,
      sequence: u16
 }
 
@@ -82,6 +94,17 @@ impl FragmentQueue<'_> {
           Self {
                fragment_table: HashMap::new(),
                sequence: 0
+          }
+     }
+
+     /// Queues a binary stream into the queue
+     /// Do note, this does not make them frames.
+     pub fn queue_stream(&mut self, buf: BinaryStream) {
+          if !self.fragment_table.contains_key(&self.sequence) {
+               let mut list = FragmentList::new();
+               self.fragment_table.insert(self.sequence, list);
+          } else {
+               self.fragment_table.get_mut(&self.sequence).unwrap().add_stream(buf);
           }
      }
 
