@@ -121,7 +121,7 @@ pub fn handle_online(
                     handle_online(connection, OnlinePackets::recv(frame.body.read_byte()), &mut frame.body.clone());
                }
                BinaryStream::new()
-          }
+          },
           _ => BinaryStream::new(), // TODO: Throw an UnknownPacket here rather than sending an empty binary stream
      }
 }
