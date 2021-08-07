@@ -1,15 +1,11 @@
+pub mod fragment;
 pub mod reliability;
 use crate::{IServerBound, IClientBound};
 use binary_utils::*;
 use reliability::*;
+use fragment::*;
 
-#[derive(Copy, Clone)]
-pub struct FragmentInfo {
-     fragment_size: i16,
-     fragment_id: u16,
-     fragment_index: i16
-}
-
+#[derive(Clone, Debug)]
 pub struct Frame {
      // This is a triad
      pub sequence: u64,
@@ -54,7 +50,9 @@ impl IServerBound<Frame> for Frame {
      fn recv(mut stream: BinaryStream) -> Frame {
           let mut frame: Frame = Frame::init();
           let flags = stream.read_byte();
+
           frame.reliability = Reliability::from_bit(flags);
+
           let fragmented = (flags & 0x10) > 0;
           let bit_length = stream.read_ushort();
 
@@ -129,5 +127,55 @@ impl IClientBound<Frame> for Frame {
 
           stream.write_slice(&self.body.get_buffer());
           stream
+     }
+}
+
+pub struct FramePacket {
+     pub seq: u32,
+     pub frames: Vec<Frame>
+}
+
+impl FramePacket {
+     pub fn new() -> Self {
+          Self {
+               seq: 0,
+               frames: Vec::new()
+          }
+     }
+}
+
+impl IClientBound<FramePacket> for FramePacket {
+     fn to(&self) -> BinaryStream {
+          let mut stream = BinaryStream::new();
+          stream.write_byte(0x80);
+          stream.write_triad(self.seq);
+
+          for f in self.frames.iter() {
+               stream.write_slice(&f.to().get_buffer());
+          }
+          stream
+     }
+}
+
+impl IServerBound<FramePacket> for FramePacket {
+     fn recv(mut stream: BinaryStream) -> FramePacket {
+          let mut packet = FramePacket::new();
+          stream.read_byte();
+          packet.seq = stream.read_triad();
+
+          loop {
+               if stream.get_offset() >= stream.get_length() {
+                    return packet;
+               }
+
+               let offset = stream.get_offset();
+               let frm = Frame::recv(stream.slice(offset - 1, None));
+               packet.frames.push(frm.clone());
+               if frm.to().get_length() + stream.get_offset() >= stream.get_length() {
+                    return packet;
+               } else {
+                    stream.increase_offset(Some(frm.to().get_length()));
+               }
+          }
      }
 }
