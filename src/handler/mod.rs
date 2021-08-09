@@ -89,12 +89,14 @@ impl PacketHandler {
                // todo EG: add implementation for ordering and sequenced frames!
                let online_packet = OnlinePackets::recv(frame.body.read_byte());
 
+               println!("\nPacket Recieved: {:?}", online_packet);
+               println!("Raw stream: {:?}", frame.body);
+
                if online_packet == OnlinePackets::GamePacket {
-                    println!("\n\n\n\nGot a gamepacket!\n\n\n");
                     // todo add a game packet handler for invokation
                     // todo probably make this a box to a fn
                } else {
-                    let mut response = handle_online(connection, online_packet, &mut frame.body);
+                    let mut response = handle_online(connection, online_packet.clone(), &mut frame.body);
 
                     if response.get_length() != 0 {
                          if response.get_length() as u16 > connection.mtu_size {
@@ -107,12 +109,13 @@ impl PacketHandler {
                               new_frame.reliability = Reliability::new(ReliabilityFlag::Unreliable);
                               new_framepk.frames.push(new_frame);
                               new_framepk.seq = self.send_seq;
-
-                              println!("Sent: {:?}", new_framepk.to());
+                              println!("\nSent: {:?}", new_framepk.to());
                               self.send_queue.push_back(new_framepk.to());
                               self.send_seq = self.send_seq + 1;
                          }
                     }
+                    // println!("\nSent: {:?}", response.clone());
+                    // self.send_queue.push_back(response);
                }
           }
      }
@@ -121,6 +124,7 @@ impl PacketHandler {
      /// size and add the frames to the handler queue.
      /// todo FIX THIS
      pub fn fragment(&mut self, connection: &mut Connection, stream: &mut BinaryStream) {
+          println!("\n=== Fragmenting frames is unstable ===");
           let usable_id = self.fragment_id + 1;
 
           if usable_id == 65535 {

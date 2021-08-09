@@ -172,6 +172,7 @@ impl IServerBound<FramePacket> for FramePacket {
                let offset = stream.get_offset();
                let frm = Frame::recv(stream.slice(offset - 1, None));
                packet.frames.push(frm.clone());
+               println!("Got frame: {:?}", frm);
                if frm.to().get_length() + stream.get_offset() >= stream.get_length() {
                     return packet;
                } else {
