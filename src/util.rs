@@ -57,7 +57,13 @@ impl IPacketStreamRead for BinaryStream {
 }
 
 pub fn tokenize_addr(remote: SocketAddr) -> String {
-     let mut address = remote.port().to_string();
-     address.push_str(remote.ip().to_string().as_str());
+     let mut address = remote.ip().to_string();
+     address.push_str(":");
+     address.push_str(remote.port().to_string().as_str());
      return address;
+}
+
+pub fn from_tokenized(remote: String) -> SocketAddr {
+     let parsed: SocketAddr = remote.parse().expect("Could not retrieve address from token.");
+     parsed
 }

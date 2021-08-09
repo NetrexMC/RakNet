@@ -6,12 +6,13 @@ use crate::conn::Connection;
 use crate::frame::*;
 use std::time::SystemTime;
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub enum OnlinePackets {
      ConnectedPing,
      ConnectedPong,
      ConnectionRequest,
      ConnectionAccept,
+     GamePacket,
      FramePacket(u8),
      NewConnection,
      Disconnect,
@@ -27,6 +28,7 @@ impl OnlinePackets {
                0x10 => OnlinePackets::ConnectionAccept,
                0x13 => OnlinePackets::NewConnection,
                0x15 => OnlinePackets::Disconnect,
+               0xfe => OnlinePackets::GamePacket,
                0x80..= 0x8d => OnlinePackets::FramePacket(byte),
                _ => OnlinePackets::UnknownPacket(byte),
           }
@@ -40,6 +42,7 @@ impl OnlinePackets {
                OnlinePackets::ConnectionAccept => 0x10,
                OnlinePackets::NewConnection => 0x13,
                OnlinePackets::Disconnect => 0x15,
+               OnlinePackets::GamePacket => 0xfe,
                OnlinePackets::FramePacket(b) => b,
                OnlinePackets::UnknownPacket(byte) => byte,
           }
@@ -55,6 +58,7 @@ impl std::fmt::Display for OnlinePackets {
                OnlinePackets::ConnectionAccept => write!(f, "{}", self.to_byte()),
                OnlinePackets::NewConnection => write!(f, "{}", self.to_byte()),
                OnlinePackets::Disconnect => write!(f, "{}", self.to_byte()),
+               OnlinePackets::GamePacket => write!(f, "{}", self.to_byte()),
                OnlinePackets::UnknownPacket(byte) => write!(f, "{}", byte),
                OnlinePackets::FramePacket(byte) => write!(f, "{}", byte)
           }
@@ -112,14 +116,14 @@ pub fn handle_online(
                     request_time: request.timestamp,
                     timestamp: SystemTime::now().duration_since(connection.time).unwrap().as_millis() as i64,
                };
-
                accept.to()
           },
+          OnlinePackets::NewConnection => {
+               println!("\n\n\nCONNECTING!!!!\n\n\n\n");
+               BinaryStream::new()
+          },
           OnlinePackets::FramePacket(v) => {
-               let mut frame_packet = FramePacket::recv(stream.clone());
-               for frame in frame_packet.frames.iter_mut() {
-                    handle_online(connection, OnlinePackets::recv(frame.body.read_byte()), &mut frame.body.clone());
-               }
+               println!("Condition should never be met.");
                BinaryStream::new()
           },
           _ => BinaryStream::new(), // TODO: Throw an UnknownPacket here rather than sending an empty binary stream

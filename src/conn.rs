@@ -1,10 +1,9 @@
 use std::net::SocketAddr;
-use std::collections::{VecDeque};
 use std::time::SystemTime;
-use crate::{ Motd };
-use crate::protocol::offline::*;
+use crate::{Motd};
+use crate::frame::{fragment::*, FramePacket, Frame};
+use crate::handler::{PacketHandler};
 use binary_utils::*;
-use crate::online::{handle_online, OnlinePackets};
 
 pub type RecievePacketFn = dyn FnMut(&mut Connection, &mut BinaryStream) -> std::io::Result<()>;
 
@@ -21,37 +20,21 @@ pub trait ConnectionAPI {
 
 #[derive(Clone)]
 pub struct Connection {
-     // read by raknet
-     pub send_queue: VecDeque<BinaryStream>,
      pub connected: bool,
      pub address: SocketAddr,
      pub time: SystemTime,
-     pub motd: Motd
+     pub motd: Motd,
+     pub mtu_size: u16
 }
 
 impl Connection {
      pub fn new(address: SocketAddr, start_time: SystemTime) -> Self {
           Self {
-               send_queue: VecDeque::new(),
                connected: false,
                address,
                time: start_time,
-               motd: Motd::default()
-          }
-     }
-
-     /// Used internally by raknet for **each** packet recieved
-     pub fn receive(&mut self, stream: &mut BinaryStream) {
-          // They are not connected, perform connection sequence
-          if !self.connected {
-               let pk = OfflinePackets::recv(stream.read_byte());
-               let handler = handle_offline(self, pk, stream);
-
-               self.send_queue.push_back(handler.clone());
-          } else {
-               let pk = OnlinePackets::recv(stream.read_byte());
-               let handler = handle_online(self, pk, stream);
-               self.send_queue.push_back(handler.clone());
+               motd: Motd::default(),
+               mtu_size: 0
           }
      }
 }
