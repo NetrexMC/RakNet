@@ -6,7 +6,7 @@ use crate::conn::Connection;
 use crate::frame::*;
 use std::time::SystemTime;
 
-#[derive(Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum OnlinePackets {
      ConnectedPing,
      ConnectedPong,
@@ -90,6 +90,7 @@ pub struct ConnectionAccept {
 impl IClientBound<ConnectionAccept> for ConnectionAccept {
      fn to(&self) -> BinaryStream {
           let mut stream = BinaryStream::new();
+          stream.write_byte(OnlinePackets::ConnectionAccept.to_byte());
           stream.write_address(self.client_address);
           stream.write_short(self.system_index);
           for _ in 0..10 {
@@ -119,7 +120,6 @@ pub fn handle_online(
                accept.to()
           },
           OnlinePackets::NewConnection => {
-               println!("\n\n\nCONNECTING!!!!\n\n\n\n");
                BinaryStream::new()
           },
           OnlinePackets::FramePacket(v) => {

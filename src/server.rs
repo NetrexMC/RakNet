@@ -54,7 +54,7 @@ impl RakNetServer {
           let server_time = Arc::new(self.start_time);
 
           let recv_thread = thread::spawn(move || {
-               let mut buf = [0; 1024];
+               let mut buf = [0; 2048];
 
                loop {
                     let (len, remote) = match server_socket.as_ref().recv_from(&mut buf) {
