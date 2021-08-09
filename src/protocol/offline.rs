@@ -239,6 +239,7 @@ pub fn handle_offline(
                     security: USE_SECURITY,
                };
 
+               connection.mtu_size = request.mtu_size as u16;
                connection.connected = true;
                reply.to()
           }

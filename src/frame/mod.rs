@@ -1,9 +1,11 @@
 pub mod fragment;
 pub mod reliability;
+use binary_utils::{BinaryStream, IBinaryStream, IBufferWrite, IBufferRead};
+use reliability::Reliability;
+use reliability::ReliabilityFlag;
+use fragment::FragmentInfo;
 use crate::{IServerBound, IClientBound};
-use binary_utils::*;
-use reliability::*;
-use fragment::*;
+use crate::conn::*;
 
 #[derive(Clone, Debug)]
 pub struct Frame {
@@ -70,12 +72,10 @@ impl IServerBound<Frame> for Frame {
           }
 
           if fragmented {
-               frame.size = stream.read_ushort();
                frame.fragment_info = Some(FragmentInfo {
                     fragment_size: stream.read_int(),
                     fragment_id: stream.read_ushort(),
                     fragment_index: stream.read_int()
-
                });
           }
 
@@ -130,6 +130,7 @@ impl IClientBound<Frame> for Frame {
      }
 }
 
+#[derive(Debug)]
 pub struct FramePacket {
      pub seq: u32,
      pub frames: Vec<Frame>
