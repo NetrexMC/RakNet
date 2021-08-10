@@ -7,13 +7,13 @@ use binary_utils::*;
 
 #[derive(Copy, Clone, Debug)]
 pub struct FragmentInfo {
-     pub fragment_size: i16,
+     pub fragment_size: i32,
      pub fragment_id: u16,
-     pub fragment_index: i16
+     pub fragment_index: i32
 }
 
 impl FragmentInfo {
-     pub fn new(fragment_size: i16, fragment_id: u16, fragment_index: i16) -> Self {
+     pub fn new(fragment_size: i32, fragment_id: u16, fragment_index: i32) -> Self {
           Self {
                fragment_size,
                fragment_id,
@@ -26,18 +26,18 @@ impl FragmentInfo {
 /// Fragments can be reassembled by the FragmentQueue.
 #[derive(Clone, Debug)]
 pub struct Fragment {
-     index: i16,
+     index: i32,
      buffer: Vec<u8>
 }
 
 impl Fragment {
-     pub fn new(index: i16, buffer: Vec<u8>) -> Self {
+     pub fn new(index: i32, buffer: Vec<u8>) -> Self {
           Self {
                index,
                buffer
           }
      }
-     pub fn get_index(&self) -> i16 {
+     pub fn get_index(&self) -> i32 {
           self.index.clone()
      }
 
@@ -71,7 +71,7 @@ impl FragmentList {
           // create a fragment from a stream
           let frag = Fragment {
                buffer: buf.get_buffer(),
-               index: self.fragments.len() as i16
+               index: self.fragments.len() as i32
           };
 
           self.fragments.push(frag.clone());
@@ -79,7 +79,6 @@ impl FragmentList {
 
      pub fn add_fragment(&mut self, frag: Fragment) {
           self.fragments.push(frag.clone());
-          self.size += 1;
      }
 
      pub fn assemble(&mut self, mtu_size: i16, usable_id: u16) -> Option<Vec<FramePacket>> {
@@ -94,7 +93,7 @@ impl FragmentList {
                let mut index = 0;
                for frag in self.fragments.iter() {
                     let mut frame = Frame::init();
-                    frame.fragment_info = Some(FragmentInfo::new(self.size as i16, usable_id, index));
+                    frame.fragment_info = Some(FragmentInfo::new(self.size as i32, usable_id, index));
                     frame.body = frag.as_stream();
 
                     if framepk.to().get_length() + frame.to().get_length() >= mtu_size as usize {
@@ -115,6 +114,10 @@ impl FragmentList {
      /// Gets the **wanted** size of fragments
      pub fn get_size(&self) -> u64 {
           self.size.clone()
+     }
+
+     pub fn get_remaining_size(&self) -> u64 {
+          (self.size.clone() - self.fragments.len() as u64) as u64
      }
 
      /// Gets the **current** size of fragments

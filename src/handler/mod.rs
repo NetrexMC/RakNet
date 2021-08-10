@@ -1,6 +1,7 @@
 use std::collections::{VecDeque};
 use binary_utils::{BinaryStream, IBinaryStream, IBufferRead, IBufferWrite};
 use crate::{IServerBound, IClientBound};
+use crate::ack::{Ack, Record, SingleRecord};
 use crate::frame::{Frame, FramePacket};
 use crate::fragment::{Fragment, FragmentInfo, FragmentList, FragmentStore};
 use crate::reliability::{Reliability, ReliabilityFlag};
@@ -66,11 +67,11 @@ impl PacketHandler {
                let mut frame_packet = FramePacket::recv(stream.clone());
 
                // todo Handle ack and nack!
-               self.handle_fragments(connection, &mut frame_packet);
+               self.handle_frames(connection, &mut frame_packet);
           }
      }
 
-     pub fn handle_fragments(&mut self, connection: &mut Connection, frame_packet: &mut FramePacket) {
+     pub fn handle_frames(&mut self, connection: &mut Connection, frame_packet: &mut FramePacket) {
           for frame in frame_packet.frames.iter_mut() {
                if frame.fragment_info.is_some() {
                     // the frame is fragmented!
@@ -79,44 +80,57 @@ impl PacketHandler {
                     if self.fragmented.ready(frame.fragment_info.unwrap().fragment_index as u16) {
                          let pk = self.fragmented.assemble_frame(frame.fragment_info.unwrap().fragment_index as u16, connection.mtu_size as i16, self.fragment_id);
                          if pk.is_some() {
-                              self.handle_fragments(connection, &mut pk.unwrap());
+                              for f in pk.unwrap().frames.iter_mut() {
+                                   self.handle_full_frame(connection, f);
+                              }
                               self.fragment_id += 1;
                          }
+                    } else {
+                         println!(
+                              "Frame: {} is not ready! It needs {} more fragments!",
+                              frame.fragment_info.unwrap().fragment_id,
+                              self.fragmented.fragment_table.get(&frame.fragment_info.unwrap().fragment_id).unwrap().get_remaining_size()
+                         );
                     }
+
+                    continue;
                }
 
-               // todo Check if the frames should be recieved, if not purge them
-               // todo EG: add implementation for ordering and sequenced frames!
-               let online_packet = OnlinePackets::recv(frame.body.read_byte());
+               self.handle_full_frame(connection, frame);
+          }
+     }
 
-               println!("\nPacket Recieved: {:?}", online_packet);
-               println!("Raw stream: {:?}", frame.body);
+     fn handle_full_frame(&mut self, connection: &mut Connection, frame: &mut Frame) {
+          // todo Check if the frames should be recieved, if not purge them
+          // todo EG: add implementation for ordering and sequenced frames!
+          let online_packet = OnlinePackets::recv(frame.body.read_byte());
 
-               if online_packet == OnlinePackets::GamePacket {
-                    // todo add a game packet handler for invokation
-                    // todo probably make this a box to a fn
-               } else {
-                    let mut response = handle_online(connection, online_packet.clone(), &mut frame.body);
+          println!("\nPacket Recieved: {:?}", online_packet);
 
-                    if response.get_length() != 0 {
-                         if response.get_length() as u16 > connection.mtu_size {
-                              self.fragment(connection, &mut response)
-                         } else {
-                              let mut new_framepk = FramePacket::new();
-                              let mut new_frame = Frame::init();
+          if online_packet == OnlinePackets::GamePacket {
+               // todo add a game packet handler for invokation
+               // todo probably make this a box to a fn
+               println!("Got a game packet.");
+          } else {
+               let mut response = handle_online(connection, online_packet.clone(), &mut frame.body);
 
-                              new_frame.body = response.clone();
-                              new_frame.reliability = Reliability::new(ReliabilityFlag::Unreliable);
-                              new_framepk.frames.push(new_frame);
-                              new_framepk.seq = self.send_seq;
-                              println!("\nSent: {:?}", new_framepk.to());
-                              self.send_queue.push_back(new_framepk.to());
-                              self.send_seq = self.send_seq + 1;
-                         }
+               if response.get_length() != 0 {
+                    if response.get_length() as u16 > connection.mtu_size {
+                         self.fragment(connection, &mut response)
+                    } else {
+                         let mut new_framepk = FramePacket::new();
+                         let mut new_frame = Frame::init();
+
+                         new_frame.body = response.clone();
+                         new_frame.reliability = Reliability::new(ReliabilityFlag::Unreliable);
+                         new_framepk.frames.push(new_frame);
+                         new_framepk.seq = self.send_seq;
+                         self.send_queue.push_back(new_framepk.to());
+                         self.send_seq = self.send_seq + 1;
                     }
-                    // println!("\nSent: {:?}", response.clone());
-                    // self.send_queue.push_back(response);
                }
+               // println!("\nSent: {:?}", response.clone());
+               // self.send_queue.push_back(response);
           }
      }
 
@@ -124,7 +138,6 @@ impl PacketHandler {
      /// size and add the frames to the handler queue.
      /// todo FIX THIS
      pub fn fragment(&mut self, connection: &mut Connection, stream: &mut BinaryStream) {
-          println!("\n=== Fragmenting frames is unstable ===");
           let usable_id = self.fragment_id + 1;
 
           if usable_id == 65535 {
@@ -132,11 +145,10 @@ impl PacketHandler {
           }
 
           let mut fragment_list = FragmentList::new();
-          let mut index: u16 = 0;
+          let mut index: i32 = 0;
           let mut offset: usize = stream.get_length();
 
           loop {
-               println!("Offset: {}", offset);
                if offset == 0 {
                     break;
                }
@@ -150,7 +162,7 @@ impl PacketHandler {
                     offset -= stream.get_length();
                }
 
-               let frag = Fragment::new(index as i16, next.get_buffer());
+               let frag = Fragment::new(index as i32, next.get_buffer());
 
                fragment_list.add_fragment(frag);
                index += 1;

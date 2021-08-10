@@ -53,6 +53,7 @@ impl IServerBound<Frame> for Frame {
           let mut frame: Frame = Frame::init();
           let flags = stream.read_byte();
 
+          frame.flags = flags;
           frame.reliability = Reliability::from_bit(flags);
 
           let fragmented = (flags & 0x10) > 0;
@@ -172,7 +173,6 @@ impl IServerBound<FramePacket> for FramePacket {
                let offset = stream.get_offset();
                let frm = Frame::recv(stream.slice(offset - 1, None));
                packet.frames.push(frm.clone());
-               println!("Got frame: {:?}", frm);
                if frm.to().get_length() + stream.get_offset() >= stream.get_length() {
                     return packet;
                } else {
