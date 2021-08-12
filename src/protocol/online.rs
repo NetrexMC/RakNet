@@ -1,10 +1,10 @@
+#![allow(dead_code)]
 use std::fmt::{Formatter, Result as FResult};
 use crate::{IServerBound, IClientBound, IPacketStreamWrite};
 use binary_utils::{BinaryStream, IBufferRead, IBinaryStream, IBufferWrite};
 use std::net::{SocketAddr, IpAddr, Ipv4Addr};
 use crate::conn::Connection;
-use crate::frame::*;
-use std::time::{SystemTime, Duration};
+use std::time::{SystemTime};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum OnlinePackets {
@@ -158,7 +158,7 @@ pub fn handle_online(
                };
                pong.to()
           }
-          OnlinePackets::FramePacket(v) => {
+          OnlinePackets::FramePacket(_v) => {
                println!("Condition should never be met.");
                BinaryStream::new()
           },

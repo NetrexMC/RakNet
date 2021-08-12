@@ -2,10 +2,8 @@ pub mod fragment;
 pub mod reliability;
 use binary_utils::{BinaryStream, IBinaryStream, IBufferWrite, IBufferRead};
 use reliability::Reliability;
-use reliability::ReliabilityFlag;
 use fragment::FragmentInfo;
 use crate::{IServerBound, IClientBound};
-use crate::conn::*;
 
 #[derive(Clone, Debug)]
 pub struct Frame {
@@ -82,6 +80,8 @@ impl IServerBound<Frame> for Frame {
           }
 
           frame.size = bit_length / 8;
+
+          println!("{:?}", stream);
 
           if stream.is_within_bounds(frame.size as usize) {
                let inner_buffer = stream.read_slice(Some(frame.size as usize));

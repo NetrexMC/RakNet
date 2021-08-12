@@ -1,7 +1,7 @@
 // frame queues are designed to handle split packets,
 // and send packets in parts as well.
-use crate::protocol::{Packet, IClientBound, IServerBound};
-use super::{Frame, FramePacket, Reliability, ReliabilityFlag};
+use crate::protocol::IClientBound;
+use super::{Frame, FramePacket};
 use std::collections::HashMap;
 use binary_utils::*;
 
@@ -153,6 +153,15 @@ impl FragmentList {
      pub fn sort(&mut self) {
           self.fragments.sort_by(|a, b| a.get_index().partial_cmp(&b.get_index()).unwrap());
      }
+
+     pub fn includes(&self, idx: i32) -> bool {
+          for frag in self.fragments.iter() {
+               if frag.index == idx {
+                    return true;
+               }
+          }
+          false
+     }
 }
 
 /// Stores fragmented frames by their frame index.
@@ -164,8 +173,8 @@ impl FragmentList {
 #[derive(Clone, Debug)]
 pub struct FragmentStore {
      /// A map of current fragments.
-     pub fragment_table: HashMap<u16, FragmentList>,
-     sequence: u16
+     pub fragment_table: HashMap<i32, FragmentList>,
+     sequence: i32
 }
 
 impl FragmentStore {
@@ -176,7 +185,7 @@ impl FragmentStore {
           }
      }
 
-     pub fn get(&self, idx: u16) -> Option<FragmentList> {
+     pub fn get(&self, idx: i32) -> Option<FragmentList> {
           match self.fragment_table.get(&idx) {
                Some(v) => Some(v.clone()),
                None => None
@@ -187,7 +196,7 @@ impl FragmentStore {
      /// Do note, this does not make them frames.
      pub fn add_stream(&mut self, buf: BinaryStream) {
           if !self.fragment_table.contains_key(&self.sequence) {
-               let mut list = FragmentList::new();
+               let list = FragmentList::new();
                self.fragment_table.insert(self.sequence, list);
           } else {
                self.fragment_table.get_mut(&self.sequence).unwrap().add_stream(buf);
@@ -195,23 +204,23 @@ impl FragmentStore {
      }
 
      pub fn add_frame(&mut self, frame: Frame) {
-          if !self.fragment_table.contains_key(&frame.fragment_info.unwrap().fragment_id) {
+          if !self.fragment_table.contains_key(&frame.fragment_info.unwrap().fragment_id.into()) {
                let mut list = FragmentList::new();
                list.add_fragment(Fragment {
                     index: frame.fragment_info.unwrap().fragment_index,
                     buffer: frame.body.get_buffer()
                });
                list.size = frame.fragment_info.unwrap().fragment_size as u64;
-               self.fragment_table.insert(frame.fragment_info.unwrap().fragment_id, list);
+               self.fragment_table.insert(frame.fragment_info.unwrap().fragment_id.into(), list);
           } else {
-               self.fragment_table.get_mut(&frame.fragment_info.unwrap().fragment_id).unwrap().add_fragment(Fragment {
+               self.fragment_table.get_mut(&frame.fragment_info.unwrap().fragment_id.into()).unwrap().add_fragment(Fragment {
                     index: frame.fragment_info.unwrap().fragment_index,
                     buffer: frame.body.get_buffer()
                });
           }
      }
 
-     pub fn ready(&mut self, index: u16) -> bool {
+     pub fn ready(&mut self, index: i32) -> bool {
           if self.fragment_table.contains_key(&index) {
                let fragment_list = self.fragment_table.get_mut(&index).unwrap();
                return fragment_list.fragments.len() as u64 == fragment_list.size;
@@ -223,14 +232,14 @@ impl FragmentStore {
      /// Assembles a FramePacket from the given fragment index
      /// assuming that all fragments have been sent.
      pub fn assemble_frame(&mut self, index: u16, size: i16, usable_id: u16) -> Option<FramePacket> {
-          if !self.fragment_table.contains_key(&index) {
+          if !self.fragment_table.contains_key(&index.into()) {
                None
           } else {
-               let assembly = self.fragment_table.get_mut(&index).unwrap().assemble(size, usable_id);
+               let assembly = self.fragment_table.get_mut(&index.into()).unwrap().assemble(size, usable_id);
                let mut frame_pk = FramePacket::new();
 
                if assembly.is_some() {
-                    self.fragment_table.remove(&index);
+                    self.fragment_table.remove(&index.into());
 
                     for fpk in assembly.unwrap().into_iter() {
                          for frame in fpk.frames {
@@ -243,5 +252,13 @@ impl FragmentStore {
                     None
                }
           }
+     }
+
+     pub fn has_frame_index(&self, id: i32, index: i32) -> bool {
+          if self.fragment_table.contains_key(&id) {
+               let list = self.fragment_table.get(&id).unwrap();
+               return list.includes(index);
+          }
+          false
      }
 }

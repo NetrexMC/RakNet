@@ -1,9 +1,9 @@
 use std::collections::{VecDeque};
-use binary_utils::{BinaryStream, IBinaryStream, IBufferRead, IBufferWrite};
+use binary_utils::{BinaryStream, IBinaryStream, IBufferRead};
 use crate::{IServerBound, IClientBound};
-use crate::ack::{Ack, Record, SingleRecord, queue::AckQueue};
+use crate::ack::{Ack, queue::AckQueue};
 use crate::frame::{Frame, FramePacket};
-use crate::fragment::{Fragment, FragmentInfo, FragmentList, FragmentStore};
+use crate::fragment::{Fragment, FragmentList, FragmentStore};
 use crate::reliability::{Reliability, ReliabilityFlag};
 use crate::conn::{Connection};
 use crate::protocol::offline::*;
@@ -44,8 +44,8 @@ impl PacketHandler {
                recv_seq: 0,
                send_seq: 0,
                fragment_id: 0,
-               nack: AckQueue::new(),
-               ack: AckQueue::new()
+               nack: AckQueue::new(false),
+               ack: AckQueue::new(true)
           }
      }
 
@@ -58,9 +58,8 @@ impl PacketHandler {
                // this packet is almost always a frame packet
                let online_packet = OnlinePackets::recv(stream.read_byte());
 
-               println!("Found Packet: {:?}", online_packet);
-
                if is_ack_or_nack(online_packet.to_byte()) {
+                    stream.set_offset(0);
                     return self.handle_ack(connection, stream);
                }
 
@@ -75,10 +74,13 @@ impl PacketHandler {
           }
      }
 
-     pub fn handle_ack(&mut self, connection: &mut Connection, packet: &mut BinaryStream) {
+     pub fn handle_ack(&mut self, _connection: &mut Connection, packet: &mut BinaryStream) {
+          let _got = Ack::recv(packet.clone());
+          // println!("Got ack: {:?}", got);
           if !self.ack.is_empty() {
                let respond_with = self.ack.make_ack();
                self.send_queue.push_back(respond_with.to());
+               // println!("Responding to ack with: {:?}", respond_with);
           }
      }
 
@@ -87,22 +89,31 @@ impl PacketHandler {
           for frame in frame_packet.frames.iter_mut() {
                if frame.fragment_info.is_some() {
                     // the frame is fragmented!
+                    let frag_list = &self.fragmented.get(frame.fragment_info.unwrap().fragment_index);
+                    if self.fragmented.has_frame_index(frame.fragment_info.unwrap().fragment_id.into(), frame.fragment_info.unwrap().fragment_index) {
+                         println!(
+                              "Frame [DUPLICATE]: {} fragments needed for frame: {}",
+                              frag_list.clone().unwrap().get_remaining_size(),
+                              frame.fragment_info.unwrap().fragment_id,
+                         );
+                         continue;
+                    }
+
                     self.fragmented.add_frame(frame.clone());
-                    let frag_list = &self.fragmented.get(frame.fragment_info.unwrap().fragment_index as u16);
 
                     if frag_list.is_some() {
                          let mut list = frag_list.clone().unwrap();
                          let pk = list.reassemble_frame();
                          if pk.is_some() {
                               self.handle_full_frame(connection, &mut pk.unwrap());
-                              self.fragment_id += 1;
+                         } else {
+                              println!(
+                                   "Frame: {} -> Got {} of {} fragments.",
+                                   frame.fragment_info.unwrap().fragment_id,
+                                   frag_list.clone().unwrap().get_size() - frag_list.clone().unwrap().get_remaining_size(),
+                                   frag_list.clone().unwrap().get_size(),
+                              );
                          }
-                    } else {
-                         println!(
-                              "Frame: {} is not ready! It needs {} more fragments!",
-                              frame.fragment_info.unwrap().fragment_id,
-                              self.fragmented.fragment_table.get(&frame.fragment_info.unwrap().fragment_id).unwrap().get_remaining_size()
-                         );
                     }
 
                     continue;
@@ -117,7 +128,7 @@ impl PacketHandler {
           // todo EG: add implementation for ordering and sequenced frames!
           let online_packet = OnlinePackets::recv(frame.body.read_byte());
 
-          println!("\nPacket Recieved: {:?}", online_packet);
+          // println!("Packet Recieved: {:?}", online_packet);
 
           if online_packet == OnlinePackets::GamePacket {
                // todo add a game packet handler for invokation
