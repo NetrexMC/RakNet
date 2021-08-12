@@ -72,6 +72,7 @@ impl IServerBound<Frame> for Frame {
                frame.order_channel = Some(stream.read_byte());
           }
 
+
           if fragmented {
                frame.fragment_info = Some(FragmentInfo {
                     fragment_size: stream.read_int(),
@@ -162,7 +163,6 @@ impl IClientBound<FramePacket> for FramePacket {
 impl IServerBound<FramePacket> for FramePacket {
      fn recv(mut stream: BinaryStream) -> FramePacket {
           let mut packet = FramePacket::new();
-          stream.read_byte();
           packet.seq = stream.read_triad();
 
           loop {
@@ -171,7 +171,7 @@ impl IServerBound<FramePacket> for FramePacket {
                }
 
                let offset = stream.get_offset();
-               let frm = Frame::recv(stream.slice(offset - 1, None));
+               let frm = Frame::recv(stream.slice(offset, None));
                packet.frames.push(frm.clone());
                if frm.to().get_length() + stream.get_offset() >= stream.get_length() {
                     return packet;
