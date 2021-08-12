@@ -33,8 +33,7 @@ impl Reliability {
                ReliabilityFlag::ReliableSeq => 4,
                ReliabilityFlag::UnreliableAck => 5,
                ReliabilityFlag::ReliableAck => 6,
-               ReliabilityFlag::ReliableOrdAck => 7,
-               _ => 0
+               ReliabilityFlag::ReliableOrdAck => 7
           }
      }
 

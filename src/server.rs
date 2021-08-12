@@ -50,7 +50,6 @@ impl RakNetServer {
           let handlers_recv = Arc::clone(&self.handlers);
           let handlers_send = Arc::clone(&self.handlers);
           let clients_recv = Arc::clone(&self.connections);
-          let clients_send = Arc::clone(&self.connections);
           let server_time = Arc::new(self.start_time);
 
           let recv_thread = thread::spawn(move || {
@@ -104,7 +103,7 @@ impl RakNetServer {
                          for pk in handler.send_queue.clone().into_iter() {
                               match server_socket_1.as_ref().send_to(pk.get_buffer().as_slice(), &from_tokenized(addr.clone())) {
                                    // Add proper handling!
-                                   Err(e) => continue, //println!("Error Sending Packet [{}]: ", e),
+                                   Err(_) => continue, //println!("Error Sending Packet [{}]: ", e),
                                    Ok(_) => continue,//println!("\nSent Packet [{}]: {:?}", addr, pk)
                               }
                          }

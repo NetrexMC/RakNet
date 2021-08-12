@@ -1,38 +1,35 @@
 use std::collections::HashMap;
-use super::{Ack, Record, SingleRecord, RangeRecord};
-use binary_utils::{BinaryStream, IBinaryStream};
+use super::{Ack, Record, SingleRecord};
+use binary_utils::{BinaryStream};
 /// Stores sequence numbers and their relevant data sets.
 #[derive(Clone)]
 pub struct AckQueue {
      current: u64,
-     map: HashMap<u64, BinaryStream>
+     map: HashMap<u64, BinaryStream>,
+     is_ack: bool
 }
 
 impl AckQueue {
-     pub fn new() -> Self {
+     pub fn new(is_ack: bool) -> Self {
           Self {
                current: 0,
-               map: HashMap::new()
+               map: HashMap::new(),
+               is_ack
           }
      }
 
      pub fn make_ack(&mut self) -> Ack {
-          let mut first = 0;
-          for (k, _v) in self.map.iter() {
-               if first == 0 {
-                    first = *k;
-               }
-          }
-          let record = RangeRecord {
-               start: first as u32,
-               end: self.map.len() as u32
-          };
+          let mut records: Vec<Record> = Vec::new();
 
-          for x in record.start..record.end {
-               self.drop_seq(x as u64);
+          for (seq, _) in self.map.clone().iter() {
+               self.drop_seq(*seq);
+               records.push(Record::Single(SingleRecord { sequence: *seq as u32 }));
           }
 
-          Ack::new(((record.start + record.end) as u16) / 2, Record::Range(record))
+          let mut ack = Ack::new(records.len() as u16, self.is_ack);
+          ack.records = records;
+
+          ack
      }
 
      pub fn increment_seq(&mut self, by: Option<u64>) {
