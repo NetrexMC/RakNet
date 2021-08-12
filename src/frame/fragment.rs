@@ -81,6 +81,26 @@ impl FragmentList {
           self.fragments.push(frag.clone());
      }
 
+     /// Reassembles a list of fragments,
+     /// assumes that you want to join the fragments into a single frame
+     pub fn reassemble_frame(&mut self) -> Option<Frame> {
+          // sort the frames
+          self.sort();
+
+          if !self.is_ready() {
+               None
+          } else {
+               let mut frame = Frame::init();
+               for frag in self.fragments.iter() {
+                    frame.body.write_slice(&frag.get_buffer());
+               }
+
+               // we can now drop the fragment from the table
+
+               Some(frame)
+          }
+     }
+
      pub fn assemble(&mut self, mtu_size: i16, usable_id: u16) -> Option<Vec<FramePacket>> {
           let mut framepks = Vec::new();
           let mut framepk = FramePacket::new();
@@ -101,7 +121,6 @@ impl FragmentList {
                          framepk = FramePacket::new();
                     }
 
-                    framepk.frames.push(frame);
                     index += 1;
                }
 
@@ -154,6 +173,13 @@ impl FragmentStore {
           FragmentStore {
                fragment_table: HashMap::new(),
                sequence: 0
+          }
+     }
+
+     pub fn get(&self, idx: u16) -> Option<FragmentList> {
+          match self.fragment_table.get(&idx) {
+               Some(v) => Some(v.clone()),
+               None => None
           }
      }
 

@@ -4,7 +4,7 @@ use binary_utils::{BinaryStream, IBufferRead, IBinaryStream, IBufferWrite};
 use std::net::{SocketAddr, IpAddr, Ipv4Addr};
 use crate::conn::Connection;
 use crate::frame::*;
-use std::time::SystemTime;
+use std::time::{SystemTime, Duration};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum OnlinePackets {
@@ -102,6 +102,33 @@ impl IClientBound<ConnectionAccept> for ConnectionAccept {
      }
 }
 
+pub struct ConnectedPing {
+     time: i64
+}
+
+impl IServerBound<ConnectedPing> for ConnectedPing {
+     fn recv(mut stream: BinaryStream) -> ConnectedPing {
+          ConnectedPing {
+               time: stream.read_long()
+          }
+     }
+}
+
+pub struct ConnectedPong {
+     ping_time: i64,
+     pong_time: i64
+}
+
+impl IClientBound<ConnectedPong> for ConnectedPong {
+     fn to(&self) -> BinaryStream {
+          let mut stream = BinaryStream::new();
+          stream.write_byte(OnlinePackets::ConnectedPong.to_byte());
+          stream.write_long(self.ping_time);
+          stream.write_long(SystemTime::now().elapsed().unwrap().as_millis() as i64);
+          stream
+     }
+}
+
 pub fn handle_online(
      connection: &mut Connection,
      pk: OnlinePackets,
@@ -122,6 +149,15 @@ pub fn handle_online(
           OnlinePackets::NewConnection => {
                BinaryStream::new()
           },
+          OnlinePackets::ConnectedPing => {
+               let request = ConnectedPing::recv(stream.clone());
+               println!("Responding to ping");
+               let pong = ConnectedPong {
+                    ping_time: request.time,
+                    pong_time: 0
+               };
+               pong.to()
+          }
           OnlinePackets::FramePacket(v) => {
                println!("Condition should never be met.");
                BinaryStream::new()
