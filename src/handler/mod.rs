@@ -1,7 +1,7 @@
 use std::collections::{VecDeque};
 use binary_utils::{BinaryStream, IBinaryStream, IBufferRead, IBufferWrite};
 use crate::{IServerBound, IClientBound};
-use crate::ack::{Ack, Record, SingleRecord};
+use crate::ack::{Ack, Record, SingleRecord, queue::AckQueue};
 use crate::frame::{Frame, FramePacket};
 use crate::fragment::{Fragment, FragmentInfo, FragmentList, FragmentStore};
 use crate::reliability::{Reliability, ReliabilityFlag};
@@ -32,8 +32,8 @@ pub struct PacketHandler {
      fragment_id: u16,
      recv_seq: u32,
      send_seq: u32,
-     //ack: ReliableQueue,
-     //nack: ReliableQueue
+     ack: AckQueue,
+     nack: AckQueue
 }
 
 impl PacketHandler {
@@ -43,7 +43,9 @@ impl PacketHandler {
                fragmented: FragmentStore::new(),
                recv_seq: 0,
                send_seq: 0,
-               fragment_id: 0
+               fragment_id: 0,
+               nack: AckQueue::new(),
+               ack: AckQueue::new()
           }
      }
 
@@ -57,7 +59,7 @@ impl PacketHandler {
                let online_packet = OnlinePackets::recv(stream.read_byte());
 
                if is_ack_or_nack(online_packet.to_byte()) {
-                    return;
+                    return self.handle_ack(connection, stream);
                }
 
                if !match online_packet { OnlinePackets::FramePacket(_) => true, _ => false } {
@@ -71,18 +73,23 @@ impl PacketHandler {
           }
      }
 
+     pub fn handle_ack(&mut self, connection: &mut Connection, packet: &mut BinaryStream) {
+          println!("Could handle ack, choosing not to: {:?}", Ack::recv(packet.clone()));
+     }
+
      pub fn handle_frames(&mut self, connection: &mut Connection, frame_packet: &mut FramePacket) {
           for frame in frame_packet.frames.iter_mut() {
+               self.send_queue.push_back(Ack::new(1, Record::Single(SingleRecord { sequence: frame_packet.seq })).to());
                if frame.fragment_info.is_some() {
                     // the frame is fragmented!
                     self.fragmented.add_frame(frame.clone());
+                    let frag_list = &self.fragmented.get(frame.fragment_info.unwrap().fragment_index as u16);
 
-                    if self.fragmented.ready(frame.fragment_info.unwrap().fragment_index as u16) {
-                         let pk = self.fragmented.assemble_frame(frame.fragment_info.unwrap().fragment_index as u16, connection.mtu_size as i16, self.fragment_id);
+                    if frag_list.is_some() {
+                         let mut list = frag_list.clone().unwrap();
+                         let pk = list.reassemble_frame();
                          if pk.is_some() {
-                              for f in pk.unwrap().frames.iter_mut() {
-                                   self.handle_full_frame(connection, f);
-                              }
+                              self.handle_full_frame(connection, &mut pk.unwrap());
                               self.fragment_id += 1;
                          }
                     } else {
@@ -171,13 +178,13 @@ impl PacketHandler {
 
           let packets = fragment_list.assemble(connection.mtu_size as i16, usable_id);
           println!("Packet: {:?}", packets);
-          if packets.is_some() {
-               for packet in packets.unwrap().iter_mut() {
-                    packet.seq = self.send_seq + 1;
+          // if packets.is_some() {
+          //      for packet in packets.unwrap().iter_mut() {
+          //           packet.seq = self.send_seq + 1;
 
-                    self.send_queue.push_back(packet.to());
-               }
-          }
+          //           self.send_queue.push_back(packet.to());
+          //      }
+          // }
 
           self.fragment_id += 1;
      }

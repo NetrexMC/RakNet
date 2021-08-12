@@ -1,33 +1,53 @@
+pub mod queue;
 use crate::{IClientBound, IServerBound};
 use binary_utils::*;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum Record {
      Single(SingleRecord),
      Range(RangeRecord)
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct SingleRecord {
      pub sequence: u32
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct RangeRecord {
      pub start: u32,
      pub end: u32
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Ack {
      pub count: u16,
      pub record: Record
+}
+
+impl Ack {
+     pub fn new(count: u16, record: Record) -> Self {
+          Self {
+               count,
+               record
+          }
+     }
 }
 
 pub struct NAck {
      pub count: u16,
      pub record: Record
 }
+
+impl NAck {
+     pub fn new(count: u16, record: Record) -> Self {
+          Self {
+               count,
+               record
+          }
+     }
+}
+
 
 pub enum AckIds {
      Acknowledge = 0xc0,
