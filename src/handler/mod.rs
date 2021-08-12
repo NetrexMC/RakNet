@@ -58,6 +58,8 @@ impl PacketHandler {
                // this packet is almost always a frame packet
                let online_packet = OnlinePackets::recv(stream.read_byte());
 
+               println!("Found Packet: {:?}", online_packet);
+
                if is_ack_or_nack(online_packet.to_byte()) {
                     return self.handle_ack(connection, stream);
                }
@@ -74,12 +76,15 @@ impl PacketHandler {
      }
 
      pub fn handle_ack(&mut self, connection: &mut Connection, packet: &mut BinaryStream) {
-          println!("Could handle ack, choosing not to: {:?}", Ack::recv(packet.clone()));
+          if !self.ack.is_empty() {
+               let respond_with = self.ack.make_ack();
+               self.send_queue.push_back(respond_with.to());
+          }
      }
 
      pub fn handle_frames(&mut self, connection: &mut Connection, frame_packet: &mut FramePacket) {
+          self.ack.push_seq(frame_packet.seq as u64, frame_packet.to().clone());
           for frame in frame_packet.frames.iter_mut() {
-               self.send_queue.push_back(Ack::new(1, Record::Single(SingleRecord { sequence: frame_packet.seq })).to());
                if frame.fragment_info.is_some() {
                     // the frame is fragmented!
                     self.fragmented.add_frame(frame.clone());
