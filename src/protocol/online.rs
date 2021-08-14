@@ -124,7 +124,7 @@ impl IClientBound<ConnectedPong> for ConnectedPong {
           let mut stream = BinaryStream::new();
           stream.write_byte(OnlinePackets::ConnectedPong.to_byte());
           stream.write_long(self.ping_time);
-          stream.write_long(SystemTime::now().elapsed().unwrap().as_millis() as i64);
+          stream.write_long(self.pong_time);
           stream
      }
 }
@@ -153,7 +153,7 @@ pub fn handle_online(
                let request = ConnectedPing::recv(stream.clone());
                let pong = ConnectedPong {
                     ping_time: request.time,
-                    pong_time: 0
+                    pong_time: SystemTime::now().duration_since(connection.time).unwrap().as_millis() as i64
                };
                pong.to()
           },
