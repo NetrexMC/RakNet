@@ -5,7 +5,7 @@ use crate::ack::{Ack, Record, queue::AckQueue, queue::NAckQueue};
 use crate::frame::{Frame, FramePacket};
 use crate::fragment::{Fragment, FragmentList, FragmentStore};
 use crate::reliability::{Reliability, ReliabilityFlag};
-use crate::conn::{Connection};
+use crate::conn::{Connection, ConnectionAPI};
 use crate::protocol::offline::*;
 use crate::online::{handle_online, OnlinePackets};
 use crate::ack::is_ack_or_nack;
@@ -50,7 +50,7 @@ impl PacketHandler {
      }
 
      pub fn recv(&mut self, connection: &mut Connection, stream: &mut BinaryStream) {
-          if !connection.connected {
+          if connection.state.is_disconnected() {
                let pk = OfflinePackets::recv(stream.read_byte());
                let handler = handle_offline(connection, pk, stream);
                self.send_queue.push_back(handler);
@@ -147,12 +147,8 @@ impl PacketHandler {
           // todo EG: add implementation for ordering and sequenced frames!
           let online_packet = OnlinePackets::recv(frame.body.read_byte());
 
-          println!("Recieved: {:?}", online_packet);
-
           if online_packet == OnlinePackets::GamePacket {
-               // todo add a game packet handler for invokation
-               // todo probably make this a box to a fn
-               println!("-> Got a game packet, Netrex would have invoked this.");
+               connection.recv.as_ref()(connection, &mut frame.body);
           } else {
                let mut response = handle_online(connection, online_packet.clone(), &mut frame.body);
 

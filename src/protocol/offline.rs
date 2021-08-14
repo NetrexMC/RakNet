@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use super::{IClientBound, IServerBound};
-use crate::conn::Connection;
+use crate::conn::{Connection, ConnectionState};
 use crate::{IPacketStreamRead, IPacketStreamWrite, USE_SECURITY, RakNetVersion};
 use crate::{Motd, SERVER_ID};
 use binary_utils::{stream::*, IBufferRead, IBufferWrite};
@@ -240,7 +240,7 @@ pub fn handle_offline(
                };
 
                connection.mtu_size = request.mtu_size as u16;
-               connection.connected = true;
+               connection.state = ConnectionState::Connecting;
                reply.to()
           }
           _ => BinaryStream::new(), //TODO: Throw an UnknownPacket here rather than sending an empty binary stream
