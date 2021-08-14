@@ -1,7 +1,7 @@
 use std::collections::{VecDeque};
 use binary_utils::{BinaryStream, IBinaryStream, IBufferRead};
 use crate::{IServerBound, IClientBound};
-use crate::ack::{Ack, queue::AckQueue};
+use crate::ack::{Ack, Record, queue::AckQueue, queue::NAckQueue};
 use crate::frame::{Frame, FramePacket};
 use crate::fragment::{Fragment, FragmentList, FragmentStore};
 use crate::reliability::{Reliability, ReliabilityFlag};
@@ -33,7 +33,7 @@ pub struct PacketHandler {
      recv_seq: u32,
      send_seq: u32,
      ack: AckQueue,
-     nack: AckQueue
+     nack: NAckQueue
 }
 
 impl PacketHandler {
@@ -44,8 +44,8 @@ impl PacketHandler {
                recv_seq: 0,
                send_seq: 0,
                fragment_id: 0,
-               nack: AckQueue::new(false),
-               ack: AckQueue::new(true)
+               ack: AckQueue::new(),
+               nack: NAckQueue::new()
           }
      }
 
@@ -70,70 +70,89 @@ impl PacketHandler {
                let mut frame_packet = FramePacket::recv(stream.clone());
 
                // todo Handle ack and nack!
+               // todo REMOVE THIS HACK
+               self.handle_ack(connection, &mut Ack::new(0, false).to());
                self.handle_frames(connection, &mut frame_packet);
           }
      }
 
      pub fn handle_ack(&mut self, _connection: &mut Connection, packet: &mut BinaryStream) {
-          let _got = Ack::recv(packet.clone());
-          // println!("Got ack: {:?}", got);
+          let got = Ack::recv(packet.clone());
+
+          for record in got.records {
+               if record.is_single() {
+                    let sequence = match record {
+                         Record::Single(rec) => rec.sequence,
+                         _ => continue
+                    };
+
+                    if !self.ack.has_seq(sequence) {
+                         self.nack.push_seq(sequence);
+                    }
+               } else {
+                    let range = match record {
+                         Record::Range(rec) => rec,
+                         _ => continue
+                    };
+
+                    let sequences = range.get_sequences();
+
+                    for sequence in sequences {
+                         if !self.ack.has_seq(sequence) {
+                              self.nack.push_seq(sequence);
+                         }
+                    }
+               }
+          }
+
           if !self.ack.is_empty() {
                let respond_with = self.ack.make_ack();
                self.send_queue.push_back(respond_with.to());
-               // println!("Responding to ack with: {:?}", respond_with);
+               // println!("Sending ACK: {:?}", respond_with);
+          }
+
+          if !self.nack.is_empty() {
+               let respond_with = self.nack.make_nack();
+               self.send_queue.push_back(respond_with.to());
+               // println!("Sending NACK: {:?}", respond_with);
           }
      }
 
      pub fn handle_frames(&mut self, connection: &mut Connection, frame_packet: &mut FramePacket) {
-          self.ack.push_seq(frame_packet.seq as u64, frame_packet.to().clone());
+          self.ack.push_seq(frame_packet.seq, frame_packet.to());
           for frame in frame_packet.frames.iter_mut() {
                if frame.fragment_info.is_some() {
                     // the frame is fragmented!
-                    let frag_list = &self.fragmented.get(frame.fragment_info.unwrap().fragment_index);
-                    if self.fragmented.has_frame_index(frame.fragment_info.unwrap().fragment_id.into(), frame.fragment_info.unwrap().fragment_index) {
-                         println!(
-                              "Frame [DUPLICATE]: {} fragments needed for frame: {}",
-                              frag_list.clone().unwrap().get_remaining_size(),
-                              frame.fragment_info.unwrap().fragment_id,
-                         );
-                         continue;
-                    }
-
                     self.fragmented.add_frame(frame.clone());
+                    let frag_list = &self.fragmented.get(frame.fragment_info.unwrap().fragment_id);
 
                     if frag_list.is_some() {
                          let mut list = frag_list.clone().unwrap();
                          let pk = list.reassemble_frame();
                          if pk.is_some() {
                               self.handle_full_frame(connection, &mut pk.unwrap());
-                         } else {
-                              println!(
-                                   "Frame: {} -> Got {} of {} fragments.",
-                                   frame.fragment_info.unwrap().fragment_id,
-                                   frag_list.clone().unwrap().get_size() - frag_list.clone().unwrap().get_remaining_size(),
-                                   frag_list.clone().unwrap().get_size(),
-                              );
+                              self.fragmented.remove(frame.fragment_info.unwrap().fragment_id.into());
                          }
                     }
-
                     continue;
+               } else {
+                    self.handle_full_frame(connection, frame);
                }
-
-               self.handle_full_frame(connection, frame);
           }
      }
 
+     /// Handles the full frame from the client.
      fn handle_full_frame(&mut self, connection: &mut Connection, frame: &mut Frame) {
           // todo Check if the frames should be recieved, if not purge them
           // todo EG: add implementation for ordering and sequenced frames!
           let online_packet = OnlinePackets::recv(frame.body.read_byte());
 
-          // println!("Packet Recieved: {:?}", online_packet);
+          println!("Recieved: {:?}", online_packet);
 
           if online_packet == OnlinePackets::GamePacket {
                // todo add a game packet handler for invokation
                // todo probably make this a box to a fn
-               println!("Got a game packet.");
+               println!("-> Got a game packet, Netrex would have invoked this.");
           } else {
                let mut response = handle_online(connection, online_packet.clone(), &mut frame.body);
 
@@ -152,6 +171,7 @@ impl PacketHandler {
                          self.send_seq = self.send_seq + 1;
                     }
                }
+
                // println!("\nSent: {:?}", response.clone());
                // self.send_queue.push_back(response);
           }
@@ -190,10 +210,8 @@ impl PacketHandler {
                fragment_list.add_fragment(frag);
                index += 1;
           }
-          println!("List: {:?}", fragment_list);
 
           let packets = fragment_list.assemble(connection.mtu_size as i16, usable_id);
-          println!("Packet: {:?}", packets);
           // if packets.is_some() {
           //      for packet in packets.unwrap().iter_mut() {
           //           packet.seq = self.send_seq + 1;

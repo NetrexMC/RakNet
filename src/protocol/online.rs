@@ -151,13 +151,12 @@ pub fn handle_online(
           },
           OnlinePackets::ConnectedPing => {
                let request = ConnectedPing::recv(stream.clone());
-               println!("Responding to ping");
                let pong = ConnectedPong {
                     ping_time: request.time,
                     pong_time: 0
                };
                pong.to()
-          }
+          },
           OnlinePackets::FramePacket(_v) => {
                println!("Condition should never be met.");
                BinaryStream::new()

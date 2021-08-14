@@ -78,7 +78,9 @@ impl FragmentList {
      }
 
      pub fn add_fragment(&mut self, frag: Fragment) {
-          self.fragments.push(frag.clone());
+          if !self.includes(frag.get_index()) {
+               self.fragments.push(frag.clone());
+          }
      }
 
      /// Reassembles a list of fragments,
@@ -136,7 +138,12 @@ impl FragmentList {
      }
 
      pub fn get_remaining_size(&self) -> u64 {
-          (self.size.clone() - self.fragments.len() as u64) as u64
+          let amount = self.size.clone() as i64 - self.fragments.len() as i64;
+          if amount <= 0 {
+               0
+          } else {
+               amount as u64
+          }
      }
 
      /// Gets the **current** size of fragments
@@ -185,10 +192,19 @@ impl FragmentStore {
           }
      }
 
-     pub fn get(&self, idx: i32) -> Option<FragmentList> {
-          match self.fragment_table.get(&idx) {
+     pub fn get(&self, idx: u16) -> Option<FragmentList> {
+          match self.fragment_table.get(&idx.into()) {
                Some(v) => Some(v.clone()),
                None => None
+          }
+     }
+
+     pub fn remove(&mut self, idx: u16) -> bool {
+          if self.fragment_table.contains_key(&idx.into()) {
+               self.fragment_table.remove(&idx.into());
+               true
+          } else {
+               false
           }
      }
 
@@ -220,9 +236,9 @@ impl FragmentStore {
           }
      }
 
-     pub fn ready(&mut self, index: i32) -> bool {
-          if self.fragment_table.contains_key(&index) {
-               let fragment_list = self.fragment_table.get_mut(&index).unwrap();
+     pub fn ready(&mut self, index: u16) -> bool {
+          if self.fragment_table.contains_key(&index.into()) {
+               let fragment_list = self.fragment_table.get_mut(&index.into()).unwrap();
                return fragment_list.fragments.len() as u64 == fragment_list.size;
           } else {
                return false;
@@ -254,10 +270,10 @@ impl FragmentStore {
           }
      }
 
-     pub fn has_frame_index(&self, id: i32, index: i32) -> bool {
-          if self.fragment_table.contains_key(&id) {
-               let list = self.fragment_table.get(&id).unwrap();
-               return list.includes(index);
+     pub fn has_frame_index(&self, id: u16, index: u16) -> bool {
+          if self.fragment_table.contains_key(&id.into()) {
+               let list = self.fragment_table.get(&id.into()).unwrap();
+               return list.includes(index.into());
           }
           false
      }
