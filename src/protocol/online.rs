@@ -3,7 +3,7 @@ use std::fmt::{Formatter, Result as FResult};
 use crate::{IServerBound, IClientBound, IPacketStreamWrite};
 use binary_utils::{BinaryStream, IBufferRead, IBinaryStream, IBufferWrite};
 use std::net::{SocketAddr, IpAddr, Ipv4Addr};
-use crate::conn::Connection;
+use crate::conn::{Connection, ConnectionState};
 use std::time::{SystemTime};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -144,7 +144,12 @@ pub fn handle_online(
                     request_time: request.timestamp,
                     timestamp: SystemTime::now().duration_since(connection.time).unwrap().as_millis() as i64,
                };
+               connection.state = ConnectionState::Connected;
                accept.to()
+          },
+          OnlinePackets::Disconnect => {
+               connection.state = ConnectionState::Offline;
+               BinaryStream::new()
           },
           OnlinePackets::NewConnection => {
                BinaryStream::new()

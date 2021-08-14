@@ -4,7 +4,7 @@ use std::sync::{ Arc, Mutex };
 use std::time::SystemTime;
 use std::net::UdpSocket;
 use binary_utils::*;
-use crate::conn::Connection;
+use crate::conn::{Connection, ConnectionState, RecievePacketFn};
 use crate::util::{tokenize_addr, from_tokenized};
 use crate::handler::PacketHandler;
 
@@ -30,6 +30,7 @@ pub struct RakNetServer {
      pub connections: Arc<Mutex<HashMap<String, Connection>>>,
      pub handlers: Arc<Mutex<HashMap<String, PacketHandler>>>,
      pub start_time: SystemTime,
+     reciever: RecievePacketFn
 }
 
 impl RakNetServer {
@@ -40,7 +41,14 @@ impl RakNetServer {
                connections: Arc::new(Mutex::new(HashMap::new())),
                handlers: Arc::new(Mutex::new(HashMap::new())),
                start_time: SystemTime::now(),
+               reciever: |_: &mut Connection, _: &mut BinaryStream| {
+                    println!("Default implmentation");
+               }
           }
+     }
+
+     pub fn set_reciever(&mut self, recv: RecievePacketFn) {
+          self.reciever = recv;
      }
 
      pub fn start(&mut self) -> (thread::JoinHandle<()>, thread::JoinHandle<()>) {
@@ -50,7 +58,9 @@ impl RakNetServer {
           let handlers_recv = Arc::clone(&self.handlers);
           let handlers_send = Arc::clone(&self.handlers);
           let clients_recv = Arc::clone(&self.connections);
+          let clients_send = Arc::clone(&self.connections);
           let server_time = Arc::new(self.start_time);
+          let caller = Arc::new(self.reciever);
 
           let recv_thread = thread::spawn(move || {
                let mut buf = [0; 2048];
@@ -66,13 +76,11 @@ impl RakNetServer {
                     let mut sclients = clients_recv.lock().unwrap();
                     let mut shandler = handlers_recv.lock().unwrap();
 
-                    //println!("\nGot Packet [{}]: {:?}", remote.to_string(), stream);
-
                     // check if a connection exists
                     if !sclients.contains_key(&tokenize_addr(remote)) {
                          // connection doesn't exist, make it
                          shandler.insert(tokenize_addr(remote), PacketHandler::new());
-                         sclients.insert(tokenize_addr(remote), Connection::new(remote, *server_time.as_ref()));
+                         sclients.insert(tokenize_addr(remote), Connection::new(remote, *server_time.as_ref(), Arc::clone(&caller)));
                     }
 
                     let client = match sclients.get_mut(&tokenize_addr(remote)) {
@@ -93,14 +101,22 @@ impl RakNetServer {
 
           let sender_thread = thread::spawn(move || {
                loop {
+                    let mut clients = clients_send.lock().unwrap();
+                    for (addr, client) in clients.clone().iter_mut() {
+                         if client.state == ConnectionState::Offline {
+                              clients.remove(addr);
+                              continue;
+                         }
+                    }
+                    drop(clients);
+
                     let mut handlers = handlers_send.lock().unwrap();
-                    for (addr, _connect) in handlers.clone().into_iter() {
-                         let handler = handlers.get_mut(&addr).unwrap();
+                    for (addr, handler) in handlers.iter_mut() {
                          if handler.send_queue.len() == 0 {
                               continue;
                          }
 
-                         for pk in handler.send_queue.clone().into_iter() {
+                         for pk in handler.clone().send_queue.into_iter() {
                               match server_socket_1.as_ref().send_to(pk.get_buffer().as_slice(), &from_tokenized(addr.clone())) {
                                    // Add proper handling!
                                    Err(_) => continue, //println!("Error Sending Packet [{}]: ", e),
@@ -110,6 +126,7 @@ impl RakNetServer {
                          handler.send_queue.clear();
                          drop(handler);
                     }
+                    drop(handlers);
                }
           });
 
