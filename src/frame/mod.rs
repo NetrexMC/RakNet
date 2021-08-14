@@ -1,9 +1,9 @@
 pub mod fragment;
 pub mod reliability;
+use binary_utils::{BinaryStream, IBinaryStream, IBufferWrite, IBufferRead};
+use reliability::Reliability;
+use fragment::FragmentInfo;
 use crate::{IServerBound, IClientBound};
-use binary_utils::*;
-use reliability::*;
-use fragment::*;
 
 #[derive(Clone, Debug)]
 pub struct Frame {
@@ -51,6 +51,7 @@ impl IServerBound<Frame> for Frame {
           let mut frame: Frame = Frame::init();
           let flags = stream.read_byte();
 
+          frame.flags = flags;
           frame.reliability = Reliability::from_bit(flags);
 
           let fragmented = (flags & 0x10) > 0;
@@ -69,13 +70,12 @@ impl IServerBound<Frame> for Frame {
                frame.order_channel = Some(stream.read_byte());
           }
 
+
           if fragmented {
-               frame.size = stream.read_ushort();
                frame.fragment_info = Some(FragmentInfo {
                     fragment_size: stream.read_int(),
                     fragment_id: stream.read_ushort(),
                     fragment_index: stream.read_int()
-
                });
           }
 
@@ -130,6 +130,7 @@ impl IClientBound<Frame> for Frame {
      }
 }
 
+#[derive(Debug)]
 pub struct FramePacket {
      pub seq: u32,
      pub frames: Vec<Frame>
@@ -160,7 +161,6 @@ impl IClientBound<FramePacket> for FramePacket {
 impl IServerBound<FramePacket> for FramePacket {
      fn recv(mut stream: BinaryStream) -> FramePacket {
           let mut packet = FramePacket::new();
-          stream.read_byte();
           packet.seq = stream.read_triad();
 
           loop {
@@ -169,7 +169,7 @@ impl IServerBound<FramePacket> for FramePacket {
                }
 
                let offset = stream.get_offset();
-               let frm = Frame::recv(stream.slice(offset - 1, None));
+               let frm = Frame::recv(stream.slice(offset, None));
                packet.frames.push(frm.clone());
                if frm.to().get_length() + stream.get_offset() >= stream.get_length() {
                     return packet;

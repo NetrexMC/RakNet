@@ -1,17 +1,18 @@
+#![allow(dead_code)]
 use std::fmt::{Formatter, Result as FResult};
 use crate::{IServerBound, IClientBound, IPacketStreamWrite};
 use binary_utils::{BinaryStream, IBufferRead, IBinaryStream, IBufferWrite};
 use std::net::{SocketAddr, IpAddr, Ipv4Addr};
 use crate::conn::Connection;
-use crate::frame::*;
-use std::time::SystemTime;
+use std::time::{SystemTime};
 
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum OnlinePackets {
      ConnectedPing,
      ConnectedPong,
      ConnectionRequest,
      ConnectionAccept,
+     GamePacket,
      FramePacket(u8),
      NewConnection,
      Disconnect,
@@ -27,6 +28,7 @@ impl OnlinePackets {
                0x10 => OnlinePackets::ConnectionAccept,
                0x13 => OnlinePackets::NewConnection,
                0x15 => OnlinePackets::Disconnect,
+               0xfe => OnlinePackets::GamePacket,
                0x80..= 0x8d => OnlinePackets::FramePacket(byte),
                _ => OnlinePackets::UnknownPacket(byte),
           }
@@ -40,6 +42,7 @@ impl OnlinePackets {
                OnlinePackets::ConnectionAccept => 0x10,
                OnlinePackets::NewConnection => 0x13,
                OnlinePackets::Disconnect => 0x15,
+               OnlinePackets::GamePacket => 0xfe,
                OnlinePackets::FramePacket(b) => b,
                OnlinePackets::UnknownPacket(byte) => byte,
           }
@@ -55,6 +58,7 @@ impl std::fmt::Display for OnlinePackets {
                OnlinePackets::ConnectionAccept => write!(f, "{}", self.to_byte()),
                OnlinePackets::NewConnection => write!(f, "{}", self.to_byte()),
                OnlinePackets::Disconnect => write!(f, "{}", self.to_byte()),
+               OnlinePackets::GamePacket => write!(f, "{}", self.to_byte()),
                OnlinePackets::UnknownPacket(byte) => write!(f, "{}", byte),
                OnlinePackets::FramePacket(byte) => write!(f, "{}", byte)
           }
@@ -86,6 +90,7 @@ pub struct ConnectionAccept {
 impl IClientBound<ConnectionAccept> for ConnectionAccept {
      fn to(&self) -> BinaryStream {
           let mut stream = BinaryStream::new();
+          stream.write_byte(OnlinePackets::ConnectionAccept.to_byte());
           stream.write_address(self.client_address);
           stream.write_short(self.system_index);
           for _ in 0..10 {
@@ -93,6 +98,33 @@ impl IClientBound<ConnectionAccept> for ConnectionAccept {
           }
           stream.write_long(self.request_time);
           stream.write_long(self.timestamp);
+          stream
+     }
+}
+
+pub struct ConnectedPing {
+     time: i64
+}
+
+impl IServerBound<ConnectedPing> for ConnectedPing {
+     fn recv(mut stream: BinaryStream) -> ConnectedPing {
+          ConnectedPing {
+               time: stream.read_long()
+          }
+     }
+}
+
+pub struct ConnectedPong {
+     ping_time: i64,
+     pong_time: i64
+}
+
+impl IClientBound<ConnectedPong> for ConnectedPong {
+     fn to(&self) -> BinaryStream {
+          let mut stream = BinaryStream::new();
+          stream.write_byte(OnlinePackets::ConnectedPong.to_byte());
+          stream.write_long(self.ping_time);
+          stream.write_long(SystemTime::now().elapsed().unwrap().as_millis() as i64);
           stream
      }
 }
@@ -112,14 +144,21 @@ pub fn handle_online(
                     request_time: request.timestamp,
                     timestamp: SystemTime::now().duration_since(connection.time).unwrap().as_millis() as i64,
                };
-
                accept.to()
           },
-          OnlinePackets::FramePacket(v) => {
-               let mut frame_packet = FramePacket::recv(stream.clone());
-               for frame in frame_packet.frames.iter_mut() {
-                    handle_online(connection, OnlinePackets::recv(frame.body.read_byte()), &mut frame.body.clone());
-               }
+          OnlinePackets::NewConnection => {
+               BinaryStream::new()
+          },
+          OnlinePackets::ConnectedPing => {
+               let request = ConnectedPing::recv(stream.clone());
+               let pong = ConnectedPong {
+                    ping_time: request.time,
+                    pong_time: 0
+               };
+               pong.to()
+          },
+          OnlinePackets::FramePacket(_v) => {
+               println!("Condition should never be met.");
                BinaryStream::new()
           },
           _ => BinaryStream::new(), // TODO: Throw an UnknownPacket here rather than sending an empty binary stream
