@@ -1,18 +1,12 @@
 #[derive(Clone, Debug)]
 pub struct Reliability {
-     flag: ReliabilityFlag,
-     /// Only if reliable
-     frame_index: Option<u32>,
-     /// Only if sequenced
-     seq_frame_index: Option<u32>
+     flag: ReliabilityFlag
 }
 
 impl Reliability {
      pub fn new(flag: ReliabilityFlag) -> Self {
           Self {
-               flag,
-               frame_index: None,
-               seq_frame_index: None
+               flag
           }
      }
 
@@ -39,8 +33,7 @@ impl Reliability {
                ReliabilityFlag::ReliableSeq => 4,
                ReliabilityFlag::UnreliableAck => 5,
                ReliabilityFlag::ReliableAck => 6,
-               ReliabilityFlag::ReliableOrdAck => 7,
-               _ => 0
+               ReliabilityFlag::ReliableOrdAck => 7
           }
      }
 

@@ -5,7 +5,8 @@ use std::time::SystemTime;
 use std::net::UdpSocket;
 use binary_utils::*;
 use crate::conn::Connection;
-use crate::util::tokenize_addr;
+use crate::util::{tokenize_addr, from_tokenized};
+use crate::handler::PacketHandler;
 
 pub enum RakNetVersion {
      MinecraftRecent,
@@ -27,6 +28,7 @@ pub struct RakNetServer {
      pub address: String,
      pub version: RakNetVersion,
      pub connections: Arc<Mutex<HashMap<String, Connection>>>,
+     pub handlers: Arc<Mutex<HashMap<String, PacketHandler>>>,
      pub start_time: SystemTime,
 }
 
@@ -36,6 +38,7 @@ impl RakNetServer {
                address,
                version: RakNetVersion::MinecraftRecent,
                connections: Arc::new(Mutex::new(HashMap::new())),
+               handlers: Arc::new(Mutex::new(HashMap::new())),
                start_time: SystemTime::now(),
           }
      }
@@ -44,12 +47,13 @@ impl RakNetServer {
           let socket = UdpSocket::bind(self.address.clone());
           let server_socket: Arc<UdpSocket> = Arc::new(socket.unwrap());
           let server_socket_1: Arc<UdpSocket> = Arc::clone(&server_socket);
-          let clients = Arc::clone(&self.connections);
-          let clients_mut = Arc::clone(&self.connections);
+          let handlers_recv = Arc::clone(&self.handlers);
+          let handlers_send = Arc::clone(&self.handlers);
+          let clients_recv = Arc::clone(&self.connections);
           let server_time = Arc::new(self.start_time);
 
           let recv_thread = thread::spawn(move || {
-               let mut buf = [0; 1024];
+               let mut buf = [0; 2048];
 
                loop {
                     let (len, remote) = match server_socket.as_ref().recv_from(&mut buf) {
@@ -59,13 +63,15 @@ impl RakNetServer {
 
                     let data = &buf[..len];
                     let mut stream = BinaryStream::init(&data.to_vec());
-                    let mut sclients = clients.lock().unwrap();
+                    let mut sclients = clients_recv.lock().unwrap();
+                    let mut shandler = handlers_recv.lock().unwrap();
 
-                    println!("\nGot Packet [{}]: {:?}", remote.to_string(), stream);
+                    //println!("\nGot Packet [{}]: {:?}", remote.to_string(), stream);
 
                     // check if a connection exists
                     if !sclients.contains_key(&tokenize_addr(remote)) {
                          // connection doesn't exist, make it
+                         shandler.insert(tokenize_addr(remote), PacketHandler::new());
                          sclients.insert(tokenize_addr(remote), Connection::new(remote, *server_time.as_ref()));
                     }
 
@@ -75,28 +81,34 @@ impl RakNetServer {
                               continue
                          }
                     };
-                    client.receive(&mut stream);
+
+                    let handler = match shandler.get_mut(&tokenize_addr(remote)) {
+                         Some(h) => h,
+                         None => continue,
+                    };
+
+                    handler.recv(client, &mut stream);
                }
           });
 
           let sender_thread = thread::spawn(move || {
                loop {
-                    let mut clients_t = clients_mut.lock().unwrap();
-                    for (addr, _connect) in clients_t.clone().into_iter() {
-                         let c = clients_t.get_mut(&addr).unwrap();
-                         if c.send_queue.len() == 0 {
+                    let mut handlers = handlers_send.lock().unwrap();
+                    for (addr, _connect) in handlers.clone().into_iter() {
+                         let handler = handlers.get_mut(&addr).unwrap();
+                         if handler.send_queue.len() == 0 {
                               continue;
                          }
 
-                         for pk in c.send_queue.clone().into_iter() {
-                              match server_socket_1.as_ref().send_to(pk.get_buffer().as_slice(), &c.address) {
+                         for pk in handler.send_queue.clone().into_iter() {
+                              match server_socket_1.as_ref().send_to(pk.get_buffer().as_slice(), &from_tokenized(addr.clone())) {
                                    // Add proper handling!
-                                   Err(e) => println!("Error Sending Packet [{}]: ", e),
-                                   Ok(_) => println!("\nSent Packet [{}]: {:?}", c.address, pk)
+                                   Err(_) => continue, //println!("Error Sending Packet [{}]: ", e),
+                                   Ok(_) => continue,//println!("\nSent Packet [{}]: {:?}", addr, pk)
                               }
                          }
-                         c.send_queue.clear();
-                         drop(c);
+                         handler.send_queue.clear();
+                         drop(handler);
                     }
                }
           });
