@@ -28,6 +28,19 @@ pub struct RangeRecord {
      pub end: u32
 }
 
+impl RangeRecord {
+     /// Gets the sequences in the range of [start, end).
+     pub fn get_sequences(&self) -> Vec<u32> {
+          let mut seqs = vec![];
+          let highest = if self.end > self.start { self.end } else { self.start };
+          let lowest = if self.end > self.start { self.start } else { self.end };
+          for i in lowest..highest {
+               seqs.push(i);
+          }
+          seqs
+     }
+}
+
 #[derive(Debug, Clone)]
 pub struct Ack {
      pub count: u16,
@@ -83,6 +96,7 @@ impl IClientBound<Ack> for Ack {
      fn to(&self) -> BinaryStream {
           let mut stream = BinaryStream::new();
           stream.write_byte(AckIds::Acknowledge as u8);
+          stream.write_ushort(self.count);
 
           for record in self.records.iter() {
                match record {

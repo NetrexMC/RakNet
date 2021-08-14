@@ -81,8 +81,6 @@ impl IServerBound<Frame> for Frame {
 
           frame.size = bit_length / 8;
 
-          println!("{:?}", stream);
-
           if stream.is_within_bounds(frame.size as usize) {
                let inner_buffer = stream.read_slice(Some(frame.size as usize));
                frame.body = BinaryStream::init(&inner_buffer);

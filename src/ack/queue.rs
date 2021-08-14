@@ -1,67 +1,127 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use super::{Ack, Record, SingleRecord};
 use binary_utils::{BinaryStream};
 /// Stores sequence numbers and their relevant data sets.
 #[derive(Clone)]
 pub struct AckQueue {
-     current: u64,
-     map: HashMap<u64, BinaryStream>,
-     is_ack: bool
+     current: u32,
+     queue: HashMap<u32, BinaryStream>,
 }
 
 impl AckQueue {
-     pub fn new(is_ack: bool) -> Self {
+     pub fn new() -> Self {
           Self {
                current: 0,
-               map: HashMap::new(),
-               is_ack
+               queue: HashMap::new()
           }
      }
 
      pub fn make_ack(&mut self) -> Ack {
           let mut records: Vec<Record> = Vec::new();
 
-          for (seq, _) in self.map.clone().iter() {
+          for (seq, _) in self.queue.clone().iter() {
                self.drop_seq(*seq);
-               records.push(Record::Single(SingleRecord { sequence: *seq as u32 }));
+               records.push(Record::Single(SingleRecord { sequence: *seq  }));
           }
 
-          let mut ack = Ack::new(records.len() as u16, self.is_ack);
+          let mut ack = Ack::new(records.len() as u16, true);
           ack.records = records;
 
           ack
      }
 
-     pub fn increment_seq(&mut self, by: Option<u64>) {
+     pub fn increment_seq(&mut self, by: Option<u32>) {
           self.current += by.unwrap_or(1);
      }
 
-     pub fn push_seq(&mut self, idx: u64, val: BinaryStream) {
-          self.map.insert(idx, val);
+     pub fn push_seq(&mut self, idx: u32, val: BinaryStream) {
+          self.queue.insert(idx, val);
      }
 
-     pub fn drop_seq(&mut self, idx: u64) -> bool {
-          if self.map.contains_key(&idx) {
-               self.map.remove_entry(&idx);
+     pub fn drop_seq(&mut self, idx: u32) -> bool {
+          if self.queue.contains_key(&idx) {
+               self.queue.remove_entry(&idx);
                true
           } else {
                false
           }
      }
 
-     pub fn get_seq(&self, idx: u64) -> Option<&BinaryStream> {
-          if self.map.contains_key(&idx) {
-               self.map.get(&idx)
+     pub fn get_seq(&self, idx: u32) -> Option<&BinaryStream> {
+          if self.queue.contains_key(&idx) {
+               self.queue.get(&idx)
           } else {
                None
           }
      }
 
-     pub fn has_seq(&self, idx: u64) -> bool {
-          self.map.contains_key(&idx)
+     pub fn has_seq(&self, idx: u32) -> bool {
+          self.queue.contains_key(&idx)
      }
 
      pub fn is_empty(&self) -> bool {
-          self.map.len() == 0
+          self.queue.len() == 0
+     }
+}
+
+#[derive(Clone, Debug)]
+pub struct NAckQueue {
+     current: u32,
+     queue: HashSet<u32>
+}
+
+impl NAckQueue {
+     pub fn new() -> Self {
+          Self {
+               current: 0,
+               queue: HashSet::new()
+          }
+     }
+
+     pub fn push_seq(&mut self, idx: u32) {
+          self.queue.insert(idx);
+     }
+
+     pub fn drop_seq(&mut self, idx: u32) -> bool {
+          if self.queue.contains(&idx) {
+               self.queue.remove(&idx);
+               true
+          } else {
+               false
+          }
+     }
+
+     pub fn get_seq(&self, idx: u32) -> Option<u32> {
+          if self.queue.contains(&idx) {
+               Some(idx)
+          } else {
+               None
+          }
+     }
+
+     pub fn has_seq(&self, idx: u32) -> bool {
+          self.queue.contains(&idx)
+     }
+
+     pub fn is_empty(&self) -> bool {
+          self.queue.len() == 0
+     }
+
+     pub fn make_nack(&mut self) -> Ack {
+          let mut records: Vec<Record> = Vec::new();
+
+          for seq in self.queue.clone().iter() {
+               self.drop_seq(*seq);
+               records.push(Record::Single(SingleRecord { sequence: *seq }));
+          }
+
+          let mut ack = Ack::new(records.len() as u16, false);
+          ack.records = records;
+
+          ack
+     }
+
+     pub fn increment_seq(&mut self, by: Option<u32>) {
+          self.current += by.unwrap_or(1);
      }
 }
