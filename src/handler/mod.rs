@@ -5,7 +5,7 @@ use crate::ack::{Ack, Record, queue::AckQueue, queue::NAckQueue};
 use crate::frame::{Frame, FramePacket};
 use crate::fragment::{Fragment, FragmentList, FragmentStore};
 use crate::reliability::{Reliability, ReliabilityFlag};
-use crate::conn::{Connection, ConnectionAPI};
+use crate::conn::Connection;
 use crate::protocol::offline::*;
 use crate::online::{handle_online, OnlinePackets};
 use crate::ack::is_ack_or_nack;
@@ -145,7 +145,7 @@ impl PacketHandler {
      fn handle_full_frame(&mut self, connection: &mut Connection, frame: &mut Frame) {
           // todo Check if the frames should be recieved, if not purge them
           // todo EG: add implementation for ordering and sequenced frames!
-          let online_packet = OnlinePackets::recv(frame.body.read_byte());
+          let online_packet = OnlinePackets::recv(frame.body.clone().read_byte());
 
           if online_packet == OnlinePackets::GamePacket {
                connection.recv.as_ref()(connection, &mut frame.body);
@@ -207,7 +207,7 @@ impl PacketHandler {
                index += 1;
           }
 
-          let packets = fragment_list.assemble(connection.mtu_size as i16, usable_id);
+          let _packets = fragment_list.assemble(connection.mtu_size as i16, usable_id);
           // if packets.is_some() {
           //      for packet in packets.unwrap().iter_mut() {
           //           packet.seq = self.send_seq + 1;

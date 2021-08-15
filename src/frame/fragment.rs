@@ -54,32 +54,26 @@ impl Fragment {
 /// Holds a list of fragments until they are complete.
 #[derive(Clone, Debug)]
 pub struct FragmentList {
-     pub fragments: Vec<Fragment>,
+     pub fragments: HashMap<i32, Fragment>,
      size: u64
 }
 
 impl FragmentList {
      pub fn new() -> Self {
           Self {
-               fragments: Vec::new(),
+               fragments: HashMap::new(),
                size: 0
           }
      }
 
      /// Adds a binary stream to the fragment list.
-     pub fn add_stream(&mut self, buf: BinaryStream) {
-          // create a fragment from a stream
-          let frag = Fragment {
-               buffer: buf.get_buffer(),
-               index: self.fragments.len() as i32
-          };
+     pub fn add_stream(&mut self, _buf: BinaryStream) {
 
-          self.fragments.push(frag.clone());
      }
 
      pub fn add_fragment(&mut self, frag: Fragment) {
           if !self.includes(frag.get_index()) {
-               self.fragments.push(frag.clone());
+               self.fragments.insert(frag.get_index(), frag);
           }
      }
 
@@ -93,7 +87,8 @@ impl FragmentList {
                None
           } else {
                let mut frame = Frame::init();
-               for frag in self.fragments.iter() {
+               for i in 0..self.get_size() {
+                    let frag = self.fragments.get(&(i as i32)).unwrap();
                     frame.body.write_slice(&frag.get_buffer());
                }
 
@@ -113,7 +108,7 @@ impl FragmentList {
                None
           } else {
                let mut index = 0;
-               for frag in self.fragments.iter() {
+               for (_, frag) in self.fragments.iter() {
                     let mut frame = Frame::init();
                     frame.fragment_info = Some(FragmentInfo::new(self.size as i32, usable_id, index));
                     frame.body = frag.as_stream();
@@ -157,17 +152,10 @@ impl FragmentList {
      }
 
      /// Sorts all fragments by their index
-     pub fn sort(&mut self) {
-          self.fragments.sort_by(|a, b| a.get_index().partial_cmp(&b.get_index()).unwrap());
-     }
+     pub fn sort(&mut self) {}
 
      pub fn includes(&self, idx: i32) -> bool {
-          for frag in self.fragments.iter() {
-               if frag.index == idx {
-                    return true;
-               }
-          }
-          false
+          self.fragments.contains_key(&idx)
      }
 }
 
