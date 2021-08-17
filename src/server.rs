@@ -1,11 +1,11 @@
-use std::collections::HashMap;
-use std::thread;
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime};
-use std::net::UdpSocket;
-use binary_utils::*;
 use crate::conn::{Connection, ConnectionState, RecievePacketFn};
-use crate::util::{tokenize_addr, from_tokenized};
+use crate::util::{from_tokenized, tokenize_addr};
+use binary_utils::*;
+use std::collections::HashMap;
+use std::net::UdpSocket;
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::{Duration, SystemTime};
 
 pub enum RakNetVersion {
      MinecraftRecent,
@@ -28,7 +28,7 @@ pub struct RakNetServer {
      pub version: RakNetVersion,
      pub connections: Arc<Mutex<HashMap<String, Connection>>>,
      pub start_time: SystemTime,
-     reciever: RecievePacketFn
+     reciever: RecievePacketFn,
 }
 
 impl RakNetServer {
@@ -40,7 +40,7 @@ impl RakNetServer {
                start_time: SystemTime::now(),
                reciever: |_: &mut Connection, _: &mut BinaryStream| {
                     println!("Default implmentation");
-               }
+               },
           }
      }
 
@@ -54,7 +54,7 @@ impl RakNetServer {
           let clients = self.connections.lock();
           match clients.unwrap().get_mut(&address) {
                Some(c) => c.send(stream, instant),
-               None => return
+               None => return,
           };
      }
 
@@ -75,7 +75,7 @@ impl RakNetServer {
                loop {
                     let (len, remote) = match server_socket.as_ref().recv_from(&mut buf) {
                          Ok(v) => v,
-                         Err(_e) => continue
+                         Err(_e) => continue,
                     };
 
                     let data = &buf[..len];
@@ -85,14 +85,15 @@ impl RakNetServer {
                     // check if a connection exists
                     if !sclients.contains_key(&tokenize_addr(remote)) {
                          // connection doesn't exist, make it
-                         sclients.insert(tokenize_addr(remote), Connection::new(remote, *server_time.as_ref(), Arc::clone(&caller)));
+                         sclients.insert(
+                              tokenize_addr(remote),
+                              Connection::new(remote, *server_time.as_ref(), Arc::clone(&caller)),
+                         );
                     }
 
                     let client = match sclients.get_mut(&tokenize_addr(remote)) {
                          Some(c) => c,
-                         None => {
-                              continue
-                         }
+                         None => continue,
                     };
 
                     client.recv(&mut stream);
@@ -116,10 +117,13 @@ impl RakNetServer {
                          }
 
                          for pk in client.clone().send_queue.into_iter() {
-                              match server_socket_1.as_ref().send_to(pk.get_buffer().as_slice(), &from_tokenized(addr.clone())) {
+                              match server_socket_1.as_ref().send_to(
+                                   pk.get_buffer().as_slice(),
+                                   &from_tokenized(addr.clone()),
+                              ) {
                                    // Add proper handling!
                                    Err(_) => continue, //println!("Error Sending Packet [{}]: ", e),
-                                   Ok(_) => continue,//println!("\nSent Packet [{}]: {:?}", addr, pk)
+                                   Ok(_) => continue, //println!("\nSent Packet [{}]: {:?}", addr, pk)
                               }
                          }
                          client.send_queue.clear();

@@ -1,6 +1,6 @@
-use std::collections::{HashMap, HashSet};
 use super::{Ack, Record, SingleRecord};
-use binary_utils::{BinaryStream};
+use binary_utils::BinaryStream;
+use std::collections::{HashMap, HashSet};
 /// Stores sequence numbers and their relevant data sets.
 #[derive(Clone)]
 pub struct AckQueue {
@@ -12,7 +12,7 @@ impl AckQueue {
      pub fn new() -> Self {
           Self {
                current: 0,
-               queue: HashMap::new()
+               queue: HashMap::new(),
           }
      }
 
@@ -21,7 +21,7 @@ impl AckQueue {
 
           for (seq, _) in self.queue.clone().iter() {
                self.drop_seq(*seq);
-               records.push(Record::Single(SingleRecord { sequence: *seq  }));
+               records.push(Record::Single(SingleRecord { sequence: *seq }));
           }
 
           let mut ack = Ack::new(records.len() as u16, true);
@@ -67,14 +67,14 @@ impl AckQueue {
 #[derive(Clone, Debug)]
 pub struct NAckQueue {
      current: u32,
-     queue: HashSet<u32>
+     queue: HashSet<u32>,
 }
 
 impl NAckQueue {
      pub fn new() -> Self {
           Self {
                current: 0,
-               queue: HashSet::new()
+               queue: HashSet::new(),
           }
      }
 

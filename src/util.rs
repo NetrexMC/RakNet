@@ -1,7 +1,7 @@
-use binary_utils::stream::*;
-use binary_utils::{ IBufferRead, IBufferWrite };
-use std::net::{ SocketAddr, IpAddr };
 use crate::MAGIC;
+use binary_utils::stream::*;
+use binary_utils::{IBufferRead, IBufferWrite};
+use std::net::{IpAddr, SocketAddr};
 
 // Raknet utilities
 pub trait IPacketStreamWrite {
@@ -51,7 +51,7 @@ impl IPacketStreamRead for BinaryStream {
                let port = self.read_ushort();
                SocketAddr::new(IpAddr::from([parts[0], parts[1], parts[2], parts[3]]), port)
           } else {
-               SocketAddr::new(IpAddr::from([0,0,0,0]), 0)
+               SocketAddr::new(IpAddr::from([0, 0, 0, 0]), 0)
           }
      }
 }
@@ -64,6 +64,8 @@ pub fn tokenize_addr(remote: SocketAddr) -> String {
 }
 
 pub fn from_tokenized(remote: String) -> SocketAddr {
-     let parsed: SocketAddr = remote.parse().expect("Could not retrieve address from token.");
+     let parsed: SocketAddr = remote
+          .parse()
+          .expect("Could not retrieve address from token.");
      parsed
 }

@@ -1,13 +1,11 @@
 #[derive(Clone, Debug)]
 pub struct Reliability {
-     flag: ReliabilityFlag
+     flag: ReliabilityFlag,
 }
 
 impl Reliability {
      pub fn new(flag: ReliabilityFlag) -> Self {
-          Self {
-               flag
-          }
+          Self { flag }
      }
 
      pub fn from_bit(byte: u8) -> Self {
@@ -20,7 +18,7 @@ impl Reliability {
                5 => Self::new(ReliabilityFlag::UnreliableAck),
                6 => Self::new(ReliabilityFlag::ReliableAck),
                7 => Self::new(ReliabilityFlag::ReliableOrdAck),
-               _ => Self::new(ReliabilityFlag::Unreliable)
+               _ => Self::new(ReliabilityFlag::Unreliable),
           }
      }
 
@@ -33,22 +31,22 @@ impl Reliability {
                ReliabilityFlag::ReliableSeq => 4,
                ReliabilityFlag::UnreliableAck => 5,
                ReliabilityFlag::ReliableAck => 6,
-               ReliabilityFlag::ReliableOrdAck => 7
+               ReliabilityFlag::ReliableOrdAck => 7,
           }
      }
 
      pub fn is_reliable(byte: u8) -> bool {
           match byte {
-               2|3|4 => true,
-               6|7 => true,
-               _ => false
+               2 | 3 | 4 => true,
+               6 | 7 => true,
+               _ => false,
           }
      }
 
      pub fn is_seq(byte: u8) -> bool {
           match byte {
-               1|4 => true,
-               _ => false
+               1 | 4 => true,
+               _ => false,
           }
      }
 
@@ -57,8 +55,8 @@ impl Reliability {
                return true;
           }
           match byte {
-               3|7 => true,
-               _ => false
+               3 | 7 => true,
+               _ => false,
           }
      }
 }
@@ -72,8 +70,7 @@ pub enum ReliabilityFlag {
      ReliableSeq,
      UnreliableAck,
      ReliableAck,
-     ReliableOrdAck
+     ReliableOrdAck,
 }
 
-impl ReliabilityFlag {
-}
+impl ReliabilityFlag {}

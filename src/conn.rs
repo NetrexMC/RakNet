@@ -1,16 +1,16 @@
-use std::net::SocketAddr;
-use std::time::SystemTime;
-use std::sync::Arc;
-use std::collections::{VecDeque};
-use binary_utils::{BinaryStream, IBinaryStream, IBufferRead};
-use crate::{IServerBound, IClientBound};
-use crate::ack::{Ack, Record, queue::AckQueue, queue::NAckQueue};
-use crate::frame::{Frame, FramePacket};
-use crate::fragment::{Fragment, FragmentList, FragmentStore};
-use crate::reliability::{Reliability, ReliabilityFlag};
-use crate::protocol::offline::*;
-use crate::online::{handle_online, OnlinePackets};
 use crate::ack::is_ack_or_nack;
+use crate::ack::{queue::AckQueue, queue::NAckQueue, Ack, Record};
+use crate::fragment::{Fragment, FragmentList, FragmentStore};
+use crate::frame::{Frame, FramePacket};
+use crate::online::{handle_online, OnlinePackets};
+use crate::protocol::offline::*;
+use crate::reliability::{Reliability, ReliabilityFlag};
+use crate::{IClientBound, IServerBound};
+use binary_utils::{BinaryStream, IBinaryStream, IBufferRead};
+use std::collections::VecDeque;
+use std::net::SocketAddr;
+use std::sync::Arc;
+use std::time::SystemTime;
 
 pub type RecievePacketFn = fn(&mut Connection, &mut BinaryStream);
 
@@ -30,20 +30,45 @@ pub enum ConnectionState {
      Connecting,
      Connected,
      Disconnected,
-     Offline
+     TimingOut,
+     Offline,
 }
 
 impl ConnectionState {
+     /// Whether or not the ConnectionState is `Disconnected`.
      pub fn is_disconnected(&self) -> bool {
           match *self {
                Self::Disconnected => true,
-               _ => false
+               _ => false,
           }
      }
+
+     /// Whether or not the ConnectionState is `Connected`.
+     pub fn is_connected(&self) -> bool {
+          match *self {
+               Self::Connected => true,
+               _ => false,
+          }
+     }
+
+     /// Whether or not the Connection is:
+     /// - **Connected** or **TimingOut**
      pub fn is_available(&self) -> bool {
           match *self {
-               Self::Disconnected => false,
-               _ => true
+               Self::Offline | Self::TimingOut => false,
+               _ => true,
+          }
+     }
+
+     /// Whether or not the Connection can reliably recieve
+     /// a buffer, the states that return true are:
+     /// - **Connected**
+     /// - **Connecting**
+     /// - **Disconnected**
+     pub fn is_reliable(&self) -> bool {
+          match *self {
+               Self::Disconnected | Self::Connected | Self::Connecting => true,
+               _ => false,
           }
      }
 }
@@ -67,6 +92,8 @@ pub struct Connection {
      /// A function that is called when the server recieves a
      /// `GamePacket: 0xfe` from the client.
      pub recv: Arc<RecievePacketFn>,
+     /// The last time the client has sent something to the server, that was a connected packet.
+     pub recv_time: SystemTime,
      /// A Vector of streams to be sent.
      /// This should almost always be a Frame, with exceptions
      /// to offline packets.
@@ -95,7 +122,7 @@ pub struct Connection {
      /// The ACK queue (packets we got)
      ack: AckQueue,
      /// The NACK queue (Packets we didn't get)
-     nack: NAckQueue
+     nack: NAckQueue,
 }
 
 impl Connection {
@@ -103,6 +130,7 @@ impl Connection {
           Self {
                address,
                time: start_time,
+               recv_time: SystemTime::now(),
                mtu_size: 0,
                state: ConnectionState::Disconnected,
                recv,
@@ -135,6 +163,8 @@ impl Connection {
      /// The recieve handle for a connection.
      /// This is called when RakNet parses any given byte buffer from the socket.
      pub fn recv(&mut self, stream: &mut BinaryStream) {
+          // Update the recieve time.
+          self.recv_time = SystemTime::now();
           if self.state.is_disconnected() {
                let pk = OfflinePackets::recv(stream.read_byte());
                let handler = handle_offline(self, pk, stream);
@@ -148,15 +178,15 @@ impl Connection {
                     return self.handle_ack(stream);
                }
 
-               if !match online_packet { OnlinePackets::FramePacket(_) => true, _ => false } {
+               if !match online_packet {
+                    OnlinePackets::FramePacket(_) => true,
+                    _ => false,
+               } {
                     return;
                }
 
                let mut frame_packet = FramePacket::recv(stream.clone());
 
-               // todo Handle ack and nack!
-               // todo REMOVE THIS HACK
-               self.handle_ack(&mut Ack::new(0, false).to());
                self.handle_frames(&mut frame_packet);
           }
      }
@@ -178,7 +208,7 @@ impl Connection {
                if record.is_single() {
                     let sequence = match record {
                          Record::Single(rec) => rec.sequence,
-                         _ => continue
+                         _ => continue,
                     };
 
                     if !self.ack.has_seq(sequence) {
@@ -187,7 +217,7 @@ impl Connection {
                } else {
                     let range = match record {
                          Record::Range(rec) => rec,
-                         _ => continue
+                         _ => continue,
                     };
 
                     let sequences = range.get_sequences();
@@ -198,18 +228,6 @@ impl Connection {
                          }
                     }
                }
-          }
-
-          if !self.ack.is_empty() {
-               let respond_with = self.ack.make_ack();
-               self.send_queue.push_back(respond_with.to());
-               // println!("Sending ACK: {:?}", respond_with);
-          }
-
-          if !self.nack.is_empty() {
-               let respond_with = self.nack.make_nack();
-               self.send_queue.push_back(respond_with.to());
-               // println!("Sending NACK: {:?}", respond_with);
           }
      }
 
@@ -227,14 +245,17 @@ impl Connection {
                if frame.fragment_info.is_some() {
                     // the frame is fragmented!
                     self.fragmented.add_frame(frame.clone());
-                    let frag_list = &self.fragmented.get(frame.fragment_info.unwrap().fragment_id);
+                    let frag_list = &self
+                         .fragmented
+                         .get(frame.fragment_info.unwrap().fragment_id);
 
                     if frag_list.is_some() {
                          let mut list = frag_list.clone().unwrap();
                          let pk = list.reassemble_frame();
                          if pk.is_some() {
                               self.handle_full_frame(&mut pk.unwrap());
-                              self.fragmented.remove(frame.fragment_info.unwrap().fragment_id.into());
+                              self.fragmented
+                                   .remove(frame.fragment_info.unwrap().fragment_id.into());
                          }
                     }
                     continue;
@@ -253,26 +274,19 @@ impl Connection {
           if online_packet == OnlinePackets::GamePacket {
                self.recv.as_ref()(self, &mut frame.body);
           } else {
-               let mut response = handle_online(self, online_packet.clone(), &mut frame.body);
+               let response = handle_online(self, online_packet.clone(), &mut frame.body);
 
                if response.get_length() != 0 {
-                    if response.get_length() as u16 > self.mtu_size {
-                         self.fragment(&mut response)
-                    } else {
-                         let mut new_framepk = FramePacket::new();
-                         let mut new_frame = Frame::init();
+                    let mut new_framepk = FramePacket::new();
+                    let mut new_frame = Frame::init();
 
-                         new_frame.body = response.clone();
-                         new_frame.reliability = Reliability::new(ReliabilityFlag::Unreliable);
-                         new_framepk.frames.push(new_frame);
-                         new_framepk.seq = self.send_seq;
-                         self.send_queue.push_back(new_framepk.to());
-                         self.send_seq = self.send_seq + 1;
-                    }
+                    new_frame.body = response.clone();
+                    new_frame.reliability = Reliability::new(ReliabilityFlag::Unreliable);
+                    new_framepk.frames.push(new_frame);
+                    new_framepk.seq = self.send_seq;
+                    self.send_queue.push_back(new_framepk.to());
+                    self.send_seq = self.send_seq + 1;
                }
-
-               // println!("\nSent: {:?}", response.clone());
-               // self.send_queue.push_back(response);
           }
      }
 
@@ -291,52 +305,27 @@ impl Connection {
      ///   and then appends all of these "buffers" or "binarystreams"
      ///   to be sent by raknet on the next iteration.
      pub fn do_tick(&mut self) {
-          // does a tick
-     }
-
-     /// Automatically fragment the stream based on the clients mtu
-     /// size and add the frames to the handler queue.
-     /// todo FIX THIS
-     pub fn fragment(&mut self, stream: &mut BinaryStream) {
-          let usable_id = self.fragment_id + 1;
-
-          if usable_id == 65535 {
-               self.fragment_id = 0;
+          if self.recv_time.elapsed().unwrap().as_secs() >= 5  && self.state.is_available() {
+               self.state = ConnectionState::TimingOut;
+               return;
           }
 
-          let mut fragment_list = FragmentList::new();
-          let mut index: i32 = 0;
-          let mut offset: usize = stream.get_length();
-
-          loop {
-               if offset == 0 {
-                    break;
-               }
-
-               let mut next = BinaryStream::init(&stream.get_buffer());
-
-               if stream.get_length() > self.mtu_size as usize {
-                    next = stream.slice(0, Some(self.mtu_size as usize));
-                    offset -= self.mtu_size as usize;
-               } else {
-                    offset -= stream.get_length();
-               }
-
-               let frag = Fragment::new(index as i32, next.get_buffer());
-
-               fragment_list.add_fragment(frag);
-               index += 1;
+          if self.recv_time.elapsed().unwrap().as_secs() >= 10 && self.state.is_disconnected() {
+               // todo Fire an event here for the server to handle.
+               self.state = ConnectionState::Offline;
+               return;
           }
 
-          let _packets = fragment_list.assemble(self.mtu_size as i16, usable_id);
-          // if packets.is_some() {
-          //      for packet in packets.unwrap().iter_mut() {
-          //           packet.seq = self.send_seq + 1;
+          if self.state.is_reliable() {
+               if !self.ack.is_empty() {
+                    let respond_with = self.ack.make_ack();
+                    self.send_queue.push_back(respond_with.to());
+               }
 
-          //           self.send_queue.push_back(packet.to());
-          //      }
-          // }
-
-          self.fragment_id += 1;
+               if !self.nack.is_empty() {
+                    let respond_with = self.nack.make_nack();
+                    self.send_queue.push_back(respond_with.to());
+               }
+          }
      }
 }
