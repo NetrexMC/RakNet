@@ -52,13 +52,13 @@ impl Motd {
           let server_id = SERVER_ID.to_string();
           let props = vec![
                "MCPE",
-               "Netrex",
+               self.name.as_str(),
                prot.as_str(),
                self.version.as_str(),
                pcount.as_str(),
                pmax.as_str(),
                server_id.as_str(),
-               self.name.as_str(),
+               "Netrex",
                self.gamemode.as_str(),
                "1",
                "19132",
