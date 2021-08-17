@@ -120,7 +120,7 @@ impl Connection {
                address,
                time: start_time,
                recv_time: SystemTime::now(),
-               mtu_size: 0,
+               mtu_size: 2048,
                state: ConnectionState::Disconnected,
                recv,
                send_queue: VecDeque::new(),
