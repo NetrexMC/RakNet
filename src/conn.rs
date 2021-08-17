@@ -1,6 +1,6 @@
 use crate::ack::is_ack_or_nack;
 use crate::ack::{queue::AckQueue, queue::NAckQueue, Ack, Record};
-use crate::fragment::{Fragment, FragmentList, FragmentStore};
+use crate::fragment::{Fragment, FragmentInfo, FragmentList, FragmentStore};
 use crate::frame::{Frame, FramePacket};
 use crate::online::{handle_online, OnlinePackets};
 use crate::protocol::offline::*;
@@ -13,17 +13,6 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 pub type RecievePacketFn = fn(&mut Connection, &mut BinaryStream);
-
-pub trait ConnectionAPI {
-     /// Called when a packet is recieved from raknet
-     /// This is called on each **Frame**
-     fn recieve_packet(&mut self, stream: &mut BinaryStream);
-
-     // / Called when RakNet wants to generate a **Motd**
-     // / for the server, if this fails, the `default_motd`
-     // / function is called instead.
-     // fn gen_motd(&mut self) -> Motd;
-}
 
 #[derive(Clone, PartialEq)]
 pub enum ConnectionState {
@@ -325,6 +314,31 @@ impl Connection {
                if !self.nack.is_empty() {
                     let respond_with = self.nack.make_nack();
                     self.send_queue.push_back(respond_with.to());
+               }
+          }
+
+          let mut current_frames: Vec<FragmentList> = Vec::new();
+          let safe_size = self.mtu_size - 15;
+
+          // Make seperate buffers from the large queue based on the MTUSize saving
+          // space for frame packet header
+          for part in self.send_queue_large.iter_mut() {
+               current_frames.push(FragmentList::from(part, safe_size.into()));
+          }
+
+          for safely_sized in current_frames.iter_mut() {
+               let packets = safely_sized.assemble(safe_size as i16, self.fragment_id);
+
+               if packets.is_some() {
+                    for pk in packets.unwrap() {
+                         self.send_queue.push_back(pk.to());
+                    }
+
+                    self.fragment_id += 1;
+
+                    if self.fragment_id == 65534 {
+                         self.fragment_id = 0;
+                    }
                }
           }
      }

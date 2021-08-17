@@ -63,6 +63,28 @@ impl FragmentList {
           }
      }
 
+     pub fn from(stream: &mut BinaryStream, part_size: usize) -> Self {
+          let mut fragments: HashMap<i32, Fragment> = HashMap::new();
+          let mut current_index: i32 = 0;
+
+          while stream.get_offset() + part_size < stream.get_length() {
+               let part = stream.read_slice_exact(Some(part_size));
+               fragments.insert(current_index, Fragment::new(current_index, part));
+               current_index += 1;
+          }
+
+          // read the rest if for some reason the above failed
+          if stream.get_offset() < stream.get_length() {
+               let next_part = stream.read_slice_exact(None);
+               fragments.insert(current_index, Fragment::new(current_index, next_part));
+          }
+
+          Self {
+               fragments: fragments.clone(),
+               size: fragments.len() as u64
+          }
+     }
+
      /// Adds a binary stream to the fragment list.
      pub fn add_stream(&mut self, _buf: BinaryStream) {}
 
@@ -116,8 +138,6 @@ impl FragmentList {
 
                     index += 1;
                }
-
-               // we can now drop the fragment from the table
 
                Some(framepks)
           }
