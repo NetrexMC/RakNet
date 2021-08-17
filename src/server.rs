@@ -1,5 +1,6 @@
 use crate::conn::{Connection, ConnectionState, RecievePacketFn};
 use crate::util::{from_tokenized, tokenize_addr};
+use crate::Motd;
 use binary_utils::*;
 use std::collections::HashMap;
 use std::net::UdpSocket;
@@ -23,12 +24,39 @@ impl RakNetVersion {
      }
 }
 
+#[derive(Clone)]
+pub enum RakNetEvent {
+     /// When a connection is created
+     ///
+     /// ! This is not the same as connecting to the server !
+     ///
+     /// **Tuple Values**:
+     /// 1. The parsed `ip:port` address of the connection.
+     ConnectionCreated(String),
+     /// When a connection disconnects from the server
+     /// Or the server forces the connection to disconnect
+     ///
+     /// **Tuple Values**:
+     /// 1. The parsed `ip:port` address of the connection.
+     /// 2. The reason for disconnect.
+     Disconnect(String, String),
+     /// When a connection is sent a motd.
+     ///
+     /// **Tuple Values**:
+     /// 1. The parsed `ip:port` address of the connection.
+     MotdGeneration(String)
+}
+
+pub type RakEventListener = fn(event: &RakNetEvent);
+
 pub struct RakNetServer {
      pub address: String,
      pub version: RakNetVersion,
      pub connections: Arc<Mutex<HashMap<String, Connection>>>,
      pub start_time: SystemTime,
+     motd: Arc<Motd>,
      reciever: RecievePacketFn,
+     listener: Option<RakEventListener>,
 }
 
 impl RakNetServer {
@@ -38,14 +66,24 @@ impl RakNetServer {
                version: RakNetVersion::MinecraftRecent,
                connections: Arc::new(Mutex::new(HashMap::new())),
                start_time: SystemTime::now(),
+               motd: Arc::new(Motd::default()),
                reciever: |_: &mut Connection, _: &mut BinaryStream| {
                     println!("Default implmentation");
                },
+               listener: None
           }
      }
 
      pub fn set_reciever(&mut self, recv: RecievePacketFn) {
           self.reciever = recv;
+     }
+
+     pub fn set_listener(&mut self, listener: RakEventListener) {
+          self.listener = Some(listener);
+     }
+
+     pub fn set_motd(&mut self, motd: Motd) {
+          *Arc::get_mut(&mut self.motd).unwrap() = motd;
      }
 
      /// Sends a stream to the specified address.
@@ -68,6 +106,8 @@ impl RakNetServer {
           let clients_send = Arc::clone(&self.connections);
           let server_time = Arc::new(self.start_time);
           let caller = Arc::new(self.reciever);
+          let motd = Arc::clone(&self.motd);
+          let event_dispatch = Arc::new(self.listener);
 
           let recv_thread = thread::spawn(move || {
                let mut buf = [0; 2048];
@@ -87,7 +127,7 @@ impl RakNetServer {
                          // connection doesn't exist, make it
                          sclients.insert(
                               tokenize_addr(remote),
-                              Connection::new(remote, *server_time.as_ref(), Arc::clone(&caller)),
+                              Connection::new(remote, *server_time.as_ref(), Arc::clone(&caller), Arc::clone(&motd)),
                          );
                     }
 
@@ -103,10 +143,19 @@ impl RakNetServer {
           let sender_thread = thread::spawn(move || {
                loop {
                     thread::sleep(Duration::from_millis(50));
-                    let mut clients = clients_send.lock().unwrap();
+                    let clients = clients_send.lock().unwrap();
                     for (addr, client) in clients.clone().iter_mut() {
+                         // emit events if there is a listener for them
+                         if event_dispatch.is_some() {
+                              let dispatch = event_dispatch.unwrap();
+                              for event in client.event_dispatch.iter() {
+                                   dispatch(event);
+                              }
+                         }
+
+                         client.event_dispatch.clear();
+
                          if client.state == ConnectionState::Offline {
-                              clients.remove(addr);
                               continue;
                          }
 
