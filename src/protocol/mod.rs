@@ -1,5 +1,5 @@
-use binary_utils::BinaryStream;
 use crate::SERVER_ID;
+use binary_utils::BinaryStream;
 pub mod offline;
 pub mod online;
 
@@ -62,7 +62,7 @@ impl Motd {
                self.gamemode.as_str(),
                "1",
                "19132",
-               "19133"
+               "19133",
           ];
 
           for prop in props.iter() {

@@ -3,14 +3,14 @@ use super::queue::{AckQueue, NAckQueue};
 
 pub struct AckProcessor {
      ack_queue: AckQueue,
-     nack_queue: NAckQueue
+     nack_queue: NAckQueue,
 }
 
 impl AckProcessor {
      pub fn new() -> Self {
           Self {
                ack_queue: AckQueue::new(),
-               nack_queue: NAckQueue::new()
+               nack_queue: NAckQueue::new(),
           }
      }
 }

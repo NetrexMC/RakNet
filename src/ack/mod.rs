@@ -5,35 +5,43 @@ use binary_utils::*;
 #[derive(Debug, Clone)]
 pub enum Record {
      Single(SingleRecord),
-     Range(RangeRecord)
+     Range(RangeRecord),
 }
 
 impl Record {
      pub fn is_single(&self) -> bool {
           match *self {
                Self::Range(_) => false,
-               Self::Single(_) => true
+               Self::Single(_) => true,
           }
      }
 }
 
 #[derive(Debug, Clone)]
 pub struct SingleRecord {
-     pub sequence: u32
+     pub sequence: u32,
 }
 
 #[derive(Debug, Clone)]
 pub struct RangeRecord {
      pub start: u32,
-     pub end: u32
+     pub end: u32,
 }
 
 impl RangeRecord {
      /// Gets the sequences in the range of [start, end).
      pub fn get_sequences(&self) -> Vec<u32> {
           let mut seqs = vec![];
-          let highest = if self.end > self.start { self.end } else { self.start };
-          let lowest = if self.end > self.start { self.start } else { self.end };
+          let highest = if self.end > self.start {
+               self.end
+          } else {
+               self.start
+          };
+          let lowest = if self.end > self.start {
+               self.start
+          } else {
+               self.end
+          };
           for i in lowest..highest {
                seqs.push(i);
           }
@@ -45,7 +53,7 @@ impl RangeRecord {
 pub struct Ack {
      pub count: u16,
      pub records: Vec<Record>,
-     pub id: AckIds
+     pub id: AckIds,
 }
 
 impl Ack {
@@ -55,12 +63,11 @@ impl Ack {
                records: Vec::new(),
                id: match nack {
                     true => AckIds::Acknowledge,
-                    false => AckIds::NoAcknowledge
-               }
+                    false => AckIds::NoAcknowledge,
+               },
           }
      }
 }
-
 
 impl IServerBound<Ack> for Ack {
      fn recv(mut stream: BinaryStream) -> Self {
@@ -70,14 +77,14 @@ impl IServerBound<Ack> for Ack {
           for _ in 0..count {
                if stream.read_bool() {
                     let record: SingleRecord = SingleRecord {
-                         sequence: stream.read_triad()
+                         sequence: stream.read_triad(),
                     };
 
                     records.push(Record::Single(record));
                } else {
                     let record: RangeRecord = RangeRecord {
                          start: stream.read_triad(),
-                         end: stream.read_triad()
+                         end: stream.read_triad(),
                     };
 
                     records.push(Record::Range(record));
@@ -87,7 +94,7 @@ impl IServerBound<Ack> for Ack {
           Self {
                count,
                records,
-               id: AckIds::from_byte(id)
+               id: AckIds::from_byte(id),
           }
      }
 }
@@ -103,7 +110,7 @@ impl IClientBound<Ack> for Ack {
                     Record::Single(rec) => {
                          stream.write_bool(true);
                          stream.write_triad(rec.sequence);
-                    },
+                    }
                     Record::Range(rec) => {
                          stream.write_bool(false);
                          stream.write_triad(rec.start);
@@ -118,21 +125,21 @@ impl IClientBound<Ack> for Ack {
 #[derive(Debug, Clone)]
 pub enum AckIds {
      Acknowledge = 0xc0,
-     NoAcknowledge = 0xa0
+     NoAcknowledge = 0xa0,
 }
 
 impl AckIds {
      pub fn from_byte(byte: u8) -> Self {
           match byte {
                0xa0 => Self::NoAcknowledge,
-               _ => Self::Acknowledge
+               _ => Self::Acknowledge,
           }
      }
 
      pub fn to_byte(&self) -> u8 {
           match *self {
                Self::Acknowledge => 0xc0,
-               Self::NoAcknowledge => 0xa0
+               Self::NoAcknowledge => 0xa0,
           }
      }
 }
