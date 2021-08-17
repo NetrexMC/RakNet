@@ -7,3 +7,4 @@ edition = "2018"
 [dependencies]
 rand = "0.8.3"
 binary_utils = { git = "https://github.com/NetrexMC/BinaryUtil", branch = "master" }
+tokio = { version = "1.10.0", features = ["time"] }
