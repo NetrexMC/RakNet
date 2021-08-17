@@ -1,15 +1,16 @@
 use crate::ack::is_ack_or_nack;
 use crate::ack::{queue::AckQueue, queue::NAckQueue, Ack, Record};
-use crate::fragment::{Fragment, FragmentInfo, FragmentList, FragmentStore};
+use crate::fragment::{FragmentList, FragmentStore};
 use crate::frame::{Frame, FramePacket};
 use crate::online::{handle_online, OnlinePackets};
 use crate::protocol::offline::*;
 use crate::reliability::{Reliability, ReliabilityFlag};
-use crate::{IClientBound, IServerBound};
+use crate::util::tokenize_addr;
+use crate::{IClientBound, IServerBound, RakNetEvent, Motd};
 use binary_utils::{BinaryStream, IBinaryStream, IBufferRead};
 use std::collections::VecDeque;
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
 pub type RecievePacketFn = fn(&mut Connection, &mut BinaryStream);
@@ -78,6 +79,8 @@ pub struct Connection {
      /// - **Disconnected**: The client is sending information, but is not connected to the server.
      /// - **Offline**: We have stopped recieving responses from the client.
      pub state: ConnectionState,
+     /// A list of events to be emitted on next tick.
+     pub event_dispatch: VecDeque<RakNetEvent>,
      /// A function that is called when the server recieves a
      /// `GamePacket: 0xfe` from the client.
      pub recv: Arc<RecievePacketFn>,
@@ -112,16 +115,19 @@ pub struct Connection {
      ack: AckQueue,
      /// The NACK queue (Packets we didn't get)
      nack: NAckQueue,
+     /// The Motd reference.
+     motd: Arc<Motd>
 }
 
 impl Connection {
-     pub fn new(address: SocketAddr, start_time: SystemTime, recv: Arc<RecievePacketFn>) -> Self {
+     pub fn new(address: SocketAddr, start_time: SystemTime, recv: Arc<RecievePacketFn>, motd: Arc<Motd>) -> Self {
           Self {
                address,
                time: start_time,
                recv_time: SystemTime::now(),
                mtu_size: 2048,
                state: ConnectionState::Disconnected,
+               event_dispatch: VecDeque::new(),
                recv,
                send_queue: VecDeque::new(),
                send_queue_large: VecDeque::new(),
@@ -131,6 +137,7 @@ impl Connection {
                fragment_id: 0,
                ack: AckQueue::new(),
                nack: NAckQueue::new(),
+               motd
           }
      }
 
@@ -300,7 +307,8 @@ impl Connection {
           }
 
           if self.recv_time.elapsed().unwrap().as_secs() >= 10 && self.state.is_disconnected() {
-               // todo Fire an event here for the server to handle.
+               let event = RakNetEvent::Disconnect(tokenize_addr(self.address), "Time Out".to_owned());
+               self.event_dispatch.push_back(event);
                self.state = ConnectionState::Offline;
                return;
           }
@@ -341,5 +349,9 @@ impl Connection {
                     }
                }
           }
+     }
+
+     pub fn get_motd(&self) -> Motd {
+          self.motd.as_ref().clone()
      }
 }
