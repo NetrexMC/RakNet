@@ -1,12 +1,11 @@
 use std::collections::HashMap;
 use std::thread;
-use std::sync::{ Arc, Mutex };
-use std::time::SystemTime;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, SystemTime};
 use std::net::UdpSocket;
 use binary_utils::*;
 use crate::conn::{Connection, ConnectionState, RecievePacketFn};
 use crate::util::{tokenize_addr, from_tokenized};
-use crate::handler::PacketHandler;
 
 pub enum RakNetVersion {
      MinecraftRecent,
@@ -28,7 +27,6 @@ pub struct RakNetServer {
      pub address: String,
      pub version: RakNetVersion,
      pub connections: Arc<Mutex<HashMap<String, Connection>>>,
-     pub handlers: Arc<Mutex<HashMap<String, PacketHandler>>>,
      pub start_time: SystemTime,
      reciever: RecievePacketFn
 }
@@ -39,7 +37,6 @@ impl RakNetServer {
                address,
                version: RakNetVersion::MinecraftRecent,
                connections: Arc::new(Mutex::new(HashMap::new())),
-               handlers: Arc::new(Mutex::new(HashMap::new())),
                start_time: SystemTime::now(),
                reciever: |_: &mut Connection, _: &mut BinaryStream| {
                     println!("Default implmentation");
@@ -51,12 +48,22 @@ impl RakNetServer {
           self.reciever = recv;
      }
 
+     /// Sends a stream to the specified address.
+     /// Instant skips the tick and forcefully sends the packet to the client.
+     pub fn send_stream(&mut self, address: String, stream: BinaryStream, instant: bool) {
+          let clients = self.connections.lock();
+          match clients.unwrap().get_mut(&address) {
+               Some(c) => c.send(stream, instant),
+               None => return
+          };
+     }
+
+     /// Starts a raknet server instance.
+     /// Returns two thread handles, for both the send and recieving threads.
      pub fn start(&mut self) -> (thread::JoinHandle<()>, thread::JoinHandle<()>) {
           let socket = UdpSocket::bind(self.address.clone());
           let server_socket: Arc<UdpSocket> = Arc::new(socket.unwrap());
           let server_socket_1: Arc<UdpSocket> = Arc::clone(&server_socket);
-          let handlers_recv = Arc::clone(&self.handlers);
-          let handlers_send = Arc::clone(&self.handlers);
           let clients_recv = Arc::clone(&self.connections);
           let clients_send = Arc::clone(&self.connections);
           let server_time = Arc::new(self.start_time);
@@ -74,12 +81,10 @@ impl RakNetServer {
                     let data = &buf[..len];
                     let mut stream = BinaryStream::init(&data.to_vec());
                     let mut sclients = clients_recv.lock().unwrap();
-                    let mut shandler = handlers_recv.lock().unwrap();
 
                     // check if a connection exists
                     if !sclients.contains_key(&tokenize_addr(remote)) {
                          // connection doesn't exist, make it
-                         shandler.insert(tokenize_addr(remote), PacketHandler::new());
                          sclients.insert(tokenize_addr(remote), Connection::new(remote, *server_time.as_ref(), Arc::clone(&caller)));
                     }
 
@@ -90,46 +95,39 @@ impl RakNetServer {
                          }
                     };
 
-                    let handler = match shandler.get_mut(&tokenize_addr(remote)) {
-                         Some(h) => h,
-                         None => continue,
-                    };
-
-                    handler.recv(client, &mut stream);
+                    client.recv(&mut stream);
                }
           });
 
           let sender_thread = thread::spawn(move || {
                loop {
+                    thread::sleep(Duration::from_millis(50));
                     let mut clients = clients_send.lock().unwrap();
                     for (addr, client) in clients.clone().iter_mut() {
                          if client.state == ConnectionState::Offline {
                               clients.remove(addr);
                               continue;
                          }
-                    }
-                    drop(clients);
 
-                    let mut handlers = handlers_send.lock().unwrap();
-                    for (addr, handler) in handlers.iter_mut() {
-                         if handler.send_queue.len() == 0 {
+                         client.do_tick();
+
+                         if client.send_queue.len() == 0 {
                               continue;
                          }
 
-                         for pk in handler.clone().send_queue.into_iter() {
+                         for pk in client.clone().send_queue.into_iter() {
                               match server_socket_1.as_ref().send_to(pk.get_buffer().as_slice(), &from_tokenized(addr.clone())) {
                                    // Add proper handling!
                                    Err(_) => continue, //println!("Error Sending Packet [{}]: ", e),
                                    Ok(_) => continue,//println!("\nSent Packet [{}]: {:?}", addr, pk)
                               }
                          }
-                         handler.send_queue.clear();
-                         drop(handler);
+                         client.send_queue.clear();
+                         drop(client);
                     }
-                    drop(handlers);
+                    drop(clients);
                }
           });
-
           return (sender_thread, recv_thread);
      }
 }

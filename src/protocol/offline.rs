@@ -205,7 +205,7 @@ pub fn handle_offline(
                let pong = UnconnectedPong {
                     server_id: SERVER_ID,
                     timestamp: connection.time.elapsed().unwrap().as_millis() as i64,
-                    motd: connection.motd.clone(),
+                    motd: Motd::default(),
                };
 
                pong.to()
