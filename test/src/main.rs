@@ -1,12 +1,24 @@
 use rakrs::RakNetServer;
 use rakrs::conn::{Connection};
 use rakrs::Motd;
+use rakrs::RakNetEvent;
 use binary_utils::*;
 
 fn main() {
      let mut server = RakNetServer::new(String::from("0.0.0.0:19132"));
      server.set_reciever(|_con: &mut Connection, pk: &mut BinaryStream| {
           println!("Got game packet.");
+     });
+     server.set_listener(|ev: &RakNetEvent| {
+          match ev.clone() {
+               RakNetEvent::Disconnect(address, reason) => {
+                    println!("{} disconnected due to: {}", address, reason);
+               },
+               RakNetEvent::ConnectionCreated(address) => {
+                    println!("{} has joined the server", address);
+               }
+               _ => return
+          }
      });
      server.set_motd(Motd {
           name: "Sus!!!".to_owned(),
