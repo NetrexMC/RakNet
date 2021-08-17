@@ -81,7 +81,7 @@ impl FragmentList {
 
           Self {
                fragments: fragments.clone(),
-               size: fragments.len() as u64
+               size: fragments.len() as u64,
           }
      }
 

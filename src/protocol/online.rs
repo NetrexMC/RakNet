@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 use crate::conn::{Connection, ConnectionState};
-use crate::{IClientBound, IPacketStreamWrite, IServerBound};
+use crate::util::tokenize_addr;
+use crate::{IClientBound, IPacketStreamWrite, IServerBound, RakNetEvent};
 use binary_utils::{BinaryStream, IBinaryStream, IBufferRead, IBufferWrite};
 use std::fmt::{Formatter, Result as FResult};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -155,6 +156,10 @@ pub fn handle_online(
           }
           OnlinePackets::Disconnect => {
                connection.state = ConnectionState::Offline;
+               connection.event_dispatch.push_back(RakNetEvent::Disconnect(
+                    tokenize_addr(connection.address),
+                    "Client disconnect".to_owned(),
+               ));
                BinaryStream::new()
           }
           OnlinePackets::NewConnection => BinaryStream::new(),

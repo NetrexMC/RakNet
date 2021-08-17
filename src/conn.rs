@@ -6,7 +6,7 @@ use crate::online::{handle_online, OnlinePackets};
 use crate::protocol::offline::*;
 use crate::reliability::{Reliability, ReliabilityFlag};
 use crate::util::tokenize_addr;
-use crate::{IClientBound, IServerBound, RakNetEvent, Motd};
+use crate::{IClientBound, IServerBound, Motd, RakNetEvent};
 use binary_utils::{BinaryStream, IBinaryStream, IBufferRead};
 use std::collections::VecDeque;
 use std::net::SocketAddr;
@@ -15,7 +15,7 @@ use std::time::SystemTime;
 
 pub type RecievePacketFn = fn(&mut Connection, &mut BinaryStream);
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ConnectionState {
      Connecting,
      Connected,
@@ -116,11 +116,16 @@ pub struct Connection {
      /// The NACK queue (Packets we didn't get)
      nack: NAckQueue,
      /// The Motd reference.
-     motd: Arc<Motd>
+     motd: Arc<Motd>,
 }
 
 impl Connection {
-     pub fn new(address: SocketAddr, start_time: SystemTime, recv: Arc<RecievePacketFn>, motd: Arc<Motd>) -> Self {
+     pub fn new(
+          address: SocketAddr,
+          start_time: SystemTime,
+          recv: Arc<RecievePacketFn>,
+          motd: Arc<Motd>,
+     ) -> Self {
           Self {
                address,
                time: start_time,
@@ -137,7 +142,7 @@ impl Connection {
                fragment_id: 0,
                ack: AckQueue::new(),
                nack: NAckQueue::new(),
-               motd
+               motd,
           }
      }
 
@@ -174,16 +179,23 @@ impl Connection {
                     return self.handle_ack(stream);
                }
 
-               if !match online_packet {
-                    OnlinePackets::FramePacket(_) => true,
-                    _ => false,
-               } {
-                    return;
+               match online_packet {
+                    OnlinePackets::Disconnect => {
+                         self.state = ConnectionState::Offline;
+                         self.event_dispatch.push_back(RakNetEvent::Disconnect(
+                              tokenize_addr(self.address),
+                              "Client disconnect".to_owned(),
+                         ));
+                         return;
+                    }
+                    OnlinePackets::FramePacket(_) => {
+                         let mut frame_packet = FramePacket::recv(stream.clone());
+
+                         self.handle_frames(&mut frame_packet);
+                         return;
+                    }
+                    _ => {}
                }
-
-               let mut frame_packet = FramePacket::recv(stream.clone());
-
-               self.handle_frames(&mut frame_packet);
           }
      }
 
@@ -301,16 +313,18 @@ impl Connection {
      ///   and then appends all of these "buffers" or "binarystreams"
      ///   to be sent by raknet on the next iteration.
      pub fn do_tick(&mut self) {
-          if self.recv_time.elapsed().unwrap().as_secs() >= 5  && self.state.is_available() {
-               self.state = ConnectionState::TimingOut;
+          if self.state == ConnectionState::Offline {
                return;
           }
 
-          if self.recv_time.elapsed().unwrap().as_secs() >= 10 && self.state.is_disconnected() {
-               let event = RakNetEvent::Disconnect(tokenize_addr(self.address), "Time Out".to_owned());
-               self.event_dispatch.push_back(event);
+          if self.recv_time.elapsed().unwrap().as_secs() >= 10 {
                self.state = ConnectionState::Offline;
+               self.event_dispatch.push_back(RakNetEvent::Disconnect(tokenize_addr(self.address), "Time Out".to_owned()));
                return;
+          }
+
+          if self.recv_time.elapsed().unwrap().as_secs() >= 5 && self.state.is_reliable() {
+               self.state = ConnectionState::TimingOut;
           }
 
           if self.state.is_reliable() {
