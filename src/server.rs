@@ -47,7 +47,7 @@ pub enum RakNetEvent {
      MotdGeneration(String),
 }
 
-pub type RakEventListenerFn = fn(event: &RakNetEvent);
+pub type RakEventListenerFn = dyn FnMut(&RakNetEvent) + Send + Sync;
 
 pub struct RakNetServer {
      pub address: String,
@@ -56,7 +56,7 @@ pub struct RakNetServer {
      pub start_time: SystemTime,
      motd: Arc<Motd>,
      reciever: RecievePacketFn,
-     listener: RakEventListenerFn,
+     listener: Box<RakEventListenerFn>,
 }
 
 impl RakNetServer {
@@ -70,7 +70,7 @@ impl RakNetServer {
                reciever: |_: &mut Connection, _: &mut BinaryStream| {
                     println!("Default implmentation");
                },
-               listener: |_: &RakNetEvent| {},
+               listener: Box::new(|_: &RakNetEvent| {}),
           }
      }
 
@@ -78,7 +78,7 @@ impl RakNetServer {
           self.reciever = recv;
      }
 
-     pub fn set_listener(&mut self, listener: RakEventListenerFn) {
+     pub fn set_listener(&mut self, listener: Box<RakEventListenerFn>) {
           self.listener = listener;
      }
 
@@ -98,7 +98,7 @@ impl RakNetServer {
 
      /// Starts a raknet server instance.
      /// Returns two thread handles, for both the send and recieving threads.
-     pub fn start(&mut self) -> (thread::JoinHandle<()>, thread::JoinHandle<()>) {
+     pub fn start<'a>(&'static mut self) -> (thread::JoinHandle<()>, thread::JoinHandle<()>) {
           let socket = UdpSocket::bind(self.address.clone());
           let server_socket: Arc<UdpSocket> = Arc::new(socket.unwrap());
           let server_socket_1: Arc<UdpSocket> = Arc::clone(&server_socket);
@@ -107,7 +107,7 @@ impl RakNetServer {
           let server_time = Arc::new(self.start_time);
           let caller = Arc::new(self.reciever);
           let motd = Arc::clone(&self.motd);
-          let event_dispatch = Arc::new(self.listener);
+          let mut event_dispatch = Box::new(&mut self.listener);
 
           let recv_thread = thread::spawn(move || {
                let mut buf = [0; 2048];
