@@ -2,7 +2,7 @@ use super::{Ack, Record, SingleRecord};
 use binary_utils::BinaryStream;
 use std::collections::{HashMap, HashSet};
 /// Stores sequence numbers and their relevant data sets.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct AckQueue {
      current: u32,
      queue: HashMap<u32, BinaryStream>,
