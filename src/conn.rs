@@ -10,7 +10,7 @@ use crate::{IClientBound, IServerBound, Motd, RakNetEvent};
 use binary_utils::{BinaryStream, IBinaryStream, IBufferRead};
 use std::collections::VecDeque;
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc};
 use std::time::SystemTime;
 
 pub type RecievePacketFn = fn(&mut Connection, &mut BinaryStream);
