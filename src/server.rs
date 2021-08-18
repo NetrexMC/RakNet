@@ -24,7 +24,7 @@ impl RakNetVersion {
      }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum RakNetEvent {
      /// When a connection is created
      ///
@@ -44,10 +44,10 @@ pub enum RakNetEvent {
      ///
      /// **Tuple Values**:
      /// 1. The parsed `ip:port` address of the connection.
-     MotdGeneration(String)
+     MotdGeneration(String),
 }
 
-pub type RakEventListener = fn(event: &RakNetEvent);
+pub type RakEventListenerFn = fn(event: &RakNetEvent);
 
 pub struct RakNetServer {
      pub address: String,
@@ -56,7 +56,7 @@ pub struct RakNetServer {
      pub start_time: SystemTime,
      motd: Arc<Motd>,
      reciever: RecievePacketFn,
-     listener: Option<RakEventListener>,
+     listener: RakEventListenerFn,
 }
 
 impl RakNetServer {
@@ -70,7 +70,7 @@ impl RakNetServer {
                reciever: |_: &mut Connection, _: &mut BinaryStream| {
                     println!("Default implmentation");
                },
-               listener: None
+               listener: |_: &RakNetEvent| {},
           }
      }
 
@@ -78,8 +78,8 @@ impl RakNetServer {
           self.reciever = recv;
      }
 
-     pub fn set_listener(&mut self, listener: RakEventListener) {
-          self.listener = Some(listener);
+     pub fn set_listener(&mut self, listener: RakEventListenerFn) {
+          self.listener = listener;
      }
 
      pub fn set_motd(&mut self, motd: Motd) {
@@ -127,7 +127,12 @@ impl RakNetServer {
                          // connection doesn't exist, make it
                          sclients.insert(
                               tokenize_addr(remote),
-                              Connection::new(remote, *server_time.as_ref(), Arc::clone(&caller), Arc::clone(&motd)),
+                              Connection::new(
+                                   remote,
+                                   *server_time.as_ref(),
+                                   Arc::clone(&caller),
+                                   Arc::clone(&motd),
+                              ),
                          );
                     }
 
@@ -143,23 +148,19 @@ impl RakNetServer {
           let sender_thread = thread::spawn(move || {
                loop {
                     thread::sleep(Duration::from_millis(50));
-                    let clients = clients_send.lock().unwrap();
+                    let mut clients = clients_send.lock().unwrap();
                     for (addr, client) in clients.clone().iter_mut() {
-                         // emit events if there is a listener for them
-                         if event_dispatch.is_some() {
-                              let dispatch = event_dispatch.unwrap();
-                              for event in client.event_dispatch.iter() {
-                                   dispatch(event);
-                              }
+                         client.do_tick();
+                        // emit events if there is a listener for the
+                        for event in client.event_dispatch.iter() {
+                              event_dispatch(event);
                          }
 
                          client.event_dispatch.clear();
-
                          if client.state == ConnectionState::Offline {
+                              clients.remove(addr);
                               continue;
                          }
-
-                         client.do_tick();
 
                          if client.send_queue.len() == 0 {
                               continue;
@@ -176,7 +177,6 @@ impl RakNetServer {
                               }
                          }
                          client.send_queue.clear();
-                         drop(client);
                     }
                     drop(clients);
                }
