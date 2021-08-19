@@ -55,8 +55,6 @@ pub struct RakNetServer {
      pub connections: Arc<Mutex<HashMap<String, Connection>>>,
      pub start_time: SystemTime,
      motd: Arc<Motd>,
-     reciever: RecievePacketFn,
-     listener: Box<RakEventListenerFn>,
 }
 
 impl RakNetServer {
@@ -66,20 +64,8 @@ impl RakNetServer {
                version: RakNetVersion::MinecraftRecent,
                connections: Arc::new(Mutex::new(HashMap::new())),
                start_time: SystemTime::now(),
-               motd: Arc::new(Motd::default()),
-               reciever: |_: &mut Connection, _: &mut BinaryStream| {
-                    println!("Default implmentation");
-               },
-               listener: Box::new(|_: &RakNetEvent| {}),
+               motd: Arc::new(Motd::default())
           }
-     }
-
-     pub fn set_reciever(&mut self, recv: RecievePacketFn) {
-          self.reciever = recv;
-     }
-
-     pub fn set_listener(&mut self, listener: Box<RakEventListenerFn>) {
-          self.listener = listener;
      }
 
      pub fn set_motd(&mut self, motd: Motd) {
@@ -98,16 +84,14 @@ impl RakNetServer {
 
      /// Starts a raknet server instance.
      /// Returns two thread handles, for both the send and recieving threads.
-     pub fn start<'a>(&'static mut self) -> (thread::JoinHandle<()>, thread::JoinHandle<()>) {
+     pub fn start(&mut self, receiver: Arc<RecievePacketFn>, mut event_dispatch: Box<RakEventListenerFn>) -> (thread::JoinHandle<()>, thread::JoinHandle<()>) {
           let socket = UdpSocket::bind(self.address.clone());
           let server_socket: Arc<UdpSocket> = Arc::new(socket.unwrap());
           let server_socket_1: Arc<UdpSocket> = Arc::clone(&server_socket);
           let clients_recv = Arc::clone(&self.connections);
           let clients_send = Arc::clone(&self.connections);
           let server_time = Arc::new(self.start_time);
-          let caller = Arc::new(self.reciever);
           let motd = Arc::clone(&self.motd);
-          let mut event_dispatch = Box::new(&mut self.listener);
 
           let recv_thread = thread::spawn(move || {
                let mut buf = [0; 2048];
@@ -130,7 +114,7 @@ impl RakNetServer {
                               Connection::new(
                                    remote,
                                    *server_time.as_ref(),
-                                   Arc::clone(&caller),
+                                   Arc::clone(&receiver),
                                    Arc::clone(&motd),
                               ),
                          );
