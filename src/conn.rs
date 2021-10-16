@@ -6,14 +6,14 @@ use crate::online::{handle_online, OnlinePackets};
 use crate::protocol::offline::*;
 use crate::reliability::{Reliability, ReliabilityFlag};
 use crate::util::tokenize_addr;
-use crate::{IClientBound, IServerBound, Motd, RakNetEvent};
-use binary_utils::{BinaryStream, IBinaryStream, IBufferRead};
+use crate::{Motd, RakNetEvent};
+use binary_utils::*;
 use std::collections::VecDeque;
 use std::net::SocketAddr;
 use std::sync::{Arc};
 use std::time::SystemTime;
 
-pub type RecievePacketFn = fn(&mut Connection, &mut BinaryStream);
+pub type RecievePacketFn = fn(&mut Connection, &mut Stream);
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ConnectionState {
@@ -89,11 +89,11 @@ pub struct Connection {
      /// A Vector of streams to be sent.
      /// This should almost always be a Frame, with exceptions
      /// to offline packets.
-     pub send_queue: VecDeque<BinaryStream>,
+     pub send_queue: VecDeque<Stream>,
      /// A list of buffers that exceed the MTU size
      /// This queue will be shortened into individual fragments,
      /// and sent to the client as fragmented frames.
-     send_queue_large: VecDeque<BinaryStream>,
+     send_queue_large: VecDeque<Stream>,
      /// Stores the fragmented frames by their
      /// `frame_index` value from a given packet.
      /// When a `FrameList` is ready from a `FragmentStore` it's assembled
@@ -147,7 +147,7 @@ impl Connection {
      }
 
      /// Send a binary stream to the specified client.
-     pub fn send(&mut self, stream: BinaryStream, instant: bool) {
+     pub fn send(&mut self, stream: Stream, instant: bool) {
           if instant {
                let mut frame_packet = FramePacket::new();
                let mut frame = Frame::init();
@@ -163,11 +163,11 @@ impl Connection {
 
      /// The recieve handle for a connection.
      /// This is called when RakNet parses any given byte buffer from the socket.
-     pub fn recv(&mut self, stream: &mut BinaryStream) {
+     pub fn recv(&mut self, stream: &mut Stream) {
           // Update the recieve time.
           self.recv_time = SystemTime::now();
           if self.state.is_disconnected() {
-               let pk = OfflinePackets::recv(stream.read_byte());
+               let pk = OfflinePackets::recv(stream.read_u8());
                let handler = handle_offline(self, pk, stream);
                self.send_queue.push_back(handler);
           } else {
@@ -175,7 +175,7 @@ impl Connection {
                let online_packet = OnlinePackets::recv(stream.read_byte());
 
                if is_ack_or_nack(online_packet.to_byte()) {
-                    stream.set_offset(0);
+                    stream.set_position(0);
                     return self.handle_ack(stream);
                }
 
@@ -209,7 +209,7 @@ impl Connection {
      ///   we add this sequence number to the **Nack** queue,
      ///   which is then sent to the client when the connection ticks
      ///   to *hopefully* force the client to eventually send that packet.
-     pub fn handle_ack(&mut self, packet: &mut BinaryStream) {
+     pub fn handle_ack(&mut self, packet: &mut Stream) {
           let got = Ack::recv(packet.clone());
 
           for record in got.records {
@@ -310,7 +310,7 @@ impl Connection {
      /// - Send all **Ack** and **Nack** queues to the client.
      ///
      /// - Fragments everything in the `send_queue_large` queue,
-     ///   and then appends all of these "buffers" or "binarystreams"
+     ///   and then appends all of these "buffers" or "Streams"
      ///   to be sent by raknet on the next iteration.
      pub fn do_tick(&mut self) {
           if self.state == ConnectionState::Offline {

@@ -1,3 +1,7 @@
+#![feature(cursor_remaining)]
+#[macro_use]
+extern crate binary_utils;
+
 pub mod ack;
 pub mod conn;
 pub mod frame;

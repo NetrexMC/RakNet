@@ -1,9 +1,9 @@
 // frame queues are designed to handle split packets,
 // and send packets in parts as well.
 use super::{Frame, FramePacket};
-use crate::protocol::IClientBound;
 use binary_utils::*;
 use std::collections::HashMap;
+use std::io::Cursor;
 
 #[derive(Copy, Clone, Debug)]
 pub struct FragmentInfo {
@@ -42,8 +42,8 @@ impl Fragment {
           &*self.buffer
      }
 
-     pub fn as_stream(&self) -> BinaryStream {
-          BinaryStream::init(&self.buffer.to_vec())
+     pub fn as_stream(&self) -> Vec<u8> {
+          &self.buffer.to_vec()
      }
 }
 
@@ -63,7 +63,7 @@ impl FragmentList {
           }
      }
 
-     pub fn from(stream: &mut BinaryStream, part_size: usize) -> Self {
+     pub fn from(stream: &mut Cursor<Vec<u8>>, part_size: usize) -> Self {
           let mut fragments: HashMap<i32, Fragment> = HashMap::new();
           let mut current_index: i32 = 0;
 
@@ -86,7 +86,7 @@ impl FragmentList {
      }
 
      /// Adds a binary stream to the fragment list.
-     pub fn add_stream(&mut self, _buf: BinaryStream) {}
+     pub fn add_stream(&mut self, _buf: Vec<u8>) {}
 
      pub fn add_fragment(&mut self, frag: Fragment) {
           if !self.includes(frag.get_index()) {
@@ -214,7 +214,7 @@ impl FragmentStore {
 
      /// Adds a stream into it's given sequence.
      /// Do note, this does not make them frames.
-     pub fn add_stream(&mut self, buf: BinaryStream) {
+     pub fn add_stream(&mut self, buf: Vec<u8>) {
           if !self.fragment_table.contains_key(&self.sequence) {
                let list = FragmentList::new();
                self.fragment_table.insert(self.sequence, list);

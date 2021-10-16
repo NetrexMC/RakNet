@@ -1,13 +1,14 @@
 #![allow(dead_code)]
 
-use super::{IClientBound, IServerBound};
 use crate::conn::{Connection, ConnectionState};
 use crate::{IPacketStreamRead, IPacketStreamWrite, RakNetVersion, USE_SECURITY};
 use crate::{Motd, SERVER_ID};
-use binary_utils::{stream::*, IBufferRead, IBufferWrite};
+use binary_utils::*;
+use byteorder::{ReadBytesExt, WriteBytesExt};
 use std::convert::TryInto;
 use std::fmt::{Formatter, Result as FResult};
 use std::net::SocketAddr;
+use std::io::Cursor;
 
 pub enum OfflinePackets {
      UnconnectedPing,
@@ -64,6 +65,7 @@ impl std::fmt::Display for OfflinePackets {
 }
 
 /// Unconnected Ping
+#[derive(BinaryStream)]
 pub struct UnconnectedPing {
      timestamp: i64,
      magic: Vec<u8>,
@@ -71,35 +73,25 @@ pub struct UnconnectedPing {
 }
 
 impl IServerBound<UnconnectedPing> for UnconnectedPing {
-     fn recv(mut stream: BinaryStream) -> UnconnectedPing {
+     fn recv(mut stream: Stream) -> UnconnectedPing {
           Self {
-               timestamp: stream.read_long(),
+               timestamp: stream.read_i64(),
                magic: stream.read_magic(),
-               client_id: stream.read_long(),
+               client_id: stream.read_i64(),
           }
      }
 }
 
 /// Unconnected Pong
+#[derive(BinaryStream)]
 pub struct UnconnectedPong {
      timestamp: i64,
      server_id: i64,
      motd: Motd,
 }
 
-impl IClientBound<UnconnectedPong> for UnconnectedPong {
-     fn to(&self) -> BinaryStream {
-          let mut stream = BinaryStream::new();
-          stream.write_byte(OfflinePackets::UnconnectedPong.to_byte());
-          stream.write_long(self.timestamp.try_into().unwrap());
-          stream.write_long(self.server_id);
-          stream.write_magic();
-          stream.write_string(self.motd.parse());
-          stream
-     }
-}
-
 /// A connection request recv the client.
+#[derive(BinaryStream)]
 pub struct OpenConnectRequest {
      magic: Vec<u8>,
      protocol: u8,
@@ -107,7 +99,7 @@ pub struct OpenConnectRequest {
 }
 
 impl IServerBound<OpenConnectRequest> for OpenConnectRequest {
-     fn recv(mut s: BinaryStream) -> OpenConnectRequest {
+     fn recv(mut s: Stream) -> OpenConnectRequest {
           let magic = s.read_magic();
           let p = s.read_byte();
           let mtu = s.get_length() + 1 + 28;
@@ -128,13 +120,13 @@ pub struct OpenConnectReply {
 }
 
 impl IClientBound<OpenConnectReply> for OpenConnectReply {
-     fn to(&self) -> BinaryStream {
-          let mut stream = BinaryStream::new();
-          stream.write_byte(OfflinePackets::OpenConnectReply.to_byte());
+     fn to(&self) -> Stream {
+          let mut stream = Stream::new();
+          stream.write_u8(OfflinePackets::OpenConnectReply.to_byte());
           stream.write_magic();
-          stream.write_long(self.server_id);
+          stream.write_i64(self.server_id);
           stream.write_bool(self.security);
-          stream.write_short(self.mtu_size);
+          stream.write_i64(self.mtu_size);
           stream
      }
 }
@@ -148,12 +140,12 @@ pub struct SessionInfoRequest {
 }
 
 impl IServerBound<SessionInfoRequest> for SessionInfoRequest {
-     fn recv(mut stream: BinaryStream) -> SessionInfoRequest {
+     fn recv(mut stream: Stream) -> SessionInfoRequest {
           Self {
                magic: stream.read_magic(),
                address: stream.read_address(),
-               mtu_size: stream.read_short(),
-               client_id: stream.read_long(),
+               mtu_size: stream.read_i16().unwrap(),
+               client_id: stream.read_i64().unwrap(),
           }
      }
 }
@@ -167,13 +159,13 @@ pub struct SessionInfoReply {
 }
 
 impl IClientBound<SessionInfoReply> for SessionInfoReply {
-     fn to(&self) -> BinaryStream {
-          let mut stream: BinaryStream = BinaryStream::new();
-          stream.write_byte(OfflinePackets::SessionInfoReply.to_byte());
+     fn to(&self) -> Stream {
+          let mut stream: Stream = Stream::new();
+          stream.write_u8(OfflinePackets::SessionInfoReply.to_byte());
           stream.write_magic();
-          stream.write_long(self.server_id);
+          stream.write_i64(self.server_id);
           stream.write_address(self.client_address);
-          stream.write_short(self.mtu_size);
+          stream.write_i64(self.mtu_size);
           stream.write_bool(self.security);
           stream
      }
@@ -185,12 +177,12 @@ pub struct IncompatibleProtocolVersion {
 }
 
 impl IClientBound<IncompatibleProtocolVersion> for IncompatibleProtocolVersion {
-     fn to(&self) -> BinaryStream {
-          let mut stream: BinaryStream = BinaryStream::new();
-          stream.write_byte(OfflinePackets::IncompatibleProtocolVersion.to_byte());
-          stream.write_byte(self.protocol);
+     fn to(&self) -> Stream {
+          let mut stream: Stream = Stream::new();
+          stream.write_u8(OfflinePackets::IncompatibleProtocolVersion.to_byte());
+          stream.write_u8(self.protocol);
           stream.write_magic();
-          stream.write_long(self.server_id);
+          stream.write_i64(self.server_id);
           stream
      }
 }
@@ -198,8 +190,8 @@ impl IClientBound<IncompatibleProtocolVersion> for IncompatibleProtocolVersion {
 pub fn handle_offline(
      connection: &mut Connection,
      pk: OfflinePackets,
-     stream: &mut BinaryStream,
-) -> BinaryStream {
+     stream: &mut Stream,
+) -> Stream {
      match pk {
           OfflinePackets::UnconnectedPing => {
                let pong = UnconnectedPong {
@@ -243,6 +235,6 @@ pub fn handle_offline(
                connection.state = ConnectionState::Connecting;
                reply.to()
           }
-          _ => BinaryStream::new(), //TODO: Throw an UnknownPacket here rather than sending an empty binary stream
+          _ => Stream::new(Vec::new()), //TODO: Throw an UnknownPacket here rather than sending an empty binary stream
      }
 }
