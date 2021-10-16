@@ -1,6 +1,5 @@
 use crate::MAGIC;
-use binary_utils::stream::*;
-use binary_utils::{IBufferRead, IBufferWrite};
+use binary_utils::*;
 use std::net::{IpAddr, SocketAddr};
 
 // Raknet utilities

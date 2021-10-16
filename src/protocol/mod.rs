@@ -1,22 +1,12 @@
 use crate::SERVER_ID;
-use binary_utils::BinaryStream;
+use binary_utils::*;
+use std::io::Cursor;
 pub mod offline;
 pub mod online;
 
-/// Trait used when a packet should be **sent** to the client.
-/// AKA: This packet is being sent to the client.
-pub trait IClientBound<Pk = Packet> {
-     fn to(&self) -> BinaryStream;
-}
-
-/// Trait used when a packet is being **recieved** from the client.
-/// AKA: This packet is being recieved from the client.
-pub trait IServerBound<Pk = Packet> {
-     fn recv(stream: BinaryStream) -> Pk;
-}
 
 pub struct Packet {
-     pub stream: BinaryStream,
+     pub stream: Cursor<Vec<u8>>,
      pub id: u16,
 }
 

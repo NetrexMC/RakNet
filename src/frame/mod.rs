@@ -1,7 +1,9 @@
 pub mod fragment;
 pub mod reliability;
-use crate::{IClientBound, IServerBound};
-use binary_utils::{BinaryStream, IBinaryStream, IBufferRead, IBufferWrite};
+
+use binary_utils::{self, Streamable, u24::{u24, u24Reader, u24Writer}};
+use std::io::{Cursor, Read, Write};
+use byteorder::{ReadBytesExt, WriteBytesExt};
 use fragment::FragmentInfo;
 use reliability::Reliability;
 
@@ -23,7 +25,7 @@ pub struct Frame {
      pub flags: u8,
      pub size: u16,
      pub reliability: Reliability,
-     pub body: BinaryStream,
+     pub body: Vec<u8>,
 }
 
 impl Frame {
@@ -41,57 +43,59 @@ impl Frame {
                flags: 0,
                size: 0,
                reliability: Reliability::from_bit(0),
-               body: BinaryStream::new(),
+               body: Vec::new(),
           }
      }
 }
 
-impl IServerBound<Frame> for Frame {
-     fn recv(mut stream: BinaryStream) -> Frame {
+impl Streamable for Frame {
+     fn read(source: &[u8], position: &mut usize) -> Self {
+          let mut stream = Cursor::new(source.to_vec());
           let mut frame: Frame = Frame::init();
-          let flags = stream.read_byte();
+          let flags = stream.read_u8().unwrap();
 
           frame.flags = flags;
           frame.reliability = Reliability::from_bit(flags);
 
           let fragmented = (flags & 0x10) > 0;
-          let bit_length = stream.read_ushort();
+          let bit_length = stream.read_u16().unwrap();
 
           if Reliability::is_reliable(frame.reliability.to_byte()) {
-               frame.reliable_index = Some(stream.read_triad());
+               frame.reliable_index = Some(stream.read_u24().unwrap().into());
           }
 
           if Reliability::is_seq(frame.reliability.to_byte()) {
-               frame.sequence_index = Some(stream.read_triad());
+               frame.sequence_index = Some(stream.read_u24().unwrap().into());
           }
 
           if Reliability::is_ord(frame.reliability.to_byte()) {
-               frame.order_index = Some(stream.read_triad());
-               frame.order_channel = Some(stream.read_byte());
+               frame.order_index = Some(stream.read_u24().unwrap().into());
+               frame.order_channel = Some(stream.read_u8());
           }
 
           if fragmented {
                frame.fragment_info = Some(FragmentInfo {
-                    fragment_size: stream.read_int(),
-                    fragment_id: stream.read_ushort(),
-                    fragment_index: stream.read_int(),
+                    fragment_size: stream.read_u32().unwrap(),
+                    fragment_id: stream.read_u16(),
+                    fragment_index: stream.read_i32().unwrap(),
                });
           }
 
           frame.size = bit_length / 8;
 
-          if stream.is_within_bounds(frame.size as usize) {
-               let inner_buffer = stream.read_slice(Some(frame.size as usize));
-               frame.body = BinaryStream::init(&inner_buffer);
+          if stream.len() > (frame.size as usize) {
+               // write sized
+               let offset = stream.position();
+               let inner_buffer = stream[offset..frame.size];
+               stream.set_position(offset + frame.size);
+               frame.body = inner_buffer.as_vec();
           }
 
           frame
      }
-}
 
-impl IClientBound<Frame> for Frame {
-     fn to(&self) -> BinaryStream {
-          let mut stream = BinaryStream::new();
+     fn write(&self) -> Vec<u8> {
+          let mut stream = Cursor::new(Vec::new());
           let mut flags = self.reliability.to_byte() << 5;
 
           if self.fragment_info.is_some() {
@@ -100,38 +104,37 @@ impl IClientBound<Frame> for Frame {
                }
           }
 
-          stream.write_byte(flags);
-          stream.write_ushort((self.body.get_length() as u16) * 8);
+          stream.write_u8(flags);
+          stream.write_u16((self.body.get_length() as u16) * 8);
 
           if self.reliable_index.is_some() {
-               stream.write_triad(self.reliable_index.unwrap());
+               stream.write_u24(self.reliable_index.unwrap());
           }
 
           if self.sequence_index.is_some() {
-               stream.write_triad(self.sequence_index.unwrap());
+               stream.write_u24(self.sequence_index.unwrap());
           }
 
           if self.order_index.is_some() {
-               stream.write_triad(self.order_index.unwrap());
-               stream.write_byte(self.order_channel.unwrap());
+               stream.write_u24(self.order_index.unwrap());
+               stream.write_u8(self.order_channel.unwrap());
           }
 
           if self.fragment_info.is_some() {
                if self.fragment_info.unwrap().fragment_size > 0 {
                     stream.write_int(self.fragment_info.unwrap().fragment_size);
-                    stream.write_ushort(self.fragment_info.unwrap().fragment_id);
+                    stream.write_u16(self.fragment_info.unwrap().fragment_id);
                     stream.write_int(self.fragment_info.unwrap().fragment_index);
                }
           }
 
-          stream.write_slice(&self.body.get_buffer());
+          stream.write(&self.body.get_buffer());
           stream
      }
 }
-
 #[derive(Debug)]
 pub struct FramePacket {
-     pub seq: u32,
+     pub seq: u24,
      pub frames: Vec<Frame>,
 }
 
@@ -144,36 +147,36 @@ impl FramePacket {
      }
 }
 
-impl IClientBound<FramePacket> for FramePacket {
-     fn to(&self) -> BinaryStream {
-          let mut stream = BinaryStream::new();
-          stream.write_byte(0x80);
-          stream.write_triad(self.seq);
+impl Streamable for FramePacket {
+     fn write(&self) -> Vec<u8> {
+          let mut stream = Vec::new();
+          stream.write_u8(0x80);
+          stream.write_u24(self.seq.into());
 
           for f in self.frames.iter() {
-               stream.write_slice(&f.to().get_buffer());
+               stream.write(&f.to().get_buffer());
           }
           stream
      }
-}
 
-impl IServerBound<FramePacket> for FramePacket {
-     fn recv(mut stream: BinaryStream) -> FramePacket {
+     fn read(source: &[u8], position: &mut usize) -> Self {
           let mut packet = FramePacket::new();
-          packet.seq = stream.read_triad();
+          let mut stream = Cursor::new(source);
+          packet.seq = stream.read_u24().into();
 
           loop {
-               if stream.get_offset() >= stream.get_length() {
+               if stream.position() >= source.len() {
                     return packet;
                }
 
-               let offset = stream.get_offset();
-               let frm = Frame::recv(stream.slice(offset, None));
+               let offset = stream.position();
+               let frm = Frame::recv(stream[offset..]);
+
                packet.frames.push(frm.clone());
-               if frm.to().get_length() + stream.get_offset() >= stream.get_length() {
+               if frm.write().len() + offset >= source.len() {
                     return packet;
                } else {
-                    stream.increase_offset(Some(frm.to().get_length()));
+                    stream.set_position(frm.write().len());
                }
           }
      }
