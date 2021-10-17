@@ -67,14 +67,14 @@ impl FragmentList {
           let mut fragments: HashMap<i32, Fragment> = HashMap::new();
           let mut current_index: i32 = 0;
 
-          while stream.get_offset() + part_size < stream.get_length() {
-               let part = stream.read_slice_exact(Some(part_size));
+          while stream.position() + part_size < stream..len() as u64 {
+               let part = stream[stream.position()..(stream.position() + part_size)];
                fragments.insert(current_index, Fragment::new(current_index, part));
                current_index += 1;
           }
 
           // read the rest if for some reason the above failed
-          if stream.get_offset() < stream.get_length() {
+          if stream.position() < stream.get_length() {
                let next_part = stream.read_slice_exact(None);
                fragments.insert(current_index, Fragment::new(current_index, next_part));
           }
@@ -106,7 +106,7 @@ impl FragmentList {
                let mut frame = Frame::init();
                for i in 0..self.get_size() {
                     let frag = self.fragments.get(&(i as i32)).unwrap();
-                    frame.body.write_slice(&frag.get_buffer());
+                    frame.body.write_all(&frag.get_buffer());
                }
 
                // we can now drop the fragment from the table
@@ -131,7 +131,7 @@ impl FragmentList {
                          Some(FragmentInfo::new(self.size as i32, usable_id, index));
                     frame.body = frag.as_stream();
 
-                    if framepk.to().get_length() + frame.to().get_length() >= mtu_size as usize {
+                    if framepk.parse().len() + frame.parse().len() >= mtu_size as usize {
                          framepks.push(framepk);
                          framepk = FramePacket::new();
                     }
@@ -234,7 +234,7 @@ impl FragmentStore {
                let mut list = FragmentList::new();
                list.add_fragment(Fragment {
                     index: frame.fragment_info.unwrap().fragment_index,
-                    buffer: frame.body.get_buffer(),
+                    buffer: frame.body,
                });
                list.size = frame.fragment_info.unwrap().fragment_size as u64;
                self.fragment_table

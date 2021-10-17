@@ -74,7 +74,7 @@ impl RakNetServer {
 
      /// Sends a stream to the specified address.
      /// Instant skips the tick and forcefully sends the packet to the client.
-     pub fn send_stream(&mut self, address: String, stream: BinaryStream, instant: bool) {
+     pub fn send_stream(&mut self, address: String, stream: Vec<u8>, instant: bool) {
           let clients = self.connections.lock();
           match clients.unwrap().get_mut(&address) {
                Some(c) => c.send(stream, instant),
@@ -103,7 +103,7 @@ impl RakNetServer {
                     };
 
                     let data = &buf[..len];
-                    let mut stream = BinaryStream::init(&data.to_vec());
+                    let mut stream = Stream::new(&data.to_vec());
                     let mut sclients = clients_recv.lock().unwrap();
 
                     // check if a connection exists

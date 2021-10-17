@@ -49,7 +49,7 @@ impl Frame {
 }
 
 impl Streamable for Frame {
-     fn read(source: &[u8], position: &mut usize) -> Self {
+     fn compose(source: &[u8], position: &mut usize) -> Self {
           let mut stream = Cursor::new(source.to_vec());
           let mut frame: Frame = Frame::init();
           let flags = stream.read_u8().unwrap();
@@ -94,7 +94,7 @@ impl Streamable for Frame {
           frame
      }
 
-     fn write(&self) -> Vec<u8> {
+     fn parse(&self) -> Vec<u8> {
           let mut stream = Cursor::new(Vec::new());
           let mut flags = self.reliability.to_byte() << 5;
 
@@ -148,7 +148,7 @@ impl FramePacket {
 }
 
 impl Streamable for FramePacket {
-     fn write(&self) -> Vec<u8> {
+     fn parse(&self) -> Vec<u8> {
           let mut stream = Vec::new();
           stream.write_u8(0x80);
           stream.write_u24(self.seq.into());
@@ -159,7 +159,7 @@ impl Streamable for FramePacket {
           stream
      }
 
-     fn read(source: &[u8], position: &mut usize) -> Self {
+     fn compose(source: &[u8], position: &mut usize) -> Self {
           let mut packet = FramePacket::new();
           let mut stream = Cursor::new(source);
           packet.seq = stream.read_u24().into();

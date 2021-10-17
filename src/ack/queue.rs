@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 #[derive(Clone, Debug)]
 pub struct AckQueue {
      current: u32,
-     queue: HashMap<u32, BinaryStream>,
+     queue: HashMap<u32, Vec<u8>>,
 }
 
 impl AckQueue {
@@ -34,7 +34,7 @@ impl AckQueue {
           self.current += by.unwrap_or(1);
      }
 
-     pub fn push_seq(&mut self, idx: u32, val: BinaryStream) {
+     pub fn push_seq(&mut self, idx: u32, val: Vec<u8>) {
           self.queue.insert(idx, val);
      }
 
@@ -47,7 +47,7 @@ impl AckQueue {
           }
      }
 
-     pub fn get_seq(&self, idx: u32) -> Option<&BinaryStream> {
+     pub fn get_seq(&self, idx: u32) -> Option<&Vec<u8>> {
           if self.queue.contains_key(&idx) {
                self.queue.get(&idx)
           } else {
