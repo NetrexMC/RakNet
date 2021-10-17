@@ -1,6 +1,7 @@
 pub mod queue;
-use crate::{IClientBound, IServerBound};
+use std::io::{Read, Write};
 use binary_utils::*;
+use byteorder::{ReadBytesExt, WriteBytesExt};
 
 #[derive(Debug, Clone)]
 pub enum Record {
@@ -69,22 +70,23 @@ impl Ack {
      }
 }
 
-impl IServerBound<Ack> for Ack {
-     fn recv(mut stream: BinaryStream) -> Self {
-          let id = stream.read_byte();
-          let count = stream.read_ushort();
+impl Streamable for Ack {
+     fn compose(source: &[u8], position: &mut usize) -> Self {
+          let mut stream = Vec::<u8>::new();
+          let id = stream.read_u8();
+          let count = stream.read_u16();
           let mut records: Vec<Record> = Vec::new();
           for _ in 0..count {
                if stream.read_bool() {
                     let record: SingleRecord = SingleRecord {
-                         sequence: stream.read_triad(),
+                         sequence: stream.read_u24().into(),
                     };
 
                     records.push(Record::Single(record));
                } else {
                     let record: RangeRecord = RangeRecord {
-                         start: stream.read_triad(),
-                         end: stream.read_triad(),
+                         start: stream.read_u24().into(),
+                         end: stream.read_u24().into(),
                     };
 
                     records.push(Record::Range(record));
@@ -97,24 +99,22 @@ impl IServerBound<Ack> for Ack {
                id: AckIds::from_byte(id),
           }
      }
-}
 
-impl IClientBound<Ack> for Ack {
-     fn to(&self) -> BinaryStream {
-          let mut stream = BinaryStream::new();
-          stream.write_byte(AckIds::Acknowledge as u8);
-          stream.write_ushort(self.count);
+     fn parse(&self) -> Vec<u8> {
+          let mut stream = Vec::<u8>::new();
+          stream.write_u8(AckIds::Acknowledge as u8);
+          stream.write_u16(self.count);
 
           for record in self.records.iter() {
                match record {
                     Record::Single(rec) => {
-                         stream.write_bool(true);
-                         stream.write_triad(rec.sequence);
+                         stream.write_u8(true.into());
+                         stream.write_u24(rec.sequence);
                     }
                     Record::Range(rec) => {
-                         stream.write_bool(false);
-                         stream.write_triad(rec.start);
-                         stream.write_triad(rec.end);
+                         stream.write_u8(false.into());
+                         stream.write_u24(rec.start);
+                         stream.write_u24(rec.end);
                     }
                }
           }

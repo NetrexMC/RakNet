@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use crate::conn::{Connection, ConnectionState};
-use crate::{IPacketStreamRead, IPacketStreamWrite, RakNetVersion, USE_SECURITY};
+use crate::{IPacketStreamRead, IPacketStreamWrite, Magic, RakNetVersion, USE_SECURITY};
 use crate::{Motd, SERVER_ID};
 use binary_utils::*;
 use byteorder::{ReadBytesExt, WriteBytesExt};
@@ -68,18 +68,8 @@ impl std::fmt::Display for OfflinePackets {
 #[derive(BinaryStream)]
 pub struct UnconnectedPing {
      timestamp: i64,
-     magic: Vec<u8>,
+     magic: Magic,
      client_id: i64,
-}
-
-impl IServerBound<UnconnectedPing> for UnconnectedPing {
-     fn recv(mut stream: Stream) -> UnconnectedPing {
-          Self {
-               timestamp: stream.read_i64(),
-               magic: stream.read_magic(),
-               client_id: stream.read_i64(),
-          }
-     }
 }
 
 /// Unconnected Pong
@@ -93,98 +83,59 @@ pub struct UnconnectedPong {
 /// A connection request recv the client.
 #[derive(BinaryStream)]
 pub struct OpenConnectRequest {
-     magic: Vec<u8>,
+     magic: Magic,
      protocol: u8,
      mtu_size: i16,
 }
 
-impl IServerBound<OpenConnectRequest> for OpenConnectRequest {
-     fn recv(mut s: Stream) -> OpenConnectRequest {
-          let magic = s.read_magic();
-          let p = s.read_byte();
-          let mtu = s.get_length() + 1 + 28;
-          Self {
-               magic,
-               protocol: p,
-               mtu_size: mtu as i16,
-          }
-     }
-}
+// Mtu size may be needed here.
+// impl IServerBound<OpenConnectRequest> for OpenConnectRequest {
+//      fn recv(mut s: Stream) -> OpenConnectRequest {
+//           let magic = s.read_magic();
+//           let p = s.read_byte();
+//           let mtu = s.get_length() + 1 + 28;
+//           Self {
+//                magic,
+//                protocol: p,
+//                mtu_size: mtu as i16,
+//           }
+//      }
+// }
 
 /// Open Connection Reply
 /// Sent to the client when the server accepts a client.
+#[derive(BinaryStream)]
 pub struct OpenConnectReply {
+     id: u8,
+     magic: Magic,
      server_id: i64,
      security: bool,
      mtu_size: i16,
 }
-
-impl IClientBound<OpenConnectReply> for OpenConnectReply {
-     fn to(&self) -> Stream {
-          let mut stream = Stream::new();
-          stream.write_u8(OfflinePackets::OpenConnectReply.to_byte());
-          stream.write_magic();
-          stream.write_i64(self.server_id);
-          stream.write_bool(self.security);
-          stream.write_i64(self.mtu_size);
-          stream
-     }
-}
-
 /// Session info, also known as Open Connect Request 2
+#[derive(BinaryStream)]
 pub struct SessionInfoRequest {
-     magic: Vec<u8>,
+     magic: Magic,
      address: SocketAddr,
      mtu_size: i16,
      client_id: i64,
 }
 
-impl IServerBound<SessionInfoRequest> for SessionInfoRequest {
-     fn recv(mut stream: Stream) -> SessionInfoRequest {
-          Self {
-               magic: stream.read_magic(),
-               address: stream.read_address(),
-               mtu_size: stream.read_i16().unwrap(),
-               client_id: stream.read_i64().unwrap(),
-          }
-     }
-}
-
 /// Session Info Reply, also known as Open Connect Reply 2
+#[derive(BinaryStream)]
 pub struct SessionInfoReply {
+     id: u8,
+     magic: Magic,
      server_id: i64,
      client_address: SocketAddr,
      mtu_size: i16,
      security: bool,
 }
-
-impl IClientBound<SessionInfoReply> for SessionInfoReply {
-     fn to(&self) -> Stream {
-          let mut stream: Stream = Stream::new();
-          stream.write_u8(OfflinePackets::SessionInfoReply.to_byte());
-          stream.write_magic();
-          stream.write_i64(self.server_id);
-          stream.write_address(self.client_address);
-          stream.write_i64(self.mtu_size);
-          stream.write_bool(self.security);
-          stream
-     }
-}
-
 pub struct IncompatibleProtocolVersion {
+     id: u8,
      protocol: u8,
+     magic: Magic,
      server_id: i64,
-}
-
-impl IClientBound<IncompatibleProtocolVersion> for IncompatibleProtocolVersion {
-     fn to(&self) -> Stream {
-          let mut stream: Stream = Stream::new();
-          stream.write_u8(OfflinePackets::IncompatibleProtocolVersion.to_byte());
-          stream.write_u8(self.protocol);
-          stream.write_magic();
-          stream.write_i64(self.server_id);
-          stream
-     }
 }
 
 pub fn handle_offline(
@@ -200,23 +151,27 @@ pub fn handle_offline(
                     motd: connection.get_motd(),
                };
 
-               pong.to()
+               pong.parse()
           }
           OfflinePackets::OpenConnectRequest => {
-               let request = OpenConnectRequest::recv(stream.clone());
+               let request = OpenConnectRequest::compose(stream.clone());
 
                if request.protocol != RakNetVersion::MinecraftRecent.to_u8() {
                     let incompatible = IncompatibleProtocolVersion {
+                         id: OfflinePackets::IncompatibleProtocolVersion,
                          protocol: request.protocol,
+                         magic: Magic::new(),
                          server_id: SERVER_ID,
                     };
 
-                    return incompatible.to();
+                    return incompatible.parse();
                }
 
                let reply = OpenConnectReply {
+                    id: OfflinePackets::OpenConnectReply,
                     server_id: SERVER_ID,
                     security: USE_SECURITY,
+                    magic: Magic::new(),
                     mtu_size: request.mtu_size,
                };
 
@@ -225,8 +180,10 @@ pub fn handle_offline(
           OfflinePackets::SessionInfoRequest => {
                let request = SessionInfoRequest::recv(stream.clone());
                let reply = SessionInfoReply {
+                    id: OfflinePackets::SessionInfoReply,
                     server_id: SERVER_ID,
                     client_address: connection.address.clone(),
+                    magic: Magic::new(),
                     mtu_size: request.mtu_size,
                     security: USE_SECURITY,
                };
