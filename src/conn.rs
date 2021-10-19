@@ -179,7 +179,7 @@ impl Connection {
 
                if is_ack_or_nack(online_packet.to_byte()) {
                     stream.set_position(0);
-                    return self.handle_ack(stream.get_mut());
+                    return self.handle_ack(stream.get_ref().clone());
                }
 
                match online_packet {
@@ -212,8 +212,9 @@ impl Connection {
      ///   we add this sequence number to the **Nack** queue,
      ///   which is then sent to the client when the connection ticks
      ///   to *hopefully* force the client to eventually send that packet.
-     pub fn handle_ack(&mut self, packet: &mut &Vec<u8>) {
-          let got = Ack::compose(packet, &mut 0);
+     pub fn handle_ack(&mut self, packet: &Vec<u8>) {
+
+          let got = Ack::compose(&packet[..], &mut 0);
 
           for record in got.records {
                if record.is_single() {
@@ -292,7 +293,7 @@ impl Connection {
                     let mut new_framepk = FramePacket::new();
                     let mut new_frame = Frame::init();
 
-                    new_frame.body = response.clone();
+                    new_frame.body = response;
                     new_frame.reliability = Reliability::new(ReliabilityFlag::Unreliable);
                     new_framepk.frames.push(new_frame);
                     new_framepk.seq = self.send_seq.into();
