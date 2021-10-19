@@ -34,6 +34,7 @@ impl Streamable for Magic {
          // magic is 16 bytes
          let pos = *position + (16 as usize);
          let magic = &source[*position..pos];
+         *position += 16;
 
          if magic.to_vec() != MAGIC.to_vec() {
               panic!("Could not construct magic from malformed bytes.")

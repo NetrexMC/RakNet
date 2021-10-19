@@ -11,7 +11,7 @@ checksum = "cdb031dd78e28731d87d56cc8ffef4a8f36ca26c38fe2de700543e627f8a464a"
 [[package]]
 name = "bin_macro"
 version = "0.1.0"
-source = "git+https://github.com/NetrexMC/BinaryUtil?branch=v2#233a995aad22d4cb908cd8e04c947b40972f5b14"
+source = "git+https://github.com/NetrexMC/BinaryUtil?branch=v2#8f31ecf6c7f30075fe1ca96629e48b2d7795eb00"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -20,13 +20,8 @@ dependencies = [
 
 [[package]]
 name = "binary_utils"
-version = "0.1.2"
-source = "git+https://github.com/NetrexMC/BinaryUtil?branch=master#170002a789d690c8983f29b3211220839ef74962"
-
-[[package]]
-name = "binary_utils"
 version = "0.2.0"
-source = "git+https://github.com/NetrexMC/BinaryUtil?branch=v2#233a995aad22d4cb908cd8e04c947b40972f5b14"
+source = "git+https://github.com/NetrexMC/BinaryUtil?branch=v2#8f31ecf6c7f30075fe1ca96629e48b2d7795eb00"
 dependencies = [
  "bin_macro",
  "byteorder",
@@ -95,7 +90,7 @@ dependencies = [
 name = "rakrs"
 version = "0.1.0"
 dependencies = [
- "binary_utils 0.2.0",
+ "binary_utils",
  "byteorder",
  "rand",
  "tokio",
@@ -105,7 +100,7 @@ dependencies = [
 name = "rakrs_test"
 version = "0.1.0"
 dependencies = [
- "binary_utils 0.1.2",
+ "binary_utils",
  "rakrs",
 ]
 

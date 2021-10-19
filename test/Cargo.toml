@@ -5,5 +5,5 @@ authors = ["Bavfalcon9"]
 edition = "2018"
 
 [dependencies]
-binary_utils = { git = "https://github.com/NetrexMC/BinaryUtil", branch = "master" }
+binary_utils = { git = "https://github.com/NetrexMC/BinaryUtil", branch = "v2" }
 rakrs = { path = "../" }

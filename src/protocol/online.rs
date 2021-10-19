@@ -68,13 +68,13 @@ impl std::fmt::Display for OnlinePackets {
      }
 }
 
-#[derive(BinaryStream)]
+#[derive(Debug, BinaryStream)]
 pub struct ConnectionRequest {
      client_id: i64,
      timestamp: i64,
 }
 
-#[derive(BinaryStream)]
+#[derive(Debug, BinaryStream)]
 pub struct ConnectionAccept {
      id: u8,
      client_address: SocketAddr,
@@ -89,7 +89,7 @@ pub struct ConnectedPing {
      time: i64,
 }
 
-#[derive(BinaryStream)]
+#[derive(Debug, BinaryStream)]
 pub struct ConnectedPong {
      id: u8,
      ping_time: i64,

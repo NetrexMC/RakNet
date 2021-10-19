@@ -3,6 +3,7 @@
 use crate::conn::{Connection, ConnectionState};
 use crate::{IPacketStreamRead, IPacketStreamWrite, Magic, RakNetVersion, USE_SECURITY};
 use crate::{Motd, SERVER_ID};
+use crate::RakNetEvent;
 use binary_utils::*;
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use std::convert::TryInto;
@@ -73,16 +74,17 @@ pub struct UnconnectedPing {
 }
 
 /// Unconnected Pong
-#[derive(BinaryStream)]
+#[derive(Debug, BinaryStream)]
 pub struct UnconnectedPong {
      id: u8,
      timestamp: i64,
      server_id: i64,
+     magic: Magic,
      motd: String,
 }
 
 /// A connection request recv the client.
-#[derive(BinaryStream)]
+#[derive(Debug, BinaryStream)]
 pub struct OpenConnectRequest {
      magic: Magic,
      protocol: u8,
@@ -105,7 +107,7 @@ pub struct OpenConnectRequest {
 
 /// Open Connection Reply
 /// Sent to the client when the server accepts a client.
-#[derive(BinaryStream)]
+#[derive(Debug, BinaryStream)]
 pub struct OpenConnectReply {
      id: u8,
      magic: Magic,
@@ -114,7 +116,7 @@ pub struct OpenConnectReply {
      mtu_size: i16,
 }
 /// Session info, also known as Open Connect Request 2
-#[derive(BinaryStream)]
+#[derive(Debug, BinaryStream)]
 pub struct SessionInfoRequest {
      magic: Magic,
      address: SocketAddr,
@@ -123,7 +125,7 @@ pub struct SessionInfoRequest {
 }
 
 /// Session Info Reply, also known as Open Connect Reply 2
-#[derive(BinaryStream)]
+#[derive(Debug, BinaryStream)]
 pub struct SessionInfoReply {
      id: u8,
      magic: Magic,
@@ -133,7 +135,7 @@ pub struct SessionInfoReply {
      security: bool,
 }
 
-#[derive(BinaryStream)]
+#[derive(Debug, BinaryStream)]
 pub struct IncompatibleProtocolVersion {
      id: u8,
      protocol: u8,
@@ -152,9 +154,9 @@ pub fn handle_offline(
                     id: OfflinePackets::UnconnectedPong.to_byte(),
                     server_id: SERVER_ID,
                     timestamp: connection.time.elapsed().unwrap().as_millis() as i64,
+                    magic: Magic::new(),
                     motd: connection.get_motd().encode(),
                };
-               println!("{:?}", pong.parse());
                pong.parse()
           }
           OfflinePackets::OpenConnectRequest => {
