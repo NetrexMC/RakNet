@@ -77,7 +77,7 @@ impl Streamable for Ack {
           let count = stream.read_u16::<BE>().unwrap();
           let mut records: Vec<Record> = Vec::new();
           for _ in 0..count {
-               if stream.read_u8().unwrap() == 0 {
+               if stream.read_u8().unwrap() == 1 {
                     let record: SingleRecord = SingleRecord {
                          sequence: stream.read_u24::<BE>().unwrap(),
                     };
@@ -102,19 +102,19 @@ impl Streamable for Ack {
 
      fn parse(&self) -> Vec<u8> {
           let mut stream = Vec::<u8>::new();
-          stream.write_u8(AckIds::Acknowledge as u8);
-          stream.write_u16::<BE>(self.count);
+          stream.write_u8(AckIds::Acknowledge as u8).unwrap();
+          stream.write_u16::<BE>(self.count).unwrap();
 
           for record in self.records.iter() {
                match record {
                     Record::Single(rec) => {
-                         stream.write_u8(true.into());
-                         stream.write_u24::<BE>(rec.sequence);
+                         stream.write_u8(1).unwrap();
+                         stream.write_u24::<BE>(rec.sequence).unwrap();
                     }
                     Record::Range(rec) => {
-                         stream.write_u8(false.into());
-                         stream.write_u24::<BE>(rec.start);
-                         stream.write_u24::<BE>(rec.end);
+                         stream.write_u8(0).unwrap();
+                         stream.write_u24::<BE>(rec.start).unwrap();
+                         stream.write_u24::<BE>(rec.end).unwrap();
                     }
                }
           }

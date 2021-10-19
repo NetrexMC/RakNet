@@ -1,7 +1,7 @@
 pub mod fragment;
 pub mod reliability;
 
-use binary_utils::{self, Streamable, u24::{u24, u24Reader, u24Writer}};
+use binary_utils::{self, Streamable, u24::{u24}};
 use std::io::{Cursor, Read, Write};
 use byteorder::{BE, ReadBytesExt, WriteBytesExt};
 use fragment::FragmentInfo;
@@ -52,6 +52,8 @@ impl Streamable for Frame {
      fn compose(source: &[u8], position: &mut usize) -> Self {
           let mut stream = Cursor::new(source.to_vec());
           let mut frame: Frame = Frame::init();
+          *position = 0;
+          stream.set_position(*position as u64);
           let flags = stream.read_u8().unwrap();
 
           frame.flags = flags;
@@ -86,7 +88,7 @@ impl Streamable for Frame {
           if source.len() > (frame.size as usize) {
                // write sized
                let offset = stream.position() as usize;
-               let inner_buffer = &source[offset..(frame.size as usize)];
+               let inner_buffer = &source[offset..(frame.size as usize) + offset];
                stream.set_position(stream.position() + (frame.size as u64));
                frame.body = inner_buffer.to_vec();
           }
@@ -104,31 +106,31 @@ impl Streamable for Frame {
                }
           }
 
-          stream.write_u8(flags);
-          stream.write_u16::<BE>((self.body.len() as u16) * 8);
+          stream.write_u8(flags).unwrap();
+          stream.write_u16::<BE>((self.body.len() as u16) * 8).unwrap();
 
           if self.reliable_index.is_some() {
-               stream.write_u24::<BE>(self.reliable_index.unwrap());
+               stream.write_u24::<BE>(self.reliable_index.unwrap()).unwrap();
           }
 
           if self.sequence_index.is_some() {
-               stream.write_u24::<BE>(self.sequence_index.unwrap());
+               stream.write_u24::<BE>(self.sequence_index.unwrap()).unwrap();
           }
 
           if self.order_index.is_some() {
-               stream.write_u24::<BE>(self.order_index.unwrap());
-               stream.write_u8(self.order_channel.unwrap());
+               stream.write_u24::<BE>(self.order_index.unwrap()).unwrap();
+               stream.write_u8(self.order_channel.unwrap()).unwrap();
           }
 
           if self.fragment_info.is_some() {
                if self.fragment_info.unwrap().fragment_size > 0 {
-                    stream.write_i32::<BE>(self.fragment_info.unwrap().fragment_size);
-                    stream.write_u16::<BE>(self.fragment_info.unwrap().fragment_id);
-                    stream.write_i32::<BE>(self.fragment_info.unwrap().fragment_index);
+                    stream.write_i32::<BE>(self.fragment_info.unwrap().fragment_size).unwrap();
+                    stream.write_u16::<BE>(self.fragment_info.unwrap().fragment_id).unwrap();
+                    stream.write_i32::<BE>(self.fragment_info.unwrap().fragment_index).unwrap();
                }
           }
 
-          stream.write(&self.body);
+          stream.write_all(&self.body).unwrap();
           stream.get_ref().clone()
      }
 }
@@ -150,11 +152,11 @@ impl FramePacket {
 impl Streamable for FramePacket {
      fn parse(&self) -> Vec<u8> {
           let mut stream = Vec::new();
-          stream.write_u8(0x80);
-          stream.write_u24::<BE>(self.seq.into());
+          stream.write_u8(0x80).unwrap();
+          stream.write_u24::<BE>(self.seq.into()).unwrap();
 
           for f in self.frames.iter() {
-               stream.write(&f.parse());
+               stream.write_all(&f.parse()).unwrap();
           }
           stream
      }
@@ -162,6 +164,7 @@ impl Streamable for FramePacket {
      fn compose(source: &[u8], position: &mut usize) -> Self {
           let mut packet = FramePacket::new();
           let mut stream = Cursor::new(source);
+          stream.set_position(*position as u64);
           packet.seq = stream.read_u24::<BE>().unwrap().into();
 
           loop {
@@ -169,11 +172,11 @@ impl Streamable for FramePacket {
                     return packet;
                }
 
-               let mut offset = stream.position();
-               let frm = Frame::compose(&source[(offset as usize)..], &mut (offset as usize));
-
+               let offset: usize = stream.position() as usize;
+               let frm = Frame::compose(&source[(offset)..], &mut 0);
+               stream.set_position(source.len() as u64);
                packet.frames.push(frm.clone());
-               if frm.parse().len() + offset as usize >= source.len() {
+               if frm.parse().len() + stream.position() as usize >= source.len() {
                     return packet;
                } else {
                     stream.set_position(frm.parse().len() as u64);

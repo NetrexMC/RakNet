@@ -9,7 +9,7 @@ use byteorder::{ReadBytesExt, WriteBytesExt};
 use std::convert::TryInto;
 use std::fmt::{Formatter, Result as FResult};
 use std::net::SocketAddr;
-use std::io::Cursor;
+use std::io::{Cursor, Write};
 
 pub enum OfflinePackets {
      UnconnectedPing,
@@ -84,11 +84,32 @@ pub struct UnconnectedPong {
 }
 
 /// A connection request recv the client.
-#[derive(Debug, BinaryStream)]
+#[derive(Debug)]
 pub struct OpenConnectRequest {
      magic: Magic,
      protocol: u8,
-     mtu_size: i16,
+     mtu_size: u16,
+}
+
+impl Streamable for OpenConnectRequest {
+     fn compose(source: &[u8], position: &mut usize) -> Self {
+          Self {
+               magic: Magic::compose(source, position),
+               protocol: u8::compose(source, position),
+               mtu_size: (source.len() + 1 + 28) as u16
+          }
+     }
+
+     fn parse(&self) -> Vec<u8> {
+         let mut stream = Vec::<u8>::new();
+         stream.write(&self.magic.parse()[..]);
+         stream.write_u8(self.protocol).unwrap();
+         // padding
+         for x in 0..self.mtu_size {
+              stream.write_u8(0).unwrap();
+         }
+         stream
+     }
 }
 
 // Mtu size may be needed here.
@@ -113,7 +134,7 @@ pub struct OpenConnectReply {
      magic: Magic,
      server_id: i64,
      security: bool,
-     mtu_size: i16,
+     mtu_size: u16,
 }
 /// Session info, also known as Open Connect Request 2
 #[derive(Debug, BinaryStream)]

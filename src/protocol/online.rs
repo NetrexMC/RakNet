@@ -74,7 +74,7 @@ pub struct ConnectionRequest {
      timestamp: i64,
 }
 
-#[derive(Debug, BinaryStream)]
+#[derive(Debug)]
 pub struct ConnectionAccept {
      id: u8,
      client_address: SocketAddr,
@@ -82,6 +82,32 @@ pub struct ConnectionAccept {
      internal_ids: SocketAddr,
      request_time: i64,
      timestamp: i64,
+}
+
+impl Streamable for ConnectionAccept {
+     fn parse(&self) -> Vec<u8> {
+         let mut stream = Vec::new();
+         stream.write_u8(self.id).unwrap();
+         stream.write_all(&self.client_address.parse()[..]).unwrap();
+         stream.write_i16::<BigEndian>(self.system_index).unwrap();
+         for _ in 0..10 {
+              stream.write_all(&self.internal_ids.parse()[..]).unwrap();
+         }
+         stream.write_i64::<BigEndian>(self.request_time).unwrap();
+         stream.write_i64::<BigEndian>(self.timestamp).unwrap();
+         stream
+     }
+
+     fn compose(_source: &[u8], _position: &mut usize) -> Self {
+          Self {
+               id: 0,
+               client_address: SocketAddr::new(IpAddr::from(Ipv4Addr::new(192,168,0,1)), 9120),
+               system_index: 0,
+               internal_ids: SocketAddr::new(IpAddr::from(Ipv4Addr::new(127,0,0,1)), 1920),
+               request_time: 0,
+               timestamp: 0
+          }
+     }
 }
 
 #[derive(Debug, BinaryStream)]
@@ -131,7 +157,7 @@ pub fn handle_online(
           }
           OnlinePackets::NewConnection => Vec::new(),
           OnlinePackets::ConnectedPing => {
-               let request = ConnectedPing::compose(stream, &mut 1);
+               let request = ConnectedPing::compose(stream, &mut 0);
                let pong = ConnectedPong {
                     id: OnlinePackets::ConnectedPong.to_byte(),
                     ping_time: request.time,
