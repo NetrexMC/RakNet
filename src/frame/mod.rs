@@ -3,7 +3,7 @@ pub mod reliability;
 
 use binary_utils::{self, Streamable, u24::{u24, u24Reader, u24Writer}};
 use std::io::{Cursor, Read, Write};
-use byteorder::{ReadBytesExt, WriteBytesExt};
+use byteorder::{BE, ReadBytesExt, WriteBytesExt};
 use fragment::FragmentInfo;
 use reliability::Reliability;
 
@@ -58,37 +58,37 @@ impl Streamable for Frame {
           frame.reliability = Reliability::from_bit(flags);
 
           let fragmented = (flags & 0x10) > 0;
-          let bit_length = stream.read_u16().unwrap();
+          let bit_length = stream.read_u16::<BE>().unwrap();
 
           if Reliability::is_reliable(frame.reliability.to_byte()) {
-               frame.reliable_index = Some(stream.read_u24().unwrap().into());
+               frame.reliable_index = Some(stream.read_u24::<BE>().unwrap().into());
           }
 
           if Reliability::is_seq(frame.reliability.to_byte()) {
-               frame.sequence_index = Some(stream.read_u24().unwrap().into());
+               frame.sequence_index = Some(stream.read_u24::<BE>().unwrap().into());
           }
 
           if Reliability::is_ord(frame.reliability.to_byte()) {
-               frame.order_index = Some(stream.read_u24().unwrap().into());
-               frame.order_channel = Some(stream.read_u8());
+               frame.order_index = Some(stream.read_u24::<BE>().unwrap().into());
+               frame.order_channel = Some(stream.read_u8().unwrap());
           }
 
           if fragmented {
                frame.fragment_info = Some(FragmentInfo {
-                    fragment_size: stream.read_u32().unwrap(),
-                    fragment_id: stream.read_u16(),
-                    fragment_index: stream.read_i32().unwrap(),
+                    fragment_size: stream.read_i32::<BE>().unwrap(),
+                    fragment_id: stream.read_u16::<BE>().unwrap(),
+                    fragment_index: stream.read_i32::<BE>().unwrap(),
                });
           }
 
           frame.size = bit_length / 8;
 
-          if stream.len() > (frame.size as usize) {
+          if source.len() > (frame.size as usize) {
                // write sized
-               let offset = stream.position();
-               let inner_buffer = stream[offset..frame.size];
-               stream.set_position(offset + frame.size);
-               frame.body = inner_buffer.as_vec();
+               let offset = stream.position() as usize;
+               let inner_buffer = &source[offset..(frame.size as usize)];
+               stream.set_position(stream.position() + (frame.size as u64));
+               frame.body = inner_buffer.to_vec();
           }
 
           frame
@@ -105,31 +105,31 @@ impl Streamable for Frame {
           }
 
           stream.write_u8(flags);
-          stream.write_u16((self.body.get_length() as u16) * 8);
+          stream.write_u16::<BE>((self.body.len() as u16) * 8);
 
           if self.reliable_index.is_some() {
-               stream.write_u24(self.reliable_index.unwrap());
+               stream.write_u24::<BE>(self.reliable_index.unwrap());
           }
 
           if self.sequence_index.is_some() {
-               stream.write_u24(self.sequence_index.unwrap());
+               stream.write_u24::<BE>(self.sequence_index.unwrap());
           }
 
           if self.order_index.is_some() {
-               stream.write_u24(self.order_index.unwrap());
+               stream.write_u24::<BE>(self.order_index.unwrap());
                stream.write_u8(self.order_channel.unwrap());
           }
 
           if self.fragment_info.is_some() {
                if self.fragment_info.unwrap().fragment_size > 0 {
-                    stream.write_int(self.fragment_info.unwrap().fragment_size);
-                    stream.write_u16(self.fragment_info.unwrap().fragment_id);
-                    stream.write_int(self.fragment_info.unwrap().fragment_index);
+                    stream.write_i32::<BE>(self.fragment_info.unwrap().fragment_size);
+                    stream.write_u16::<BE>(self.fragment_info.unwrap().fragment_id);
+                    stream.write_i32::<BE>(self.fragment_info.unwrap().fragment_index);
                }
           }
 
-          stream.write(&self.body.get_buffer());
-          stream
+          stream.write(&self.body);
+          stream.get_ref().clone()
      }
 }
 #[derive(Debug)]
@@ -141,7 +141,7 @@ pub struct FramePacket {
 impl FramePacket {
      pub fn new() -> Self {
           Self {
-               seq: 0,
+               seq: 0.into(),
                frames: Vec::new(),
           }
      }
@@ -151,10 +151,10 @@ impl Streamable for FramePacket {
      fn parse(&self) -> Vec<u8> {
           let mut stream = Vec::new();
           stream.write_u8(0x80);
-          stream.write_u24(self.seq.into());
+          stream.write_u24::<BE>(self.seq.into());
 
           for f in self.frames.iter() {
-               stream.write(&f.to().get_buffer());
+               stream.write(&f.parse());
           }
           stream
      }
@@ -162,21 +162,21 @@ impl Streamable for FramePacket {
      fn compose(source: &[u8], position: &mut usize) -> Self {
           let mut packet = FramePacket::new();
           let mut stream = Cursor::new(source);
-          packet.seq = stream.read_u24().into();
+          packet.seq = stream.read_u24::<BE>().unwrap().into();
 
           loop {
-               if stream.position() >= source.len() {
+               if stream.position() >= source.len() as u64 {
                     return packet;
                }
 
-               let offset = stream.position();
-               let frm = Frame::recv(stream[offset..]);
+               let mut offset = stream.position();
+               let frm = Frame::compose(&source[(offset as usize)..], &mut (offset as usize));
 
                packet.frames.push(frm.clone());
-               if frm.write().len() + offset >= source.len() {
+               if frm.parse().len() + offset as usize >= source.len() {
                     return packet;
                } else {
-                    stream.set_position(frm.write().len());
+                    stream.set_position(frm.parse().len() as u64);
                }
           }
      }

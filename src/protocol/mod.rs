@@ -34,7 +34,7 @@ impl Motd {
           }
      }
 
-     pub fn parse(&self) -> String {
+     pub fn encode(&self) -> String {
           let mut parsed = String::new();
           let prot = self.protocol.to_string();
           let pcount = self.player_count.to_string();

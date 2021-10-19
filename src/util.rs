@@ -1,6 +1,6 @@
 use crate::MAGIC;
 use binary_utils::*;
-use std::net::{IpAddr, SocketAddr};
+use std::net::{Ipv4Addr, SocketAddr, ToSocketAddrs};
 use std::io::Cursor;
 
 // Raknet utilities
@@ -16,6 +16,7 @@ pub trait IPacketStreamRead {
      fn read_address(&mut self) -> SocketAddr;
 }
 
+#[derive(Debug)]
 pub struct Magic(pub Vec<u8>);
 
 impl Magic {
@@ -31,13 +32,13 @@ impl Streamable for Magic {
 
      fn compose(source: &[u8], position: &mut usize) -> Self {
          // magic is 16 bytes
-         let pos = position + 16;
-         let magic = source[position..pos];
+         let pos = *position + (16 as usize);
+         let magic = &source[*position..pos];
 
          if magic.to_vec() != MAGIC.to_vec() {
               panic!("Could not construct magic from malformed bytes.")
          } else {
-              Self(magic)
+              Self(magic.to_vec())
          }
      }
 }
@@ -90,8 +91,6 @@ pub fn tokenize_addr(remote: SocketAddr) -> String {
 }
 
 pub fn from_tokenized(remote: String) -> SocketAddr {
-     let parsed: SocketAddr = remote
-          .parse()
-          .expect("Could not retrieve address from token.");
-     parsed
+     let mut parsed = remote.to_socket_addrs().expect("Could not parse remote address.");
+     SocketAddr::from(parsed.next().unwrap())
 }
