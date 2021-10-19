@@ -4,6 +4,7 @@ use super::{Frame, FramePacket};
 use binary_utils::*;
 use std::collections::HashMap;
 use std::io::Cursor;
+use std::io::{Write, Read};
 
 #[derive(Copy, Clone, Debug)]
 pub struct FragmentInfo {
@@ -43,7 +44,7 @@ impl Fragment {
      }
 
      pub fn as_stream(&self) -> Vec<u8> {
-          &self.buffer.to_vec()
+          self.buffer.to_vec()
      }
 }
 
@@ -63,19 +64,20 @@ impl FragmentList {
           }
      }
 
-     pub fn from(stream: &mut Cursor<Vec<u8>>, part_size: usize) -> Self {
+     pub fn from(buf: &mut Vec<u8>, part_size: usize) -> Self {
+          let mut stream = Cursor::new(buf);
           let mut fragments: HashMap<i32, Fragment> = HashMap::new();
           let mut current_index: i32 = 0;
 
-          while stream.position() + part_size < stream..len() as u64 {
-               let part = stream[stream.position()..(stream.position() + part_size)];
-               fragments.insert(current_index, Fragment::new(current_index, part));
+          while (stream.position() + part_size as u64) < (stream.get_ref().len() as u64) {
+               let part = &stream.get_ref()[stream.position() as usize..(stream.position() as usize + part_size)];
+               fragments.insert(current_index, Fragment::new(current_index, part.to_vec()));
                current_index += 1;
           }
 
           // read the rest if for some reason the above failed
-          if stream.position() < stream.get_length() {
-               let next_part = stream.read_slice_exact(None);
+          if stream.position() < stream.get_ref().len() as u64 {
+               let next_part = stream.remaining_slice().to_vec();
                fragments.insert(current_index, Fragment::new(current_index, next_part));
           }
 
@@ -245,7 +247,7 @@ impl FragmentStore {
                     .unwrap()
                     .add_fragment(Fragment {
                          index: frame.fragment_info.unwrap().fragment_index,
-                         buffer: frame.body.get_buffer(),
+                         buffer: frame.body,
                     });
           }
      }

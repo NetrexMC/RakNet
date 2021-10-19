@@ -1,8 +1,10 @@
 #![allow(dead_code)]
 use crate::conn::{Connection, ConnectionState};
 use crate::util::tokenize_addr;
-use crate::{IPacketStreamWrite, RakNetEvent};
+use crate::RakNetEvent;
 use binary_utils::*;
+use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
+use std::io::{Read, Write};
 use std::fmt::{Formatter, Result as FResult};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::SystemTime;
@@ -71,6 +73,8 @@ pub struct ConnectionRequest {
      client_id: i64,
      timestamp: i64,
 }
+
+#[derive(BinaryStream)]
 pub struct ConnectionAccept {
      id: u8,
      client_address: SocketAddr,
@@ -78,25 +82,6 @@ pub struct ConnectionAccept {
      internal_ids: SocketAddr,
      request_time: i64,
      timestamp: i64,
-}
-
-impl Streamable for ConnectionAccept {
-     fn parse(&self) -> Vec<u8> {
-          let mut stream = Vec::new();
-          stream.write_byte(OnlinePackets::ConnectionAccept.to_byte());
-          stream.write_address(self.client_address);
-          stream.write_short(self.system_index);
-          for _ in 0..10 {
-               stream.write_address(self.internal_ids);
-          }
-          stream.write_long(self.request_time);
-          stream.write_long(self.timestamp);
-          stream
-     }
-
-     fn compose(source: &[u8], position: &mut usize) -> Self {
-         todo!()
-     }
 }
 
 #[derive(Debug, BinaryStream)]
@@ -118,9 +103,9 @@ pub fn handle_online(
 ) -> Vec<u8> {
      match pk {
           OnlinePackets::ConnectionRequest => {
-               let request = ConnectionRequest::compose(stream.clone());
+               let request = ConnectionRequest::compose(stream, &mut 1);
                let accept = ConnectionAccept {
-                    id: OnlinePackets::ConnectionAccept,
+                    id: OnlinePackets::ConnectionAccept.to_byte(),
                     client_address: connection.address.clone(),
                     system_index: 0,
                     internal_ids: SocketAddr::new(
@@ -146,9 +131,9 @@ pub fn handle_online(
           }
           OnlinePackets::NewConnection => Vec::new(),
           OnlinePackets::ConnectedPing => {
-               let request = ConnectedPing::compose(stream.clone());
+               let request = ConnectedPing::compose(stream, &mut 1);
                let pong = ConnectedPong {
-                    id: OnlinePackets::ConnectedPong,
+                    id: OnlinePackets::ConnectedPong.to_byte(),
                     ping_time: request.time,
                     pong_time: SystemTime::now()
                          .duration_since(connection.time)

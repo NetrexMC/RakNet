@@ -12,8 +12,10 @@ use std::collections::VecDeque;
 use std::net::SocketAddr;
 use std::sync::{Arc};
 use std::time::SystemTime;
+use std::io::{Read, Write, Cursor};
+use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
 
-pub type RecievePacketFn = fn(&mut Connection, &mut Stream);
+pub type RecievePacketFn = fn(&mut Connection, &mut Vec<u8>);
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ConnectionState {
@@ -89,11 +91,11 @@ pub struct Connection {
      /// A Vector of streams to be sent.
      /// This should almost always be a Frame, with exceptions
      /// to offline packets.
-     pub send_queue: VecDeque<Stream>,
+     pub send_queue: VecDeque<Vec<u8>>,
      /// A list of buffers that exceed the MTU size
      /// This queue will be shortened into individual fragments,
      /// and sent to the client as fragmented frames.
-     send_queue_large: VecDeque<Stream>,
+     send_queue_large: VecDeque<Vec<u8>>,
      /// Stores the fragmented frames by their
      /// `frame_index` value from a given packet.
      /// When a `FrameList` is ready from a `FragmentStore` it's assembled
@@ -147,15 +149,15 @@ impl Connection {
      }
 
      /// Send a binary stream to the specified client.
-     pub fn send(&mut self, stream: Stream, instant: bool) {
+     pub fn send(&mut self, stream: Vec<u8>, instant: bool) {
           if instant {
                let mut frame_packet = FramePacket::new();
                let mut frame = Frame::init();
                frame.reliability = Reliability::new(ReliabilityFlag::Unreliable);
                frame.body = stream;
-               frame_packet.seq = self.next_send_seq();
+               frame_packet.seq = self.next_send_seq().into();
                frame_packet.frames.push(frame);
-               self.send_queue.push_back(frame_packet.to());
+               self.send_queue.push_back(frame_packet.parse());
           } else {
                self.send_queue_large.push_back(stream);
           }
@@ -163,20 +165,21 @@ impl Connection {
 
      /// The recieve handle for a connection.
      /// This is called when RakNet parses any given byte buffer from the socket.
-     pub fn recv(&mut self, stream: &mut Stream) {
+     pub fn recv(&mut self, buf: &Vec<u8>) {
+          let mut stream = Cursor::new(buf);
           // Update the recieve time.
           self.recv_time = SystemTime::now();
           if self.state.is_disconnected() {
-               let pk = OfflinePackets::recv(stream.read_u8());
-               let handler = handle_offline(self, pk, stream);
+               let pk = OfflinePackets::recv(stream.read_u8().unwrap());
+               let handler = handle_offline(self, pk, stream.get_mut());
                self.send_queue.push_back(handler);
           } else {
                // this packet is almost always a frame packet
-               let online_packet = OnlinePackets::recv(stream.read_byte());
+               let online_packet = OnlinePackets::recv(stream.read_u8().unwrap());
 
                if is_ack_or_nack(online_packet.to_byte()) {
                     stream.set_position(0);
-                    return self.handle_ack(stream);
+                    return self.handle_ack(stream.get_mut());
                }
 
                match online_packet {
@@ -189,7 +192,7 @@ impl Connection {
                          return;
                     }
                     OnlinePackets::FramePacket(_) => {
-                         let mut frame_packet = FramePacket::recv(stream.clone());
+                         let mut frame_packet = FramePacket::compose(stream.get_ref(), &mut (stream.position() as usize));
 
                          self.handle_frames(&mut frame_packet);
                          return;
@@ -209,8 +212,8 @@ impl Connection {
      ///   we add this sequence number to the **Nack** queue,
      ///   which is then sent to the client when the connection ticks
      ///   to *hopefully* force the client to eventually send that packet.
-     pub fn handle_ack(&mut self, packet: &mut Stream) {
-          let got = Ack::recv(packet.clone());
+     pub fn handle_ack(&mut self, packet: &mut &Vec<u8>) {
+          let got = Ack::compose(packet, &mut 0);
 
           for record in got.records {
                if record.is_single() {
@@ -248,7 +251,7 @@ impl Connection {
      ///
      /// - If it is not fragmented, we handle the frames body. (Which should contain a valid RakNet payload)
      pub fn handle_frames(&mut self, frame_packet: &mut FramePacket) {
-          self.ack.push_seq(frame_packet.seq, frame_packet.to());
+          self.ack.push_seq(frame_packet.seq.into(), frame_packet.parse());
           for frame in frame_packet.frames.iter_mut() {
                if frame.fragment_info.is_some() {
                     // the frame is fragmented!
@@ -277,22 +280,23 @@ impl Connection {
      fn handle_full_frame(&mut self, frame: &mut Frame) {
           // todo Check if the frames should be recieved, if not purge them
           // todo EG: add implementation for ordering and sequenced frames!
-          let online_packet = OnlinePackets::recv(frame.body.clone().read_byte());
+          let mut body_stream = Cursor::new(frame.body.clone());
+          let online_packet = OnlinePackets::recv(body_stream.read_u8().unwrap());
 
           if online_packet == OnlinePackets::GamePacket {
-               self.recv.as_ref()(self, &mut frame.body);
+               self.recv.as_ref()(self, &mut body_stream.get_mut());
           } else {
                let response = handle_online(self, online_packet.clone(), &mut frame.body);
 
-               if response.get_length() != 0 {
+               if response.len() != 0 {
                     let mut new_framepk = FramePacket::new();
                     let mut new_frame = Frame::init();
 
                     new_frame.body = response.clone();
                     new_frame.reliability = Reliability::new(ReliabilityFlag::Unreliable);
                     new_framepk.frames.push(new_frame);
-                    new_framepk.seq = self.send_seq;
-                    self.send_queue.push_back(new_framepk.to());
+                    new_framepk.seq = self.send_seq.into();
+                    self.send_queue.push_back(new_framepk.parse());
                     self.send_seq = self.send_seq + 1;
                }
           }
@@ -330,12 +334,12 @@ impl Connection {
           if self.state.is_reliable() {
                if !self.ack.is_empty() {
                     let respond_with = self.ack.make_ack();
-                    self.send_queue.push_back(respond_with.to());
+                    self.send_queue.push_back(respond_with.parse());
                }
 
                if !self.nack.is_empty() {
                     let respond_with = self.nack.make_nack();
-                    self.send_queue.push_back(respond_with.to());
+                    self.send_queue.push_back(respond_with.parse());
                }
           }
 
@@ -353,7 +357,7 @@ impl Connection {
 
                if packets.is_some() {
                     for pk in packets.unwrap() {
-                         self.send_queue.push_back(pk.to());
+                         self.send_queue.push_back(pk.parse());
                     }
 
                     self.fragment_id += 1;

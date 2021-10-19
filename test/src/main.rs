@@ -16,7 +16,7 @@ fn main() {
           version: "1.18.9".to_owned(),
           server_id: 2747994720109207718 as i64
      });
-     let threads = server.start(Arc::new(|_con: &mut Connection, pk: &mut BinaryStream| {
+     let threads = server.start(Arc::new(|_con: &mut Connection, pk: &mut Vec<u8>| {
                println!("Got game packet.");
           }), Box::new(|ev: &RakNetEvent| {
           match ev.clone() {

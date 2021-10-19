@@ -65,7 +65,7 @@ impl std::fmt::Display for OfflinePackets {
 }
 
 /// Unconnected Ping
-#[derive(BinaryStream)]
+#[derive(Debug, BinaryStream)]
 pub struct UnconnectedPing {
      timestamp: i64,
      magic: Magic,
@@ -75,9 +75,10 @@ pub struct UnconnectedPing {
 /// Unconnected Pong
 #[derive(BinaryStream)]
 pub struct UnconnectedPong {
+     id: u8,
      timestamp: i64,
      server_id: i64,
-     motd: Motd,
+     motd: String,
 }
 
 /// A connection request recv the client.
@@ -131,6 +132,8 @@ pub struct SessionInfoReply {
      mtu_size: i16,
      security: bool,
 }
+
+#[derive(BinaryStream)]
 pub struct IncompatibleProtocolVersion {
      id: u8,
      protocol: u8,
@@ -141,24 +144,25 @@ pub struct IncompatibleProtocolVersion {
 pub fn handle_offline(
      connection: &mut Connection,
      pk: OfflinePackets,
-     stream: &mut Stream,
-) -> Stream {
+     stream: &mut &Vec<u8>,
+) -> Vec<u8> {
      match pk {
           OfflinePackets::UnconnectedPing => {
                let pong = UnconnectedPong {
+                    id: OfflinePackets::UnconnectedPong.to_byte(),
                     server_id: SERVER_ID,
                     timestamp: connection.time.elapsed().unwrap().as_millis() as i64,
-                    motd: connection.get_motd(),
+                    motd: connection.get_motd().encode(),
                };
-
+               println!("{:?}", pong.parse());
                pong.parse()
           }
           OfflinePackets::OpenConnectRequest => {
-               let request = OpenConnectRequest::compose(stream.clone());
+               let request = OpenConnectRequest::compose(&stream[..], &mut 1);
 
                if request.protocol != RakNetVersion::MinecraftRecent.to_u8() {
                     let incompatible = IncompatibleProtocolVersion {
-                         id: OfflinePackets::IncompatibleProtocolVersion,
+                         id: OfflinePackets::IncompatibleProtocolVersion.to_byte(),
                          protocol: request.protocol,
                          magic: Magic::new(),
                          server_id: SERVER_ID,
@@ -168,19 +172,19 @@ pub fn handle_offline(
                }
 
                let reply = OpenConnectReply {
-                    id: OfflinePackets::OpenConnectReply,
+                    id: OfflinePackets::OpenConnectReply.to_byte(),
                     server_id: SERVER_ID,
                     security: USE_SECURITY,
                     magic: Magic::new(),
                     mtu_size: request.mtu_size,
                };
 
-               reply.to()
+               reply.parse()
           }
           OfflinePackets::SessionInfoRequest => {
-               let request = SessionInfoRequest::recv(stream.clone());
+               let request = SessionInfoRequest::compose(&stream[..], &mut 1);
                let reply = SessionInfoReply {
-                    id: OfflinePackets::SessionInfoReply,
+                    id: OfflinePackets::SessionInfoReply.to_byte(),
                     server_id: SERVER_ID,
                     client_address: connection.address.clone(),
                     magic: Magic::new(),
@@ -190,8 +194,8 @@ pub fn handle_offline(
 
                connection.mtu_size = request.mtu_size as u16;
                connection.state = ConnectionState::Connecting;
-               reply.to()
+               reply.parse()
           }
-          _ => Stream::new(Vec::new()), //TODO: Throw an UnknownPacket here rather than sending an empty binary stream
+          _ => Vec::new(), //TODO: Throw an UnknownPacket here rather than sending an empty binary stream
      }
 }
