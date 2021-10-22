@@ -65,6 +65,35 @@ impl ConnectionState {
     }
 }
 
+/// A useful collection that holds Event States
+// pub struct ConnEvQueue {
+//      pub sent: Vec<u16>,
+//      pub queue: VecDeque<ConnEv>,
+//      current: u16
+// }
+
+// pub struct ConnEv(u16, RakNetEvent);
+
+// impl ConnEvQueue {
+//      pub fn new() -> Self {
+//           Self { sent: Vec::new(), queue: VecDeque::new(), current: 0 }
+//      }
+
+//      pub fn queue(mut self, event: RakNetEvent) {
+//           self.queue.push_back(ConnEv(self.current, event));
+//           self.inc();
+//      }
+
+//      pub fn inc(mut self) {
+//           if self.current == (u16::MAX - 1) {
+//                self.current = 0;
+//           }
+//           if let Some(c) = self.queue.iter().find(|v| v.0 == self.current) {
+//                self.queue.remove()
+//           }
+//           self.current += 1;
+//      }
+// }
 #[derive(Clone)]
 pub struct Connection {
     /// The address the client is connected with.
