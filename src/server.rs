@@ -1,7 +1,6 @@
-use crate::conn::{Connection, ConnectionState, RecievePacketFn};
+use crate::conn::{Connection, ConnectionState};
 use crate::util::{from_tokenized, tokenize_addr};
 use crate::Motd;
-use binary_utils::*;
 use std::collections::HashMap;
 use std::net::UdpSocket;
 use std::sync::{Arc, Mutex};
@@ -24,7 +23,7 @@ impl RakNetVersion {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum RakNetEvent {
     /// When a connection is created
     ///
@@ -41,13 +40,38 @@ pub enum RakNetEvent {
     /// 2. The reason for disconnect.
     Disconnect(String, String),
     /// When a connection is sent a motd.
+    /// You should return a Motd here if you want to change the MOTD.
     ///
     /// **Tuple Values**:
     /// 1. The parsed `ip:port` address of the connection.
-    MotdGeneration(String),
+    MotdGeneration(String, Motd),
+    /// When a game packet is recieved.
+    ///
+    /// **Tuple Values**:
+    /// 1. The parsed `ip:port` address of the connection.
+    /// 2. The packet `Vec<u8>` recieved from the connection.
+    GamePacket(String, Vec<u8>),
 }
 
-pub type RakEventListenerFn = dyn FnMut(&RakNetEvent) + Send + Sync;
+pub enum RakResult {
+    /// Update the Motd for that specific client.
+    ///
+    /// **Tuple Values**:
+    /// 1. The `Motd` for the current connection.
+    Motd(Motd),
+    /// Force the raknet server to invoke `panic!`.
+    ///
+    /// **Tuple Values**:
+    /// 1. The message passed to `panic!`
+    Error(String),
+    /// Force the current client to disconnect.
+    /// This does **NOT** emit a disonnect event.
+    /// **Tuple Values**:
+    /// 1. The reason for disconnect (if any).
+    Disconnect(String),
+}
+
+pub type RakEventListenerFn = dyn FnMut(&RakNetEvent) -> Option<RakResult> + Send + Sync;
 
 pub struct RakNetServer {
     pub address: String,
@@ -74,7 +98,10 @@ impl RakNetServer {
 
     /// Sends a stream to the specified address.
     /// Instant skips the tick and forcefully sends the packet to the client.
-    pub fn send_stream(&mut self, address: String, stream: Vec<u8>, instant: bool) {
+    /// Params:
+    /// - instant(true) -> Skips entire fragmentation and immediately sequences the
+    ///   buffer into a stream.
+    pub fn send(&mut self, address: String, stream: Vec<u8>, instant: bool) {
         let clients = self.connections.lock();
         match clients.unwrap().get_mut(&address) {
             Some(c) => c.send(stream, instant),
@@ -86,7 +113,6 @@ impl RakNetServer {
     /// Returns two thread handles, for both the send and recieving threads.
     pub fn start(
         &mut self,
-        receiver: Arc<RecievePacketFn>,
         mut event_dispatch: Box<RakEventListenerFn>,
     ) -> (thread::JoinHandle<()>, thread::JoinHandle<()>) {
         let socket = UdpSocket::bind(self.address.clone());
@@ -114,12 +140,7 @@ impl RakNetServer {
                     // connection doesn't exist, make it
                     sclients.insert(
                         tokenize_addr(remote),
-                        Connection::new(
-                            remote,
-                            *server_time.as_ref(),
-                            Arc::clone(&receiver),
-                            Arc::clone(&motd),
-                        ),
+                        Connection::new(remote, *server_time.as_ref(), Arc::clone(&motd)),
                     );
                 }
 
@@ -140,7 +161,23 @@ impl RakNetServer {
                     client.do_tick();
                     // emit events if there is a listener for the
                     for event in client.event_dispatch.iter() {
-                        event_dispatch(event);
+                        if let Some(result) = event_dispatch(event) {
+                            match result {
+                                RakResult::Motd(_v) => {
+                                    // we don't really support changing
+                                    // client MOTD at the moment...
+                                    // so we don't do anything for this.
+                                }
+                                RakResult::Error(v) => {
+                                    // Calling error forces an error to raise.
+                                    panic!("{}", v);
+                                }
+                                RakResult::Disconnect(_) => {
+                                    client.state = ConnectionState::Offline; // simple hack
+                                    break;
+                                }
+                            }
+                        }
                     }
 
                     client.event_dispatch.clear();

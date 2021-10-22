@@ -1,5 +1,4 @@
 #![feature(cursor_remaining)]
-#[macro_use]
 extern crate binary_utils;
 
 pub mod ack;
@@ -16,6 +15,14 @@ pub const SERVER_ID: i64 = 2747994720109207718; //rand::random::<i64>();
 pub const USE_SECURITY: bool = false;
 
 pub use self::{frame::*, protocol::*, server::*, util::*};
+
+#[macro_export]
+macro_rules! raknet_start {
+    ($server: expr, $fn: expr) => {
+        // Simple hack to make "serv" a mutable var const
+        $server.start(Box::new($fn))
+    };
+}
 
 #[cfg(test)]
 mod tests {
