@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-use crate::conn::{Connection, ConnectionState};
+use crate::conn::{Connection, ConnectionState, EventStatus};
 use crate::util::tokenize_addr;
 use crate::RakNetEvent;
 use binary_utils::*;
@@ -146,10 +146,10 @@ pub fn handle_online(
         }
         OnlinePackets::Disconnect => {
             connection.state = ConnectionState::Offline;
-            connection.event_dispatch.push_back(RakNetEvent::Disconnect(
+            connection.event_dispatch.push_back(EventStatus::new(RakNetEvent::Disconnect(
                 tokenize_addr(connection.address),
                 "Client disconnect".to_owned(),
-            ));
+            )));
             Vec::new()
         }
         OnlinePackets::NewConnection => Vec::new(),
