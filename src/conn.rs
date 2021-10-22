@@ -199,7 +199,7 @@ impl Connection {
         if self.state.is_disconnected() {
             let pk = OfflinePackets::recv(stream.read_u8().unwrap());
             let handler = handle_offline(self, pk, stream.get_mut());
-            self.send_queue.push_back(handler);
+            self.send(handler, true);
         } else {
             // this packet is almost always a frame packet
             let online_packet = OnlinePackets::recv(stream.read_u8().unwrap());
@@ -316,6 +316,7 @@ impl Connection {
         if online_packet == OnlinePackets::GamePacket {
             // self.recv.as_ref()(self, &mut body_stream.get_mut());
             // we don't really care what happens to game packet, so emit it.
+            println!("DEBUG => Pushing GamePacket event to dispatch queue");
             self.event_dispatch.push_back(RakNetEvent::GamePacket(
                 self.address_token.clone(),
                 frame.body.clone(),
@@ -331,7 +332,7 @@ impl Connection {
                 new_frame.reliability = Reliability::new(ReliabilityFlag::Unreliable);
                 new_framepk.frames.push(new_frame);
                 new_framepk.seq = self.send_seq.into();
-                self.send_queue.push_back(new_framepk.parse());
+                self.send(new_framepk.parse(), true);
                 self.send_seq = self.send_seq + 1;
             }
         }
