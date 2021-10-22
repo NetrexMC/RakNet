@@ -3,6 +3,7 @@ use crate::util::{from_tokenized, tokenize_addr};
 use crate::Motd;
 use binary_utils::*;
 use std::collections::HashMap;
+use std::hash::Hash;
 use std::net::UdpSocket;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -24,7 +25,7 @@ impl RakNetVersion {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum RakNetEvent {
     /// When a connection is created
     ///

@@ -85,7 +85,7 @@ pub struct Connection {
      pub event_dispatch: VecDeque<RakNetEvent>,
      /// A function that is called when the server recieves a
      /// `GamePacket: 0xfe` from the client.
-     pub recv: Arc<RecievePacketFn>,
+     // pub recv: Arc<RecievePacketFn>,
      /// The last time the client has sent something to the server, that was a connected packet.
      pub recv_time: SystemTime,
      /// A Vector of streams to be sent.
@@ -135,7 +135,7 @@ impl Connection {
                mtu_size: 2048,
                state: ConnectionState::Disconnected,
                event_dispatch: VecDeque::new(),
-               recv,
+               // recv,
                send_queue: VecDeque::new(),
                send_queue_large: VecDeque::new(),
                fragmented: FragmentStore::new(),
@@ -285,7 +285,9 @@ impl Connection {
           let online_packet = OnlinePackets::recv(body_stream.read_u8().unwrap());
 
           if online_packet == OnlinePackets::GamePacket {
-               self.recv.as_ref()(self, &mut body_stream.get_mut());
+               // self.recv.as_ref()(self, &mut body_stream.get_mut());
+               // we don't really care what happens to game packet, so emit it.
+               self.event_dispatch.push_back(RakNetEvent::GamePacket())
           } else {
                let response = handle_online(self, online_packet.clone(), &mut frame.body);
 
