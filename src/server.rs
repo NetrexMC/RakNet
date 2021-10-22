@@ -169,10 +169,15 @@ impl RakNetServer {
             loop {
                 thread::sleep(Duration::from_millis(50));
                 let mut clients = clients_send.lock().unwrap();
-                for (addr, client) in clients.clone().iter_mut() {
+                for (addr, _) in clients.clone().iter() {
+                    let client = clients.get_mut(addr).expect("Could not get connection");
                     client.do_tick();
+
+                    let dispatch = client.event_dispatch.clone();
+                    client.event_dispatch.clear();
+
                     // emit events if there is a listener for the
-                    for event in client.event_dispatch.iter() {
+                    for event in dispatch.iter() {
                         println!("DEBUG => Dispatching: {:?}", &event.get_name());
                         if let Some(result) = event_dispatch(event) {
                             match result {
@@ -195,7 +200,6 @@ impl RakNetServer {
                         }
                     }
 
-                    client.event_dispatch.clear();
                     if client.state == ConnectionState::Offline {
                         clients.remove(addr);
                         continue;
