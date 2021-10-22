@@ -83,7 +83,7 @@ pub enum RakResult {
     Disconnect(String),
 }
 
-pub type RakEventListenerFn = dyn FnMut(&RakNetEvent) -> Option<RakResult> + Send + Sync;
+pub type RakEventListenerFn = dyn FnMut(RakNetEvent) -> Option<RakResult> + Send + Sync;
 
 pub struct RakNetServer {
     pub address: String,
@@ -171,12 +171,12 @@ impl RakNetServer {
                 let mut clients = clients_send.lock().expect("Could not safely lock clients.");
                 for (addr, client) in clients.clone().iter_mut() {
                     client.do_tick();
-                    let dispatch = client.event_dispatch.clone();
-                    client.event_dispatch.clear();
                     // emit events if there is a listener for the
-                    for event in dispatch.iter() {
+                    for evs in client.event_dispatch.iter_mut() {
+                        evs.0 = true;
+                        let event = evs.1.clone();
                         println!("DEBUG => Dispatching: {:?}", &event.get_name());
-                        if let Some(result) = event_dispatch(event) {
+                        if let Some(result) = event_dispatch(event.clone()) {
                             match result {
                                 RakResult::Motd(_v) => {
                                     // we don't really support changing

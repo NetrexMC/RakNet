@@ -15,8 +15,6 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::SystemTime;
 
-pub type RecievePacketFn = fn(&mut Connection, &mut Vec<u8>);
-
 #[derive(Clone, Debug, PartialEq)]
 pub enum ConnectionState {
     Connecting,
@@ -65,35 +63,15 @@ impl ConnectionState {
     }
 }
 
-/// A useful collection that holds Event States
-// pub struct ConnEvQueue {
-//      pub sent: Vec<u16>,
-//      pub queue: VecDeque<ConnEv>,
-//      current: u16
-// }
+#[derive(Debug, Clone)]
+pub struct EventStatus(pub bool, pub RakNetEvent);
 
-// pub struct ConnEv(u16, RakNetEvent);
+impl EventStatus {
+    pub fn new(ev: RakNetEvent) -> Self {
+        Self(false, ev)
+    }
+}
 
-// impl ConnEvQueue {
-//      pub fn new() -> Self {
-//           Self { sent: Vec::new(), queue: VecDeque::new(), current: 0 }
-//      }
-
-//      pub fn queue(mut self, event: RakNetEvent) {
-//           self.queue.push_back(ConnEv(self.current, event));
-//           self.inc();
-//      }
-
-//      pub fn inc(mut self) {
-//           if self.current == (u16::MAX - 1) {
-//                self.current = 0;
-//           }
-//           if let Some(c) = self.queue.iter().find(|v| v.0 == self.current) {
-//                self.queue.remove()
-//           }
-//           self.current += 1;
-//      }
-// }
 #[derive(Clone)]
 pub struct Connection {
     /// The address the client is connected with.
@@ -113,7 +91,7 @@ pub struct Connection {
     /// - **Offline**: We have stopped recieving responses from the client.
     pub state: ConnectionState,
     /// A list of events to be emitted on next tick.
-    pub event_dispatch: VecDeque<RakNetEvent>,
+    pub event_dispatch: VecDeque<EventStatus>,
     /// A function that is called when the server recieves a
     /// `GamePacket: 0xfe` from the client.
     // pub recv: Arc<RecievePacketFn>,
@@ -212,10 +190,10 @@ impl Connection {
             match online_packet {
                 OnlinePackets::Disconnect => {
                     self.state = ConnectionState::Offline;
-                    self.event_dispatch.push_back(RakNetEvent::Disconnect(
+                    self.event_dispatch.push_back(EventStatus::new(RakNetEvent::Disconnect(
                         tokenize_addr(self.address),
                         "Client disconnect".to_owned(),
-                    ));
+                    )));
                     return;
                 }
                 OnlinePackets::FramePacket(_) => {
@@ -316,10 +294,10 @@ impl Connection {
         if online_packet == OnlinePackets::GamePacket {
             // self.recv.as_ref()(self, &mut body_stream.get_mut());
             // we don't really care what happens to game packet, so emit it.
-            self.event_dispatch.push_back(RakNetEvent::GamePacket(
+            self.event_dispatch.push_back(EventStatus::new(RakNetEvent::GamePacket(
                 self.address_token.clone(),
                 frame.body.clone(),
-            ));
+            )));
         } else {
             let response = handle_online(self, online_packet.clone(), &mut frame.body);
 
@@ -358,10 +336,10 @@ impl Connection {
 
         if self.recv_time.elapsed().unwrap().as_secs() >= 10 {
             self.state = ConnectionState::Offline;
-            self.event_dispatch.push_back(RakNetEvent::Disconnect(
+            self.event_dispatch.push_back(EventStatus::new(RakNetEvent::Disconnect(
                 tokenize_addr(self.address),
                 "Time Out".to_owned(),
-            ));
+            )));
             return;
         }
 
