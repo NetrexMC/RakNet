@@ -171,8 +171,10 @@ impl RakNetServer {
                 let mut clients = clients_send.lock().unwrap();
                 for (addr, client) in clients.clone().iter_mut() {
                     client.do_tick();
+                    let dispatch = client.event_dispatch.clone();
+                    client.event_dispatch.clear();
                     // emit events if there is a listener for the
-                    for event in client.event_dispatch.iter() {
+                    for event in dispatch.iter() {
                         println!("DEBUG => Dispatching: {:?}", &event.get_name());
                         if let Some(result) = event_dispatch(event) {
                             match result {
