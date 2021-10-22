@@ -215,8 +215,8 @@ impl RakNetServer {
                             .send_to(&pk[..], &from_tokenized(addr.clone()))
                         {
                             // Add proper handling!
-                            Err(_) => continue, //println!("Error Sending Packet [{}]: ", e),
-                            Ok(_) => continue,  //println!("\nSent Packet [{}]: {:?}", addr, pk)
+                            Err(e) => eprintln!("Error Sending Packet [{}]: ", e),
+                            Ok(_) => println!("\nSent Packet [{}]: {:?}", addr, pk)
                         }
                     }
                     client.send_queue.clear();
