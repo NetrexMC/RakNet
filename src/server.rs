@@ -178,7 +178,7 @@ impl RakNetServer {
 
                     // emit events if there is a listener for the
                     for event in dispatch.iter() {
-                        println!("DEBUG => Dispatching: {:?}", &event.get_name());
+                        // println!("DEBUG => Dispatching: {:?}", &event.get_name());
                         if let Some(result) = event_dispatch(event) {
                             match result {
                                 RakResult::Motd(_v) => {
@@ -195,8 +195,6 @@ impl RakNetServer {
                                     break;
                                 }
                             }
-                        } else {
-                            println!("None is returned from event: {:?}", event);
                         }
                     }
 
@@ -216,7 +214,7 @@ impl RakNetServer {
                         {
                             // Add proper handling!
                             Err(e) => eprintln!("Error Sending Packet [{}]: ", e),
-                            Ok(_) => println!("\nSent Packet [{}]: {:?}", addr, pk)
+                            Ok(_) => continue // println!("\nSent Packet [{}]: {:?}", addr, pk)
                         }
                     }
                     client.send_queue.clear();
