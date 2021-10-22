@@ -316,7 +316,6 @@ impl Connection {
         if online_packet == OnlinePackets::GamePacket {
             // self.recv.as_ref()(self, &mut body_stream.get_mut());
             // we don't really care what happens to game packet, so emit it.
-            println!("DEBUG => Pushing GamePacket event to dispatch queue");
             self.event_dispatch.push_back(RakNetEvent::GamePacket(
                 self.address_token.clone(),
                 frame.body.clone(),
