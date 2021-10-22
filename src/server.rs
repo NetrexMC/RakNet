@@ -168,7 +168,7 @@ impl RakNetServer {
         let sender_thread = thread::spawn(move || {
             loop {
                 thread::sleep(Duration::from_millis(50));
-                let mut clients = clients_send.lock().unwrap();
+                let mut clients = clients_send.lock().expect("Could not safely lock clients.");
                 for (addr, client) in clients.clone().iter_mut() {
                     client.do_tick();
                     let dispatch = client.event_dispatch.clone();
@@ -196,8 +196,6 @@ impl RakNetServer {
                             println!("None is returned from event: {:?}", event);
                         }
                     }
-
-                    client.event_dispatch.clear();
                     if client.state == ConnectionState::Offline {
                         clients.remove(addr);
                         continue;
