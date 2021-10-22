@@ -23,7 +23,7 @@ impl RakNetVersion {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum RakNetEvent {
     /// When a connection is created
     ///
@@ -44,13 +44,25 @@ pub enum RakNetEvent {
     ///
     /// **Tuple Values**:
     /// 1. The parsed `ip:port` address of the connection.
-    MotdGeneration(String, Motd),
+    /// 2. The `Motd` that might be sent.
+    Motd(String, Motd),
     /// When a game packet is recieved.
     ///
     /// **Tuple Values**:
     /// 1. The parsed `ip:port` address of the connection.
     /// 2. The packet `Vec<u8>` recieved from the connection.
     GamePacket(String, Vec<u8>),
+}
+
+impl RakNetEvent {
+    pub fn get_name(&self) -> String {
+        match self.clone() {
+            RakNetEvent::ConnectionCreated(_) => "ConnectionCreated".into(),
+            RakNetEvent::Disconnect(_, _) => "Disconnect".into(),
+            RakNetEvent::GamePacket(_, _) => "GamePacket".into(),
+            RakNetEvent::Motd(_, _) => "Motd".into()
+        }
+    }
 }
 
 pub enum RakResult {
@@ -116,7 +128,7 @@ impl RakNetServer {
         mut event_dispatch: Box<RakEventListenerFn>,
     ) -> (thread::JoinHandle<()>, thread::JoinHandle<()>) {
         let socket = UdpSocket::bind(self.address.clone());
-        let server_socket: Arc<UdpSocket> = Arc::new(socket.unwrap());
+        let server_socket: Arc<UdpSocket> = Arc::new(socket.expect("Something is already using this socket address."));
         let server_socket_1: Arc<UdpSocket> = Arc::clone(&server_socket);
         let clients_recv = Arc::clone(&self.connections);
         let clients_send = Arc::clone(&self.connections);
@@ -161,6 +173,7 @@ impl RakNetServer {
                     client.do_tick();
                     // emit events if there is a listener for the
                     for event in client.event_dispatch.iter() {
+                        println!("DEBUG => Dispatching: {:?}", &event.get_name());
                         if let Some(result) = event_dispatch(event) {
                             match result {
                                 RakResult::Motd(_v) => {
@@ -177,6 +190,8 @@ impl RakNetServer {
                                     break;
                                 }
                             }
+                        } else {
+                            println!("None is returned from event: {:?}", event);
                         }
                     }
 

@@ -29,7 +29,7 @@ fn main() {
                     None
                },
                RakNetEvent::GamePacket(address, packet) => {
-                    println!("{} send a game packet!!", address);
+                    println!("{} sent a game packet!!", address);
                     // serv.send(address, vec![16], true);
                     Some(RakResult::Disconnect("U suck!".into()))
                },
