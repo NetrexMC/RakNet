@@ -173,6 +173,9 @@ impl RakNetServer {
                     client.do_tick();
                     // emit events if there is a listener for the
                     for evs in client.event_dispatch.iter_mut() {
+                        if evs.0 == true {
+                            continue;
+                        }
                         evs.0 = true;
                         let event = evs.1.clone();
                         println!("DEBUG => Dispatching: {:?}", &event.get_name());
@@ -196,6 +199,9 @@ impl RakNetServer {
                             println!("None is returned from event: {:?}", event);
                         }
                     }
+
+                    client.event_dispatch.clear();
+                    
                     if client.state == ConnectionState::Offline {
                         clients.remove(addr);
                         continue;
