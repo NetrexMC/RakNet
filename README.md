@@ -30,7 +30,7 @@ use rakrs::Server as RakServer;
 
 fn main() {
     let mut server = RakServer::new("0.0.0.0:19132".into());
-    
+
     // Setting the Message Of The Day
     server.set_motd(Motd {
         name: "Server Name".into(),
@@ -41,12 +41,8 @@ fn main() {
         version: "1.18.0".into(),
         server_id: server.server_id.into()
     });
-    
-    let join_fn = Arc::new(|_con: &mut Connection, packet: &mut Vec<u8>| {
-        println!("Gamepacket was recieved!");
-    });
-    
-    let event_fn = Box::new(|event: &RakNetEvent| {
+
+    raknet_start!(server, |event: &RakNetEvent| {
         match *event {
             RakNetEvent::Disconnect(address, reason) => {
                 println!("{} was disconnected due to: {}", address, reason);
@@ -57,8 +53,6 @@ fn main() {
             _ => return
         }
     });
-    
-    raknet_start!(server, join_fn, event_fn);
 }
 ```
 
