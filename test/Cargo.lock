@@ -186,6 +186,7 @@ name = "rakrs_test"
 version = "0.1.0"
 dependencies = [
  "binary_utils",
+ "crossbeam-utils",
  "rakrs",
 ]
 

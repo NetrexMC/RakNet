@@ -5,6 +5,7 @@ use rakrs::RakResult;
 use rakrs::RakNetEvent;
 use rakrs::raknet_start;
 use binary_utils::*;
+use std::any::Any;
 use std::sync::{Arc};
 
 fn main() {
@@ -36,6 +37,7 @@ fn main() {
                _ => None
           }
      });
-     threads.unwrap();
+     threads.0.join().unwrap();
+     threads.1.join().unwrap();
      println!("Hi I am running concurrently.");
 }
