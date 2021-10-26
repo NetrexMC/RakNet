@@ -36,7 +36,6 @@ fn main() {
                _ => None
           }
      });
-     threads.0.join();
-     threads.1.join();
+     threads.unwrap();
      println!("Hi I am running concurrently.");
 }
