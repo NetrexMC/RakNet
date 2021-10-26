@@ -3,9 +3,6 @@ extern crate binary_utils;
 
 use crate::conn::{Connection, ConnectionState};
 use crate::util::{from_tokenized, tokenize_addr};
-use crossbeam::thread::Scope;
-use crossbeam_utils::thread as cross_thread;
-use std::any::Any;
 use std::net::UdpSocket;
 use std::sync::Arc;
 use std::thread;
@@ -30,7 +27,6 @@ pub use self::{frame::*, protocol::*, server::*, util::*};
 #[macro_export]
 macro_rules! raknet_start {
     ($server: expr, $fn: expr) => {
-        // Simple hack to make "serv" a mutable var const
         {
             // get the raknet server
             let (s, r) = rakrs::start(&mut $server, Box::new($fn));
