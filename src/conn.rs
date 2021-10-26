@@ -15,6 +15,8 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::SystemTime;
 
+pub type RecievePacketFn = fn(&mut Connection, &mut Vec<u8>);
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum ConnectionState {
     Connecting,
@@ -63,15 +65,6 @@ impl ConnectionState {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct EventStatus(pub bool, pub RakNetEvent);
-
-impl EventStatus {
-    pub fn new(ev: RakNetEvent) -> Self {
-        Self(false, ev)
-    }
-}
-
 #[derive(Clone)]
 pub struct Connection {
     /// The address the client is connected with.
@@ -91,7 +84,7 @@ pub struct Connection {
     /// - **Offline**: We have stopped recieving responses from the client.
     pub state: ConnectionState,
     /// A list of events to be emitted on next tick.
-    pub event_dispatch: VecDeque<EventStatus>,
+    pub event_dispatch: VecDeque<RakNetEvent>,
     /// A function that is called when the server recieves a
     /// `GamePacket: 0xfe` from the client.
     // pub recv: Arc<RecievePacketFn>,
@@ -190,10 +183,10 @@ impl Connection {
             match online_packet {
                 OnlinePackets::Disconnect => {
                     self.state = ConnectionState::Offline;
-                    self.event_dispatch.push_back(EventStatus::new(RakNetEvent::Disconnect(
+                    self.event_dispatch.push_back(RakNetEvent::Disconnect(
                         tokenize_addr(self.address),
                         "Client disconnect".to_owned(),
-                    )));
+                    ));
                     return;
                 }
                 OnlinePackets::FramePacket(_) => {
@@ -294,10 +287,10 @@ impl Connection {
         if online_packet == OnlinePackets::GamePacket {
             // self.recv.as_ref()(self, &mut body_stream.get_mut());
             // we don't really care what happens to game packet, so emit it.
-            self.event_dispatch.push_back(EventStatus::new(RakNetEvent::GamePacket(
+            self.event_dispatch.push_back(RakNetEvent::GamePacket(
                 self.address_token.clone(),
                 frame.body.clone(),
-            )));
+            ));
         } else {
             let response = handle_online(self, online_packet.clone(), &mut frame.body);
 
@@ -336,10 +329,10 @@ impl Connection {
 
         if self.recv_time.elapsed().unwrap().as_secs() >= 10 {
             self.state = ConnectionState::Offline;
-            self.event_dispatch.push_back(EventStatus::new(RakNetEvent::Disconnect(
+            self.event_dispatch.push_back(RakNetEvent::Disconnect(
                 tokenize_addr(self.address),
                 "Time Out".to_owned(),
-            )));
+            ));
             return;
         }
 
@@ -350,12 +343,12 @@ impl Connection {
         if self.state.is_reliable() {
             if !self.ack.is_empty() {
                 let respond_with = self.ack.make_ack();
-                self.send_queue.push_back(respond_with.parse());
+                self.send(respond_with.parse(), true);
             }
 
             if !self.nack.is_empty() {
                 let respond_with = self.nack.make_nack();
-                self.send_queue.push_back(respond_with.parse());
+                self.send(respond_with.parse(), true);
             }
         }
 
@@ -373,7 +366,7 @@ impl Connection {
 
             if packets.is_some() {
                 for pk in packets.unwrap() {
-                    self.send_queue.push_back(pk.parse());
+                    self.send(pk.parse(), true);
                 }
 
                 self.fragment_id += 1;

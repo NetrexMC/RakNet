@@ -30,13 +30,12 @@ fn main() {
                },
                RakNetEvent::GamePacket(address, packet) => {
                     println!("{} sent a game packet!!", address);
-                    // serv.send(address, vec![16], true);
                     Some(RakResult::Disconnect("U suck!".into()))
                },
                _ => None
           }
      });
-     threads.0.join();
-     threads.1.join();
+     threads.0.join().unwrap();
+     threads.1.join().unwrap();
      println!("Hi I am running concurrently.");
 }
