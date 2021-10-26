@@ -1,5 +1,4 @@
-use crate::conn::{Connection, ConnectionState};
-use crate::util::{from_tokenized, tokenize_addr};
+use crate::conn::Connection;
 use crate::Motd;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
