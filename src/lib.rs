@@ -26,16 +26,14 @@ pub use self::{frame::*, protocol::*, server::*, util::*};
 
 #[macro_export]
 macro_rules! raknet_start {
-    ($server: expr, $fn: expr) => {
-        {
-            // get the raknet server
-            let (s, r) = rakrs::start(&mut $server, Box::new($fn));
+    ($server: expr, $fn: expr) => {{
+        // get the raknet server
+        let (s, r) = rakrs::start(&mut $server, Box::new($fn));
 
-            // todo: Do some check to see if they want to use cross beam
-            // currently return a handle to the threads?
-            (::std::thread::spawn(s), ::std::thread::spawn(r))
-        }
-    };
+        // todo: Do some check to see if they want to use cross beam
+        // currently return a handle to the threads?
+        (::std::thread::spawn(s), ::std::thread::spawn(r))
+    }};
 }
 
 /// Starts a raknet server instance.

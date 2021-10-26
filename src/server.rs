@@ -2,7 +2,7 @@ use crate::conn::Connection;
 use crate::Motd;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime};
+use std::time::SystemTime;
 
 pub enum RakNetVersion {
     MinecraftRecent,
@@ -57,7 +57,7 @@ impl RakNetEvent {
             RakNetEvent::ConnectionCreated(_) => "ConnectionCreated".into(),
             RakNetEvent::Disconnect(_, _) => "Disconnect".into(),
             RakNetEvent::GamePacket(_, _) => "GamePacket".into(),
-            RakNetEvent::Motd(_, _) => "Motd".into()
+            RakNetEvent::Motd(_, _) => "Motd".into(),
         }
     }
 }

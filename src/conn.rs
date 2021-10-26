@@ -65,35 +65,6 @@ impl ConnectionState {
     }
 }
 
-/// A useful collection that holds Event States
-// pub struct ConnEvQueue {
-//      pub sent: Vec<u16>,
-//      pub queue: VecDeque<ConnEv>,
-//      current: u16
-// }
-
-// pub struct ConnEv(u16, RakNetEvent);
-
-// impl ConnEvQueue {
-//      pub fn new() -> Self {
-//           Self { sent: Vec::new(), queue: VecDeque::new(), current: 0 }
-//      }
-
-//      pub fn queue(mut self, event: RakNetEvent) {
-//           self.queue.push_back(ConnEv(self.current, event));
-//           self.inc();
-//      }
-
-//      pub fn inc(mut self) {
-//           if self.current == (u16::MAX - 1) {
-//                self.current = 0;
-//           }
-//           if let Some(c) = self.queue.iter().find(|v| v.0 == self.current) {
-//                self.queue.remove()
-//           }
-//           self.current += 1;
-//      }
-// }
 #[derive(Clone)]
 pub struct Connection {
     /// The address the client is connected with.
@@ -199,7 +170,7 @@ impl Connection {
         if self.state.is_disconnected() {
             let pk = OfflinePackets::recv(stream.read_u8().unwrap());
             let handler = handle_offline(self, pk, stream.get_mut());
-            self.send_queue.push_back(handler);
+            self.send(handler, true);
         } else {
             // this packet is almost always a frame packet
             let online_packet = OnlinePackets::recv(stream.read_u8().unwrap());
@@ -331,7 +302,7 @@ impl Connection {
                 new_frame.reliability = Reliability::new(ReliabilityFlag::Unreliable);
                 new_framepk.frames.push(new_frame);
                 new_framepk.seq = self.send_seq.into();
-                self.send_queue.push_back(new_framepk.parse());
+                self.send(new_framepk.parse(), true);
                 self.send_seq = self.send_seq + 1;
             }
         }
@@ -372,12 +343,12 @@ impl Connection {
         if self.state.is_reliable() {
             if !self.ack.is_empty() {
                 let respond_with = self.ack.make_ack();
-                self.send_queue.push_back(respond_with.parse());
+                self.send(respond_with.parse(), true);
             }
 
             if !self.nack.is_empty() {
                 let respond_with = self.nack.make_nack();
-                self.send_queue.push_back(respond_with.parse());
+                self.send(respond_with.parse(), true);
             }
         }
 
@@ -395,7 +366,7 @@ impl Connection {
 
             if packets.is_some() {
                 for pk in packets.unwrap() {
-                    self.send_queue.push_back(pk.parse());
+                    self.send(pk.parse(), true);
                 }
 
                 self.fragment_id += 1;
