@@ -5,7 +5,6 @@ use rakrs::RakResult;
 use rakrs::RakNetEvent;
 use rakrs::raknet_start;
 use binary_utils::*;
-use std::any::Any;
 use std::sync::{Arc};
 
 fn main() {
@@ -31,8 +30,6 @@ fn main() {
                },
                RakNetEvent::GamePacket(address, packet) => {
                     println!("{} sent a game packet!!", address);
-                    println!("{:?}", packet);
-                    // serv.send(address, vec![16], true);
                     Some(RakResult::Disconnect("U suck!".into()))
                },
                _ => None
