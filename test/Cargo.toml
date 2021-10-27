@@ -5,6 +5,6 @@ authors = ["Bavfalcon9"]
 edition = "2018"
 
 [dependencies]
-binary_utils = { git = "https://github.com/NetrexMC/BinaryUtil", branch = "v2" }
+binary_utils = { git = "https://github.com/NetrexMC/BinaryUtil", branch = "master" }
 crossbeam-utils = "0.8.5"
 rakrs = { path = "../" }
