@@ -11,7 +11,17 @@ checksum = "cdb031dd78e28731d87d56cc8ffef4a8f36ca26c38fe2de700543e627f8a464a"
 [[package]]
 name = "bin_macro"
 version = "0.1.0"
-source = "git+https://github.com/NetrexMC/BinaryUtil?branch=v2#8f31ecf6c7f30075fe1ca96629e48b2d7795eb00"
+source = "git+https://github.com/NetrexMC/BinaryUtil?branch=master#65dde377a139856e68b802e5a427f40c290958ec"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "bin_macro"
+version = "0.1.0"
+source = "git+https://github.com/NetrexMC/BinaryUtil?branch=v2#0318c3f0aa9f820d206422fe9ed4cb6eb961214b"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -21,9 +31,18 @@ dependencies = [
 [[package]]
 name = "binary_utils"
 version = "0.2.0"
-source = "git+https://github.com/NetrexMC/BinaryUtil?branch=v2#8f31ecf6c7f30075fe1ca96629e48b2d7795eb00"
+source = "git+https://github.com/NetrexMC/BinaryUtil?branch=master#65dde377a139856e68b802e5a427f40c290958ec"
 dependencies = [
- "bin_macro",
+ "bin_macro 0.1.0 (git+https://github.com/NetrexMC/BinaryUtil?branch=master)",
+ "byteorder",
+]
+
+[[package]]
+name = "binary_utils"
+version = "0.2.0"
+source = "git+https://github.com/NetrexMC/BinaryUtil?branch=v2#0318c3f0aa9f820d206422fe9ed4cb6eb961214b"
+dependencies = [
+ "bin_macro 0.1.0 (git+https://github.com/NetrexMC/BinaryUtil?branch=v2)",
  "byteorder",
 ]
 
@@ -173,7 +192,7 @@ dependencies = [
 name = "rakrs"
 version = "0.1.0"
 dependencies = [
- "binary_utils",
+ "binary_utils 0.2.0 (git+https://github.com/NetrexMC/BinaryUtil?branch=v2)",
  "byteorder",
  "crossbeam",
  "crossbeam-utils",
@@ -185,7 +204,7 @@ dependencies = [
 name = "rakrs_test"
 version = "0.1.0"
 dependencies = [
- "binary_utils",
+ "binary_utils 0.2.0 (git+https://github.com/NetrexMC/BinaryUtil?branch=master)",
  "crossbeam-utils",
  "rakrs",
 ]
