@@ -146,7 +146,7 @@ impl Connection {
         }
     }
 
-    /// Send a binary stream to the specified client.
+    /// Send a binary stream to the specified client. (except it will be framed.)
     pub fn send(&mut self, stream: Vec<u8>, instant: bool) {
         if instant {
             let mut frame_packet = FramePacket::new();
@@ -161,6 +161,16 @@ impl Connection {
         }
     }
 
+    /// Send a binary stream to the specified client.
+    /// Except it will be raw.
+    pub fn send_stream(&mut self, stream: Vec<u8>, instant: bool) {
+        if instant {
+            self.send_queue.push_back(stream);
+        } else {
+            self.send_queue_large.push_back(stream);
+        }
+    }
+
     /// The recieve handle for a connection.
     /// This is called when RakNet parses any given byte buffer from the socket.
     pub fn recv(&mut self, buf: &Vec<u8>) {
@@ -170,7 +180,7 @@ impl Connection {
         if self.state.is_disconnected() {
             let pk = OfflinePackets::recv(stream.read_u8().unwrap());
             let handler = handle_offline(self, pk, stream.get_mut());
-            self.send(handler, true);
+            self.send_stream(handler, true);
         } else {
             // this packet is almost always a frame packet
             let online_packet = OnlinePackets::recv(stream.read_u8().unwrap());
@@ -302,7 +312,7 @@ impl Connection {
                 new_frame.reliability = Reliability::new(ReliabilityFlag::Unreliable);
                 new_framepk.frames.push(new_frame);
                 new_framepk.seq = self.send_seq.into();
-                self.send(new_framepk.parse(), true);
+                self.send_stream(new_framepk.parse(), true);
                 self.send_seq = self.send_seq + 1;
             }
         }
@@ -343,12 +353,12 @@ impl Connection {
         if self.state.is_reliable() {
             if !self.ack.is_empty() {
                 let respond_with = self.ack.make_ack();
-                self.send(respond_with.parse(), true);
+                self.send_stream(respond_with.parse(), true);
             }
 
             if !self.nack.is_empty() {
                 let respond_with = self.nack.make_nack();
-                self.send(respond_with.parse(), true);
+                self.send_stream(respond_with.parse(), true);
             }
         }
 
@@ -366,7 +376,7 @@ impl Connection {
 
             if packets.is_some() {
                 for pk in packets.unwrap() {
-                    self.send(pk.parse(), true);
+                    self.send_stream(pk.parse(), true);
                 }
 
                 self.fragment_id += 1;

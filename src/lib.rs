@@ -70,6 +70,7 @@ pub fn start(
                     Connection::new(remote, *server_time.as_ref(), Arc::clone(&motd)),
                 );
             }
+
             let client = match sclients.get_mut(&tokenize_addr(remote)) {
                 Some(c) => c,
                 None => continue,
