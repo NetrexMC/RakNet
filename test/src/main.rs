@@ -1,7 +1,9 @@
 use rakrs::RakNetServer;
 use rakrs::conn::{Connection};
 use rakrs::Motd;
+use rakrs::RakResult;
 use rakrs::RakNetEvent;
+use rakrs::raknet_start;
 use binary_utils::*;
 use std::sync::{Arc};
 
@@ -16,19 +18,27 @@ fn main() {
           version: "1.18.9".to_owned(),
           server_id: 2747994720109207718 as i64
      });
-     let threads = server.start(Arc::new(|_con: &mut Connection, pk: &mut BinaryStream| {
-               println!("Got game packet.");
-          }), Box::new(|ev: &RakNetEvent| {
+     let threads = raknet_start!(server, move |ev: &RakNetEvent| {
           match ev.clone() {
                RakNetEvent::Disconnect(address, reason) => {
                     println!("{} disconnected due to: {}", address, reason);
+                    None
                },
                RakNetEvent::ConnectionCreated(address) => {
                     println!("{} has joined the server", address);
+                    None
+               },
+               RakNetEvent::GamePacket(address, packet) => {
+                    println!("{} sent a game packet!!", address);
+                    Some(RakResult::Disconnect("U suck!".into()))
+               },
+               RakNetEvent::ComplexBinaryError(ip, _, msg) => {
+                    println!("Err! {}: {}", ip, msg);
+                    None
                }
-               _ => return
+               _ => None
           }
-     }));
+     });
      threads.0.join();
      threads.1.join();
      println!("Hi I am running concurrently.");
