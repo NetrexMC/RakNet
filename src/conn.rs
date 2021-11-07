@@ -65,6 +65,17 @@ impl ConnectionState {
     }
 }
 
+macro_rules! conn_create_error_event {
+    ($self: expr, $buffer: expr, $message: expr) => {
+        $self.event_dispatch.push_back(
+            RakNetEvent::ComplexBinaryError(
+                $self.address_token.clone(),
+                $buffer,
+                $message
+            )
+        )
+    };
+}
 #[derive(Clone)]
 pub struct Connection {
     /// The address the client is connected with.
@@ -152,10 +163,17 @@ impl Connection {
             let mut frame_packet = FramePacket::new();
             let mut frame = Frame::init();
             frame.reliability = Reliability::new(ReliabilityFlag::Unreliable);
-            frame.body = stream;
+            frame.body = stream.clone();
             frame_packet.seq = self.next_send_seq().into();
             frame_packet.frames.push(frame);
-            self.send_queue.push_back(frame_packet.parse());
+            let final_frame = frame_packet.parse();
+            if final_frame.is_err() {
+                // we couldn't send this frame
+                // we need to communicate this to the server
+                conn_create_error_event!(self, stream.clone(), final_frame.err().unwrap().get_message());
+            } else {
+                self.send_queue.push_back(final_frame.ok().unwrap());
+            }
         } else {
             self.send_queue_large.push_back(stream);
         }
@@ -180,7 +198,14 @@ impl Connection {
         if self.state.is_disconnected() {
             let pk = OfflinePackets::recv(stream.read_u8().unwrap());
             let handler = handle_offline(self, pk, stream.get_mut());
-            self.send_stream(handler, true);
+            match handler {
+                Ok(buffer) => self.send_stream(buffer, true),
+                Err(error) => {
+                    // for some reason we failed to read this packet
+                    // again, we need to communicate this to the server
+                    conn_create_error_event!(self, buf.clone(), error.get_message())
+                }
+            }
         } else {
             // this packet is almost always a frame packet
             let online_packet = OnlinePackets::recv(stream.read_u8().unwrap());
@@ -200,10 +225,14 @@ impl Connection {
                     return;
                 }
                 OnlinePackets::FramePacket(_) => {
-                    let mut frame_packet =
+                    let frame_packet =
                         FramePacket::compose(stream.get_ref(), &mut (stream.position() as usize));
 
-                    self.handle_frames(&mut frame_packet);
+                    if frame_packet.is_err() {
+                        conn_create_error_event!(self, buf.clone(), frame_packet.err().unwrap().get_message());
+                    } else {
+                        self.handle_frames(&mut frame_packet.ok().unwrap());
+                    }
                     return;
                 }
                 _ => {}
@@ -222,32 +251,35 @@ impl Connection {
     ///   which is then sent to the client when the connection ticks
     ///   to *hopefully* force the client to eventually send that packet.
     pub fn handle_ack(&mut self, packet: &Vec<u8>) {
-        let got = Ack::compose(&packet[..], &mut 0);
+        if let Ok(got) = Ack::compose(&packet[..], &mut 0) {
 
-        for record in got.records {
-            if record.is_single() {
-                let sequence = match record {
-                    Record::Single(rec) => rec.sequence,
-                    _ => continue,
-                };
+            for record in got.records {
+                if record.is_single() {
+                    let sequence = match record {
+                        Record::Single(rec) => rec.sequence,
+                        _ => continue,
+                    };
 
-                if !self.ack.has_seq(sequence) {
-                    self.nack.push_seq(sequence);
-                }
-            } else {
-                let range = match record {
-                    Record::Range(rec) => rec,
-                    _ => continue,
-                };
-
-                let sequences = range.get_sequences();
-
-                for sequence in sequences {
                     if !self.ack.has_seq(sequence) {
                         self.nack.push_seq(sequence);
                     }
+                } else {
+                    let range = match record {
+                        Record::Range(rec) => rec,
+                        _ => continue,
+                    };
+
+                    let sequences = range.get_sequences();
+
+                    for sequence in sequences {
+                        if !self.ack.has_seq(sequence) {
+                            self.nack.push_seq(sequence);
+                        }
+                    }
                 }
             }
+        } else {
+            conn_create_error_event!(self, packet.clone(), "Failed reading ack packet.".to_string());
         }
     }
 
@@ -262,7 +294,7 @@ impl Connection {
     pub fn handle_frames(&mut self, frame_packet: &mut FramePacket) {
         self.recv_seq = frame_packet.seq.into();
         self.ack
-            .push_seq(frame_packet.seq.into(), frame_packet.parse());
+            .push_seq(frame_packet.seq.into(), frame_packet.fparse());
         for frame in frame_packet.frames.iter_mut() {
             if frame.fragment_info.is_some() {
                 // the frame is fragmented!
@@ -302,18 +334,18 @@ impl Connection {
                 frame.body.clone(),
             ));
         } else {
-            let response = handle_online(self, online_packet.clone(), &mut frame.body);
+            if let Ok(response) = handle_online(self, online_packet.clone(), &mut frame.body) {
+                if response.len() != 0 {
+                    let mut new_framepk = FramePacket::new();
+                    let mut new_frame = Frame::init();
 
-            if response.len() != 0 {
-                let mut new_framepk = FramePacket::new();
-                let mut new_frame = Frame::init();
-
-                new_frame.body = response;
-                new_frame.reliability = Reliability::new(ReliabilityFlag::Unreliable);
-                new_framepk.frames.push(new_frame);
-                new_framepk.seq = self.send_seq.into();
-                self.send_stream(new_framepk.parse(), true);
-                self.send_seq = self.send_seq + 1;
+                    new_frame.body = response;
+                    new_frame.reliability = Reliability::new(ReliabilityFlag::Unreliable);
+                    new_framepk.frames.push(new_frame);
+                    new_framepk.seq = self.send_seq.into();
+                    self.send_stream(new_framepk.fparse(), true);
+                    self.send_seq = self.send_seq + 1;
+                }
             }
         }
     }
@@ -353,12 +385,12 @@ impl Connection {
         if self.state.is_reliable() {
             if !self.ack.is_empty() {
                 let respond_with = self.ack.make_ack();
-                self.send_stream(respond_with.parse(), true);
+                self.send_stream(respond_with.fparse(), true);
             }
 
             if !self.nack.is_empty() {
                 let respond_with = self.nack.make_nack();
-                self.send_stream(respond_with.parse(), true);
+                self.send_stream(respond_with.fparse(), true);
             }
         }
 
@@ -376,7 +408,7 @@ impl Connection {
 
             if packets.is_some() {
                 for pk in packets.unwrap() {
-                    self.send_stream(pk.parse(), true);
+                    self.send_stream(pk.fparse(), true);
                 }
 
                 self.fragment_id += 1;

@@ -3,6 +3,7 @@ use crate::conn::{Connection, ConnectionState};
 use crate::util::tokenize_addr;
 use crate::RakNetEvent;
 use binary_utils::*;
+use binary_utils::error::BinaryError;
 use byteorder::{BigEndian, WriteBytesExt};
 use std::fmt::{Formatter, Result as FResult};
 use std::io::Write;
@@ -85,28 +86,28 @@ pub struct ConnectionAccept {
 }
 
 impl Streamable for ConnectionAccept {
-    fn parse(&self) -> Vec<u8> {
+    fn parse(&self) -> Result<Vec<u8>, BinaryError> {
         let mut stream = Vec::new();
-        stream.write_u8(self.id).unwrap();
-        stream.write_all(&self.client_address.parse()[..]).unwrap();
-        stream.write_i16::<BigEndian>(self.system_index).unwrap();
+        stream.write_u8(self.id)?;
+        stream.write_all(&self.client_address.parse()?[..])?;
+        stream.write_i16::<BigEndian>(self.system_index)?;
         for _ in 0..10 {
-            stream.write_all(&self.internal_ids.parse()[..]).unwrap();
+            stream.write_all(&self.internal_ids.parse()?[..])?;
         }
-        stream.write_i64::<BigEndian>(self.request_time).unwrap();
-        stream.write_i64::<BigEndian>(self.timestamp).unwrap();
-        stream
+        stream.write_i64::<BigEndian>(self.request_time)?;
+        stream.write_i64::<BigEndian>(self.timestamp)?;
+        Ok(stream)
     }
 
-    fn compose(_source: &[u8], _position: &mut usize) -> Self {
-        Self {
+    fn compose(_source: &[u8], _position: &mut usize) -> Result<Self, BinaryError> {
+        Ok(Self {
             id: 0,
             client_address: SocketAddr::new(IpAddr::from(Ipv4Addr::new(192, 168, 0, 1)), 9120),
             system_index: 0,
             internal_ids: SocketAddr::new(IpAddr::from(Ipv4Addr::new(127, 0, 0, 1)), 1920),
             request_time: 0,
             timestamp: 0,
-        }
+        })
     }
 }
 
@@ -126,10 +127,10 @@ pub fn handle_online(
     connection: &mut Connection,
     pk: OnlinePackets,
     stream: &mut Vec<u8>,
-) -> Vec<u8> {
+) -> Result<Vec<u8>, BinaryError> {
     match pk {
         OnlinePackets::ConnectionRequest => {
-            let request = ConnectionRequest::compose(stream, &mut 1);
+            let request = ConnectionRequest::compose(stream, &mut 1)?;
             let accept = ConnectionAccept {
                 id: OnlinePackets::ConnectionAccept.to_byte(),
                 client_address: connection.address.clone(),
@@ -150,11 +151,11 @@ pub fn handle_online(
                 tokenize_addr(connection.address),
                 "Client disconnect".to_owned(),
             ));
-            Vec::new()
+            Ok(Vec::new())
         }
-        OnlinePackets::NewConnection => Vec::new(),
+        OnlinePackets::NewConnection => Ok(Vec::new()),
         OnlinePackets::ConnectedPing => {
-            let request = ConnectedPing::compose(stream, &mut 0);
+            let request = ConnectedPing::compose(stream, &mut 0)?;
             let pong = ConnectedPong {
                 id: OnlinePackets::ConnectedPong.to_byte(),
                 ping_time: request.time,
@@ -167,8 +168,8 @@ pub fn handle_online(
         }
         OnlinePackets::FramePacket(_v) => {
             println!("Condition should never be met.");
-            Vec::new()
+            Ok(Vec::new())
         }
-        _ => Vec::new(), // TODO: Throw an UnknownPacket here rather than sending an empty binary stream
+        _ => Ok(Vec::new()), // TODO: Throw an UnknownPacket here rather than sending an empty binary stream
     }
 }

@@ -1,5 +1,6 @@
 pub mod queue;
 use binary_utils::*;
+use binary_utils::error::BinaryError;
 use byteorder::{ReadBytesExt, WriteBytesExt, BE};
 use std::io::Cursor;
 
@@ -71,7 +72,7 @@ impl Ack {
 }
 
 impl Streamable for Ack {
-    fn compose(source: &[u8], _position: &mut usize) -> Self {
+    fn compose(source: &[u8], _position: &mut usize) -> Result<Self, BinaryError> {
         let mut stream = Cursor::new(source);
         let id = stream.read_u8().unwrap();
         let count = stream.read_u16::<BE>().unwrap();
@@ -93,32 +94,32 @@ impl Streamable for Ack {
             }
         }
 
-        Self {
+        Ok(Self {
             count,
             records,
             id: AckIds::from_byte(id),
-        }
+        })
     }
 
-    fn parse(&self) -> Vec<u8> {
+    fn parse(&self) -> Result<Vec<u8>, BinaryError> {
         let mut stream = Vec::<u8>::new();
-        stream.write_u8(AckIds::Acknowledge as u8).unwrap();
-        stream.write_u16::<BE>(self.count).unwrap();
+        stream.write_u8(AckIds::Acknowledge as u8)?;
+        stream.write_u16::<BE>(self.count)?;
 
         for record in self.records.iter() {
             match record {
                 Record::Single(rec) => {
-                    stream.write_u8(1).unwrap();
-                    stream.write_u24::<BE>(rec.sequence).unwrap();
+                    stream.write_u8(1)?;
+                    stream.write_u24::<BE>(rec.sequence)?;
                 }
                 Record::Range(rec) => {
                     stream.write_u8(0).unwrap();
-                    stream.write_u24::<BE>(rec.start).unwrap();
-                    stream.write_u24::<BE>(rec.end).unwrap();
+                    stream.write_u24::<BE>(rec.start)?;
+                    stream.write_u24::<BE>(rec.end)?;
                 }
             }
         }
-        stream
+        Ok(stream)
     }
 }
 

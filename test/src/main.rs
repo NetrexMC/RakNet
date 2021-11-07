@@ -32,6 +32,10 @@ fn main() {
                     println!("{} sent a game packet!!", address);
                     Some(RakResult::Disconnect("U suck!".into()))
                },
+               RakNetEvent::ComplexBinaryError(ip, _, msg) => {
+                    println!("Err! {}: {}", ip, msg);
+                    None
+               }
                _ => None
           }
      });

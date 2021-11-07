@@ -136,7 +136,7 @@ impl FragmentList {
                 frame.fragment_info = Some(FragmentInfo::new(self.size as i32, usable_id, index));
                 frame.body = frag.as_stream();
 
-                if framepk.parse().len() + frame.parse().len() >= mtu_size as usize {
+                if framepk.fparse().len() + frame.fparse().len() >= mtu_size as usize {
                     framepks.push(framepk);
                     framepk = FramePacket::new();
                 }
