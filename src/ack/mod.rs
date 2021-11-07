@@ -1,6 +1,6 @@
 pub mod queue;
-use binary_utils::*;
 use binary_utils::error::BinaryError;
+use binary_utils::*;
 use byteorder::{ReadBytesExt, WriteBytesExt, BE};
 use std::io::Cursor;
 

@@ -2,8 +2,8 @@
 use crate::conn::{Connection, ConnectionState};
 use crate::util::tokenize_addr;
 use crate::RakNetEvent;
-use binary_utils::*;
 use binary_utils::error::BinaryError;
+use binary_utils::*;
 use byteorder::{BigEndian, WriteBytesExt};
 use std::fmt::{Formatter, Result as FResult};
 use std::io::Write;
