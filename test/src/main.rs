@@ -1,16 +1,13 @@
 use rakrs::RakNetServer;
-use rakrs::conn::{Connection};
 use rakrs::Motd;
 use rakrs::RakResult;
 use rakrs::RakNetEvent;
 use rakrs::raknet_start;
-use binary_utils::*;
-use std::sync::{Arc};
 
 fn main() {
      let mut server = RakNetServer::new(String::from("0.0.0.0:19132"));
      server.set_motd(Motd {
-          name: "Sus!!!".to_owned(),
+          name: "Netrex Raknet".to_owned(),
           protocol: 190,
           player_count: 0,
           player_max: 10000,
@@ -28,9 +25,9 @@ fn main() {
                     println!("{} has joined the server", address);
                     None
                },
-               RakNetEvent::GamePacket(address, packet) => {
+               RakNetEvent::GamePacket(address, _packet) => {
                     println!("{} sent a game packet!!", address);
-                    Some(RakResult::Disconnect("U suck!".into()))
+                    Some(RakResult::Disconnect("Nope.".into()))
                },
                RakNetEvent::ComplexBinaryError(ip, _, msg) => {
                     println!("Err! {}: {}", ip, msg);

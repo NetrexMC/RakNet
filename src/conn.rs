@@ -67,13 +67,13 @@ impl ConnectionState {
 
 macro_rules! conn_create_error_event {
     ($self: expr, $buffer: expr, $message: expr) => {
-        $self.event_dispatch.push_back(
-            RakNetEvent::ComplexBinaryError(
+        $self
+            .event_dispatch
+            .push_back(RakNetEvent::ComplexBinaryError(
                 $self.address_token.clone(),
                 $buffer,
-                $message
-            )
-        )
+                $message,
+            ))
     };
 }
 #[derive(Clone)]
@@ -170,7 +170,11 @@ impl Connection {
             if final_frame.is_err() {
                 // we couldn't send this frame
                 // we need to communicate this to the server
-                conn_create_error_event!(self, stream.clone(), final_frame.err().unwrap().get_message());
+                conn_create_error_event!(
+                    self,
+                    stream.clone(),
+                    final_frame.err().unwrap().get_message()
+                );
             } else {
                 self.send_queue.push_back(final_frame.ok().unwrap());
             }
@@ -229,7 +233,11 @@ impl Connection {
                         FramePacket::compose(stream.get_ref(), &mut (stream.position() as usize));
 
                     if frame_packet.is_err() {
-                        conn_create_error_event!(self, buf.clone(), frame_packet.err().unwrap().get_message());
+                        conn_create_error_event!(
+                            self,
+                            buf.clone(),
+                            frame_packet.err().unwrap().get_message()
+                        );
                     } else {
                         self.handle_frames(&mut frame_packet.ok().unwrap());
                     }
@@ -252,7 +260,6 @@ impl Connection {
     ///   to *hopefully* force the client to eventually send that packet.
     pub fn handle_ack(&mut self, packet: &Vec<u8>) {
         if let Ok(got) = Ack::compose(&packet[..], &mut 0) {
-
             for record in got.records {
                 if record.is_single() {
                     let sequence = match record {
@@ -279,7 +286,11 @@ impl Connection {
                 }
             }
         } else {
-            conn_create_error_event!(self, packet.clone(), "Failed reading ack packet.".to_string());
+            conn_create_error_event!(
+                self,
+                packet.clone(),
+                "Failed reading ack packet.".to_string()
+            );
         }
     }
 
