@@ -3,6 +3,7 @@
 use crate::conn::{Connection, ConnectionState};
 use crate::{Magic, RakNetVersion, SERVER_ID, USE_SECURITY};
 use binary_utils::*;
+use binary_utils::error::BinaryError;
 use byteorder::WriteBytesExt;
 use std::fmt::{Formatter, Result as FResult};
 use std::io::Write;
@@ -89,25 +90,25 @@ pub struct OpenConnectRequest {
 }
 
 impl Streamable for OpenConnectRequest {
-    fn compose(source: &[u8], position: &mut usize) -> Self {
-        Self {
-            magic: Magic::compose(source, position),
-            protocol: u8::compose(source, position),
+    fn compose(source: &[u8], position: &mut usize) -> Result<Self, BinaryError> {
+        Ok(Self {
+            magic: Magic::compose(source, position)?,
+            protocol: u8::compose(source, position)?,
             mtu_size: (source.len() + 1 + 28) as u16,
-        }
+        })
     }
 
-    fn parse(&self) -> Vec<u8> {
+    fn parse(&self) -> Result<Vec<u8>, BinaryError> {
         let mut stream = Vec::<u8>::new();
         stream
-            .write(&self.magic.parse()[..])
+            .write(&self.magic.parse()?[..])
             .expect("Failed to parse open connect request");
-        stream.write_u8(self.protocol).unwrap();
+        stream.write_u8(self.protocol)?;
         // padding
         for _ in 0..self.mtu_size {
-            stream.write_u8(0).unwrap();
+            stream.write_u8(0)?;
         }
-        stream
+        Ok(stream)
     }
 }
 
@@ -167,7 +168,7 @@ pub fn handle_offline(
     connection: &mut Connection,
     pk: OfflinePackets,
     stream: &mut &Vec<u8>,
-) -> Vec<u8> {
+) -> Result<Vec<u8>, BinaryError> {
     match pk {
         OfflinePackets::UnconnectedPing => {
             let pong = UnconnectedPong {
@@ -180,7 +181,7 @@ pub fn handle_offline(
             pong.parse()
         }
         OfflinePackets::OpenConnectRequest => {
-            let request = OpenConnectRequest::compose(&stream[..], &mut 1);
+            let request = OpenConnectRequest::compose(&stream[..], &mut 1)?;
 
             if request.protocol != RakNetVersion::MinecraftRecent.to_u8() {
                 let incompatible = IncompatibleProtocolVersion {
@@ -204,7 +205,7 @@ pub fn handle_offline(
             reply.parse()
         }
         OfflinePackets::SessionInfoRequest => {
-            let request = SessionInfoRequest::compose(&stream[..], &mut 1);
+            let request = SessionInfoRequest::compose(&stream[..], &mut 1)?;
             let reply = SessionInfoReply {
                 id: OfflinePackets::SessionInfoReply.to_byte(),
                 server_id: SERVER_ID,
@@ -218,6 +219,6 @@ pub fn handle_offline(
             connection.state = ConnectionState::Connecting;
             reply.parse()
         }
-        _ => Vec::new(), //TODO: Throw an UnknownPacket here rather than sending an empty binary stream
+        _ => Ok(Vec::new()), //TODO: Throw an UnknownPacket here rather than sending an empty binary stream
     }
 }
