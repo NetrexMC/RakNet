@@ -1,12 +1,12 @@
 [package]
 name = "rakrs"
-version = "0.1.0"
+version = "0.2.1"
 authors = ["Bavfalcon9"]
 edition = "2018"
 
 [dependencies]
 rand = "0.8.3"
-binary_utils = { git = "https://github.com/NetrexMC/BinaryUtil", branch = "v2" }
+binary_utils = { git = "https://github.com/NetrexMC/BinaryUtil", branch = "Netrex/issues/16" }
 tokio = { version = "1.10.0", features = ["time"] }
 byteorder = "1.4.3"
 crossbeam = "0.8.1"

@@ -1,7 +1,7 @@
 pub mod fragment;
 pub mod reliability;
 
-use binary_utils::{self, u24::u24, Streamable};
+use binary_utils::{self, Streamable, error::BinaryError, u24::u24};
 use byteorder::{ReadBytesExt, WriteBytesExt, BE};
 use fragment::FragmentInfo;
 use reliability::Reliability;
@@ -49,37 +49,37 @@ impl Frame {
 }
 
 impl Streamable for Frame {
-    fn compose(source: &[u8], position: &mut usize) -> Self {
+    fn compose(source: &[u8], position: &mut usize) -> Result<Self, BinaryError> {
         let mut stream = Cursor::new(source.to_vec());
         let mut frame: Frame = Frame::init();
         *position = 0;
         stream.set_position(*position as u64);
-        let flags = stream.read_u8().unwrap();
+        let flags = stream.read_u8()?;
 
         frame.flags = flags;
         frame.reliability = Reliability::from_bit(flags);
 
         let fragmented = (flags & 0x10) > 0;
-        let bit_length = stream.read_u16::<BE>().unwrap();
+        let bit_length = stream.read_u16::<BE>()?;
 
         if Reliability::is_reliable(frame.reliability.to_byte()) {
-            frame.reliable_index = Some(stream.read_u24::<BE>().unwrap().into());
+            frame.reliable_index = Some(stream.read_u24::<BE>()?.into());
         }
 
         if Reliability::is_seq(frame.reliability.to_byte()) {
-            frame.sequence_index = Some(stream.read_u24::<BE>().unwrap().into());
+            frame.sequence_index = Some(stream.read_u24::<BE>()?.into());
         }
 
         if Reliability::is_ord(frame.reliability.to_byte()) {
-            frame.order_index = Some(stream.read_u24::<BE>().unwrap().into());
-            frame.order_channel = Some(stream.read_u8().unwrap());
+            frame.order_index = Some(stream.read_u24::<BE>()?.into());
+            frame.order_channel = Some(stream.read_u8()?);
         }
 
         if fragmented {
             frame.fragment_info = Some(FragmentInfo {
-                fragment_size: stream.read_i32::<BE>().unwrap(),
-                fragment_id: stream.read_u16::<BE>().unwrap(),
-                fragment_index: stream.read_i32::<BE>().unwrap(),
+                fragment_size: stream.read_i32::<BE>()?,
+                fragment_id: stream.read_u16::<BE>()?,
+                fragment_index: stream.read_i32::<BE>()?,
             });
         }
 
@@ -93,10 +93,10 @@ impl Streamable for Frame {
             frame.body = inner_buffer.to_vec();
         }
 
-        frame
+        Ok(frame)
     }
 
-    fn parse(&self) -> Vec<u8> {
+    fn parse(&self) -> Result<Vec<u8>, BinaryError> {
         let mut stream = Cursor::new(Vec::new());
         let mut flags = self.reliability.to_byte() << 5;
 
@@ -106,26 +106,23 @@ impl Streamable for Frame {
             }
         }
 
-        stream.write_u8(flags).unwrap();
+        stream.write_u8(flags)?;
         stream
-            .write_u16::<BE>((self.body.len() as u16) * 8)
-            .unwrap();
+            .write_u16::<BE>((self.body.len() as u16) * 8)?;
 
         if self.reliable_index.is_some() {
             stream
-                .write_u24::<BE>(self.reliable_index.unwrap())
-                .unwrap();
+                .write_u24::<BE>(self.reliable_index.unwrap())?;
         }
 
         if self.sequence_index.is_some() {
             stream
-                .write_u24::<BE>(self.sequence_index.unwrap())
-                .unwrap();
+                .write_u24::<BE>(self.sequence_index.unwrap())?
         }
 
         if self.order_index.is_some() {
-            stream.write_u24::<BE>(self.order_index.unwrap()).unwrap();
-            stream.write_u8(self.order_channel.unwrap()).unwrap();
+            stream.write_u24::<BE>(self.order_index.unwrap())?;
+            stream.write_u8(self.order_channel.unwrap())?;
         }
 
         if self.fragment_info.is_some() {
@@ -143,7 +140,7 @@ impl Streamable for Frame {
         }
 
         stream.write_all(&self.body).unwrap();
-        stream.get_ref().clone()
+        Ok(stream.get_ref().clone())
     }
 }
 #[derive(Debug)]
@@ -162,18 +159,18 @@ impl FramePacket {
 }
 
 impl Streamable for FramePacket {
-    fn parse(&self) -> Vec<u8> {
+    fn parse(&self) -> Result<Vec<u8>, BinaryError> {
         let mut stream = Vec::new();
-        stream.write_u8(0x80).unwrap();
-        stream.write_u24::<BE>(self.seq.into()).unwrap();
+        stream.write_u8(0x80)?;
+        stream.write_u24::<BE>(self.seq.into())?;
 
         for f in self.frames.iter() {
-            stream.write_all(&f.parse()).unwrap();
+            stream.write_all(&f.parse()?)?;
         }
-        stream
+        Ok(stream)
     }
 
-    fn compose(source: &[u8], position: &mut usize) -> Self {
+    fn compose(source: &[u8], position: &mut usize) -> Result<Self, BinaryError> {
         let mut packet = FramePacket::new();
         let mut stream = Cursor::new(source);
         stream.set_position(*position as u64);
@@ -181,18 +178,20 @@ impl Streamable for FramePacket {
 
         loop {
             if stream.position() >= source.len() as u64 {
-                return packet;
+                return Ok(packet);
             }
 
             let offset: usize = stream.position() as usize;
-            let frm = Frame::compose(&source[(offset)..], &mut 0);
-            stream.set_position(source.len() as u64);
-            packet.frames.push(frm.clone());
-            if frm.parse().len() + stream.position() as usize >= source.len() {
-                return packet;
-            } else {
-                stream.set_position(frm.parse().len() as u64);
+            if let Ok(frm) = Frame::compose(&source[(offset)..], &mut 0) {
+                stream.set_position(source.len() as u64);
+                packet.frames.push(frm.clone());
+                if frm.parse()?.len() + stream.position() as usize >= source.len() {
+                    return Ok(packet);
+                } else {
+                    stream.set_position(frm.parse()?.len() as u64);
+                }
             }
+            return Err(BinaryError::RecoverableKnown("Frame composition failed.".to_string()));
         }
     }
 }
