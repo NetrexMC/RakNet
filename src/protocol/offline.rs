@@ -2,8 +2,8 @@
 
 use crate::conn::{Connection, ConnectionState};
 use crate::{Magic, RakNetVersion, SERVER_ID, USE_SECURITY};
-use binary_utils::*;
 use binary_utils::error::BinaryError;
+use binary_utils::*;
 use byteorder::WriteBytesExt;
 use std::fmt::{Formatter, Result as FResult};
 use std::io::Write;

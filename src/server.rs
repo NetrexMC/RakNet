@@ -62,7 +62,7 @@ pub enum RakNetEvent {
     /// 1. The parsed `ip:port` of the connection that the packet was parsed for.
     /// 2. The packet `Vec<u8>` that was supposed to succeed.
     /// 3. The reason `String` for failing.
-    ComplexBinaryError(String, Vec<u8>, String)
+    ComplexBinaryError(String, Vec<u8>, String),
 }
 
 impl RakNetEvent {
@@ -73,7 +73,7 @@ impl RakNetEvent {
             RakNetEvent::GamePacket(_, _) => "GamePacket".into(),
             RakNetEvent::Motd(_, _) => "Motd".into(),
             RakNetEvent::Error(_) => "Error".into(),
-            RakNetEvent::ComplexBinaryError(_, _, _) => "ComplexBinaryError".into()
+            RakNetEvent::ComplexBinaryError(_, _, _) => "ComplexBinaryError".into(),
         }
     }
 }

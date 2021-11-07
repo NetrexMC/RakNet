@@ -1,6 +1,6 @@
 use crate::MAGIC;
-use binary_utils::*;
 use binary_utils::error::BinaryError;
+use binary_utils::*;
 use std::net::{SocketAddr, ToSocketAddrs};
 
 // Raknet utilities
@@ -37,7 +37,9 @@ impl Streamable for Magic {
         *position += 16;
 
         if magic.to_vec() != MAGIC.to_vec() {
-            Err(BinaryError::RecoverableKnown("Could not construct magic from malformed bytes.".to_string()))
+            Err(BinaryError::RecoverableKnown(
+                "Could not construct magic from malformed bytes.".to_string(),
+            ))
         } else {
             Ok(Self(magic.to_vec()))
         }
