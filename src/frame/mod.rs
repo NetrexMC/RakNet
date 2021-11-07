@@ -1,7 +1,7 @@
 pub mod fragment;
 pub mod reliability;
 
-use binary_utils::{self, Streamable, error::BinaryError, u24::u24};
+use binary_utils::{self, error::BinaryError, u24::u24, Streamable};
 use byteorder::{ReadBytesExt, WriteBytesExt, BE};
 use fragment::FragmentInfo;
 use reliability::Reliability;
@@ -107,17 +107,14 @@ impl Streamable for Frame {
         }
 
         stream.write_u8(flags)?;
-        stream
-            .write_u16::<BE>((self.body.len() as u16) * 8)?;
+        stream.write_u16::<BE>((self.body.len() as u16) * 8)?;
 
         if self.reliable_index.is_some() {
-            stream
-                .write_u24::<BE>(self.reliable_index.unwrap())?;
+            stream.write_u24::<BE>(self.reliable_index.unwrap())?;
         }
 
         if self.sequence_index.is_some() {
-            stream
-                .write_u24::<BE>(self.sequence_index.unwrap())?
+            stream.write_u24::<BE>(self.sequence_index.unwrap())?
         }
 
         if self.order_index.is_some() {
@@ -191,7 +188,9 @@ impl Streamable for FramePacket {
                     stream.set_position(frm.parse()?.len() as u64);
                 }
             }
-            return Err(BinaryError::RecoverableKnown("Frame composition failed.".to_string()));
+            return Err(BinaryError::RecoverableKnown(
+                "Frame composition failed.".to_string(),
+            ));
         }
     }
 }
