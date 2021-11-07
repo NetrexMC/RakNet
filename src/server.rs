@@ -49,6 +49,20 @@ pub enum RakNetEvent {
     /// 1. The parsed `ip:port` address of the connection.
     /// 2. The packet `Vec<u8>` recieved from the connection.
     GamePacket(String, Vec<u8>),
+    /// When RakNet Errors in some way that is recoverable.
+    ///
+    /// **Tuple Values**:
+    /// 1. The message to the error.
+    Error(String),
+    /// When a RakNet packet fails to parse or read a packet.
+    /// While the reason can be anything, this is considered a level 2 error (almost critical)
+    /// and should be handled by the server properly.
+    ///
+    /// **Tuple Values**:
+    /// 1. The parsed `ip:port` of the connection that the packet was parsed for.
+    /// 2. The packet `Vec<u8>` that was supposed to succeed.
+    /// 3. The reason `String` for failing.
+    ComplexBinaryError(String, Vec<u8>, String)
 }
 
 impl RakNetEvent {
@@ -58,6 +72,8 @@ impl RakNetEvent {
             RakNetEvent::Disconnect(_, _) => "Disconnect".into(),
             RakNetEvent::GamePacket(_, _) => "GamePacket".into(),
             RakNetEvent::Motd(_, _) => "Motd".into(),
+            RakNetEvent::Error(_) => "Error".into(),
+            RakNetEvent::ComplexBinaryError(_, _, _) => "ComplexBinaryError".into()
         }
     }
 }

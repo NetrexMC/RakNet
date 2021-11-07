@@ -11,17 +11,7 @@ checksum = "cdb031dd78e28731d87d56cc8ffef4a8f36ca26c38fe2de700543e627f8a464a"
 [[package]]
 name = "bin_macro"
 version = "0.1.0"
-source = "git+https://github.com/NetrexMC/BinaryUtil?branch=master#65dde377a139856e68b802e5a427f40c290958ec"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
-name = "bin_macro"
-version = "0.1.0"
-source = "git+https://github.com/NetrexMC/BinaryUtil?branch=v2#0318c3f0aa9f820d206422fe9ed4cb6eb961214b"
+source = "git+https://github.com/NetrexMC/BinaryUtil?branch=Netrex/issues/16#37024f690fb727589588475565ddf5711cfef442"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -31,18 +21,9 @@ dependencies = [
 [[package]]
 name = "binary_utils"
 version = "0.2.0"
-source = "git+https://github.com/NetrexMC/BinaryUtil?branch=master#65dde377a139856e68b802e5a427f40c290958ec"
+source = "git+https://github.com/NetrexMC/BinaryUtil?branch=Netrex/issues/16#37024f690fb727589588475565ddf5711cfef442"
 dependencies = [
- "bin_macro 0.1.0 (git+https://github.com/NetrexMC/BinaryUtil?branch=master)",
- "byteorder",
-]
-
-[[package]]
-name = "binary_utils"
-version = "0.2.0"
-source = "git+https://github.com/NetrexMC/BinaryUtil?branch=v2#0318c3f0aa9f820d206422fe9ed4cb6eb961214b"
-dependencies = [
- "bin_macro 0.1.0 (git+https://github.com/NetrexMC/BinaryUtil?branch=v2)",
+ "bin_macro",
  "byteorder",
 ]
 
@@ -145,9 +126,9 @@ checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
 
 [[package]]
 name = "libc"
-version = "0.2.98"
+version = "0.2.106"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "320cfe77175da3a483efed4bc0adc1968ca050b098ce4f2f1c13a56626128790"
+checksum = "a60553f9a9e039a333b4e9b20573b9e9b9c0bb3a11e201ccc48ef4283456d673"
 
 [[package]]
 name = "memoffset"
@@ -166,15 +147,15 @@ checksum = "8d31d11c69a6b52a174b42bdc0c30e5e11670f90788b2c471c31c1d17d449443"
 
 [[package]]
 name = "ppv-lite86"
-version = "0.2.10"
+version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac74c624d6b2d21f425f752262f42188365d7b8ff1aff74c82e45136510a4857"
+checksum = "ed0cfbc8191465bed66e1718596ee0b0b35d5ee1f41c5df2189d0fe8bde535ba"
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.30"
+version = "1.0.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "edc3358ebc67bc8b7fa0c007f945b0b18226f78437d61bec735a9eb96b61ee70"
+checksum = "ba508cc11742c0dc5c1659771673afbab7a0efab23aa17e854cbab0837ed0b43"
 dependencies = [
  "unicode-xid",
 ]
@@ -192,7 +173,7 @@ dependencies = [
 name = "rakrs"
 version = "0.1.0"
 dependencies = [
- "binary_utils 0.2.0 (git+https://github.com/NetrexMC/BinaryUtil?branch=v2)",
+ "binary_utils",
  "byteorder",
  "crossbeam",
  "crossbeam-utils",
@@ -204,7 +185,7 @@ dependencies = [
 name = "rakrs_test"
 version = "0.1.0"
 dependencies = [
- "binary_utils 0.2.0 (git+https://github.com/NetrexMC/BinaryUtil?branch=master)",
+ "binary_utils",
  "crossbeam-utils",
  "rakrs",
 ]
@@ -257,9 +238,9 @@ checksum = "d29ab0c6d3fc0ee92fe66e2d99f700eab17a8d57d1c1d3b748380fb20baa78cd"
 
 [[package]]
 name = "syn"
-version = "1.0.80"
+version = "1.0.81"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d010a1623fbd906d51d650a9916aaefc05ffa0e4053ff7fe601167f3e715d194"
+checksum = "f2afee18b8beb5a596ecb4a2dce128c719b4ba399d34126b9e4396e3f9860966"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -268,9 +249,9 @@ dependencies = [
 
 [[package]]
 name = "tokio"
-version = "1.10.0"
+version = "1.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "01cf844b23c6131f624accf65ce0e4e9956a8bb329400ea5bcc26ae3a5c20b0b"
+checksum = "588b2d10a336da58d877567cd8fb8a14b463e2104910f8132cd054b4b96e29ee"
 dependencies = [
  "autocfg",
  "pin-project-lite",
