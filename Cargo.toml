@@ -7,7 +7,7 @@ edition = "2018"
 [dependencies]
 rand = "0.8.3"
 binary_utils = { git = "https://github.com/NetrexMC/BinaryUtil", tag = "v0.2.1" }
+netrex_events = { git = "https://github.com/NetrexMC/Events", branch = "master" }
 tokio = { version = "1.10.0", features = ["time"] }
 byteorder = "1.4.3"
 crossbeam = "0.8.1"
-crossbeam-utils = "0.8.5"
