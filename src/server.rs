@@ -78,6 +78,7 @@ impl RakNetEvent {
     }
 }
 
+#[derive(Clone, Debug)]
 pub enum RakResult {
     /// Update the Motd for that specific client.
     ///
@@ -95,8 +96,6 @@ pub enum RakResult {
     /// 1. The reason for disconnect (if any).
     Disconnect(String),
 }
-
-pub type RakEventListenerFn = dyn FnMut(RakNetEvent) -> Option<RakResult> + Send + Sync;
 
 pub struct RakNetServer {
     pub address: String,
