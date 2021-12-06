@@ -33,7 +33,7 @@ pub fn test_server() {
         };
         None
     };
-    channel.recieve(&mut listener);
+    channel.receive(&mut listener);
     let server = raknet_start!(server, channel);
 
     println!("Hi I am running concurrently.");

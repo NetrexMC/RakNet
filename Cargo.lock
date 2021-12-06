@@ -142,7 +142,7 @@ dependencies = [
 [[package]]
 name = "netrex_events"
 version = "0.1.0"
-source = "git+https://github.com/NetrexMC/Events?branch=master#ab843bfc7bbffaded2743ecc95ace83e81ebfacd"
+source = "git+https://github.com/NetrexMC/Events?branch=master#b5bf78a5ff6647488fd8329309a456ad0f85ed16"
 dependencies = [
  "crossbeam",
 ]
