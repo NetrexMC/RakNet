@@ -2,9 +2,10 @@ use rakrs::Motd;
 use rakrs::RakEvent;
 use rakrs::RakNetServer;
 use rakrs::RakResult;
+use rakrs::start;
 
-#[test]
-pub fn test_server() {
+#[tokio::main]
+pub async fn main() {
     let mut server = RakNetServer::new(String::from("0.0.0.0:19132"));
     let mut motd = Motd {
         name: "Netrex Raknet".to_owned(),
@@ -13,7 +14,7 @@ pub fn test_server() {
         player_max: 10000,
         gamemode: "creative".to_owned(),
         version: "1.18.9".to_owned(),
-        server_id: 2747994720109207718 as i64,
+        server_id: 2747994720109207713 as i64,
     };
     let channel = netrex_events::Channel::<RakEvent, RakResult>::new();
     let mut unknown = 0;
@@ -33,13 +34,8 @@ pub fn test_server() {
         None
     };
     channel.receive(&mut listener);
-    server.start(channel);
-    
 
     println!("Hi I am running concurrently.");
 
-    loop {
-        let result = server.motd.clone();
-        println!("Motd: {:?}", result);
-    }
+    start(server, channel).await;
 }

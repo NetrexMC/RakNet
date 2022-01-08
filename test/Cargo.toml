@@ -1,10 +1,11 @@
 [package]
-name = "rakrs"
+name = "rakrs-test"
 version = "0.2.1"
 authors = ["Bavfalcon9"]
 edition = "2018"
 
 [dependencies]
+rakrs = { path = "../" }
 rand = "0.8.3"
 binary_utils = { git = "https://github.com/NetrexMC/BinaryUtil", tag = "v0.2.1" }
 netrex_events = { git = "https://github.com/NetrexMC/Events", branch = "master" }

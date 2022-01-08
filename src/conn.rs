@@ -6,7 +6,7 @@ use crate::online::{handle_online, OnlinePackets};
 use crate::protocol::offline::*;
 use crate::reliability::{Reliability, ReliabilityFlag};
 use crate::util::tokenize_addr;
-use crate::{Motd, RakNetEvent};
+use crate::{Motd, RakEvent};
 use binary_utils::*;
 use byteorder::ReadBytesExt;
 use std::collections::VecDeque;
@@ -69,7 +69,7 @@ macro_rules! conn_create_error_event {
     ($self: expr, $buffer: expr, $message: expr) => {
         $self
             .event_dispatch
-            .push_back(RakNetEvent::ComplexBinaryError(
+            .push_back(RakEvent::ComplexBinaryError(
                 $self.address_token.clone(),
                 $buffer,
                 $message,
@@ -95,7 +95,7 @@ pub struct Connection {
     /// - **Offline**: We have stopped recieving responses from the client.
     pub state: ConnectionState,
     /// A list of events to be emitted on next tick.
-    pub event_dispatch: VecDeque<RakNetEvent>,
+    pub event_dispatch: VecDeque<RakEvent>,
     /// A function that is called when the server recieves a
     /// `GamePacket: 0xfe` from the client.
     // pub recv: Arc<RecievePacketFn>,
@@ -131,11 +131,11 @@ pub struct Connection {
     /// The NACK queue (Packets we didn't get)
     nack: NAckQueue,
     /// The Motd reference.
-    motd: Arc<Motd>,
+    motd: Motd,
 }
 
 impl Connection {
-    pub fn new(address: SocketAddr, start_time: SystemTime, motd: Arc<Motd>) -> Self {
+    pub fn new(address: SocketAddr, start_time: SystemTime, motd: Motd) -> Self {
         Self {
             address,
             address_token: tokenize_addr(address),
@@ -222,7 +222,7 @@ impl Connection {
             match online_packet {
                 OnlinePackets::Disconnect => {
                     self.state = ConnectionState::Offline;
-                    self.event_dispatch.push_back(RakNetEvent::Disconnect(
+                    self.event_dispatch.push_back(RakEvent::Disconnect(
                         tokenize_addr(self.address),
                         "Client disconnect".to_owned(),
                     ));
@@ -340,7 +340,7 @@ impl Connection {
         if online_packet == OnlinePackets::GamePacket {
             // self.recv.as_ref()(self, &mut body_stream.get_mut());
             // we don't really care what happens to game packet, so emit it.
-            self.event_dispatch.push_back(RakNetEvent::GamePacket(
+            self.event_dispatch.push_back(RakEvent::GamePacket(
                 self.address_token.clone(),
                 frame.body.clone(),
             ));
@@ -382,7 +382,7 @@ impl Connection {
 
         if self.recv_time.elapsed().unwrap().as_secs() >= 10 {
             self.state = ConnectionState::Offline;
-            self.event_dispatch.push_back(RakNetEvent::Disconnect(
+            self.event_dispatch.push_back(RakEvent::Disconnect(
                 tokenize_addr(self.address),
                 "Time Out".to_owned(),
             ));
@@ -432,6 +432,6 @@ impl Connection {
     }
 
     pub fn get_motd(&self) -> Motd {
-        self.motd.as_ref().clone()
+        self.motd.clone()
     }
 }
