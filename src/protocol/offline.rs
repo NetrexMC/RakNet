@@ -178,6 +178,8 @@ pub fn handle_offline(
                 magic: Magic::new(),
                 motd: connection.get_motd().encode(),
             };
+            println!("Pong MOTD: {:?}", pong.motd.parse()?);
+            println!("Pong Message: {:?}\n\n", pong.motd);
             pong.parse()
         }
         OfflinePackets::OpenConnectRequest => {

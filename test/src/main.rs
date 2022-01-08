@@ -2,6 +2,7 @@ use rakrs::Motd;
 use rakrs::RakEvent;
 use rakrs::RakNetServer;
 use rakrs::RakResult;
+use rakrs::start;
 
 #[tokio::main]
 pub async fn main() {
@@ -13,7 +14,7 @@ pub async fn main() {
         player_max: 10000,
         gamemode: "creative".to_owned(),
         version: "1.18.9".to_owned(),
-        server_id: 2747994720109207718 as i64,
+        server_id: 2747994720109207713 as i64,
     };
     let channel = netrex_events::Channel::<RakEvent, RakResult>::new();
     let mut unknown = 0;
@@ -36,5 +37,5 @@ pub async fn main() {
 
     println!("Hi I am running concurrently.");
 
-    server.start(channel).await;
+    start(server, channel).await;
 }

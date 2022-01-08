@@ -1,14 +1,17 @@
-#![feature(in_band_lifetimes)]
+use crate::Motd;
+use crate::conn::Connection;
+use crate::from_tokenized;
+use crate::tokenize_addr;
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::sync::Mutex;
+use std::time::SystemTime;
+use crate::conn::ConnectionState;
 use netrex_events::Channel;
 use tokio::net::UdpSocket;
 use tokio::time::sleep;
-
-use crate::conn::{Connection, ConnectionState};
-use crate::{Motd, from_tokenized};
-use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, Duration};
+use std::time::Duration;
 
 pub enum RakNetVersion {
     MinecraftRecent,
@@ -106,10 +109,10 @@ pub enum RakResult {
 pub struct RakNetServer {
     pub address: String,
     pub version: RakNetVersion,
-    pub connections: Mutex<HashMap<String, Connection>>,
+    pub connections: Arc<Mutex<HashMap<String, Connection>>>,
     pub start_time: SystemTime,
     pub motd: Motd,
-    stop: bool,
+    pub stop: bool,
 }
 
 impl RakNetServer {
@@ -117,7 +120,7 @@ impl RakNetServer {
         Self {
             address,
             version: RakNetVersion::MinecraftRecent,
-            connections: Mutex::new(HashMap::new()),
+            connections: Arc::new(Mutex::new(HashMap::new())),
             start_time: SystemTime::now(),
             motd: Motd::default(),
             stop: false
@@ -136,106 +139,108 @@ impl RakNetServer {
             None => return,
         };
     }
+}
 
-    pub async fn start<'a>(&mut self, send_channel: Channel<'a, RakEvent, RakResult>) {
-        let socket = UdpSocket::bind(self.address.parse::<SocketAddr>().expect("Failed to bind to address.")).await.unwrap();
+pub async fn start<'a>(s: RakNetServer, send_channel: Channel<'a, RakEvent, RakResult>) {
+    let server = Arc::new(s);
+    let send_server = server.clone();
+    let sock = UdpSocket::bind(server.address.parse::<SocketAddr>().expect("Failed to bind to address.")).await.unwrap();
+    let send_sock = Arc::new(sock);
+    let socket = send_sock.clone();
+    let start_time = server.start_time.clone();
+    let motd = server.motd.clone();
+    tokio::spawn(async move {
+        loop {
+            if let Err(_) = socket.readable().await {
+                continue;
+            };
 
-        async {
-            while !&self.stop {
-                if let Err(_) = socket.readable().await {
-                    continue;
-                };
+            let mut buf = [0; 2048];
+            if let Ok((len, addr)) = socket.recv_from(&mut buf).await {
+                let data = &buf[..len];
+                let address_token = tokenize_addr(addr);
 
-                let mut buf = [0; 2048];
-                if let Ok((len, addr)) = socket.recv_from(&mut buf).await {
-                    let data = &buf[..len];
+                println!("[RakNet] {}: Sent packet: {:?}", addr, &data);
 
-                    println!("[RakNet] {}: Sent packet: {:?}", addr, &data);
-
-                    if let Ok(mut clients) = self.connections.lock() {
-                        if let Some(c) = clients.get_mut(&addr.ip().to_string()) {
+                if let Ok(mut clients) = server.connections.lock() {
+                    if let Some(c) = clients.get_mut(&address_token) {
+                        c.recv(&data.to_vec());
+                    } else {
+                        // add the client!
+                        // we need to add cooldown here eventually.
+                        if !clients.contains_key(&address_token) {
+                            let mut c = Connection::new(addr, start_time, motd.clone());
                             c.recv(&data.to_vec());
+                            clients.insert(address_token, c);
                         } else {
-                            // add the client!
-                            // we need to add cooldown here eventually.
-                            if !self.connections.lock().unwrap().contains_key(&addr.ip().to_string()) {
-                                let mut c = Connection::new(addr, self.start_time, self.motd.clone());
-                                c.recv(&data.to_vec());
-                                clients.insert(addr.ip().to_string(), c);
-                            } else {
-                                // throw an error, this should never happen.
-                                println!("[RakNet] Failed to add client, address already exists but failed mutable borrow.");
-                            }
+                            // throw an error, this should never happen.
                         }
                     }
-                } else {
-                    // log error in future!
-                    println!("[RakNet] Unknown error decoding packet!");
-                    continue;
+                }
+            } else {
+                // log error in future!
+                println!("[RakNet] Unknown error decoding packet!");
+                continue;
+            }
+        }
+    });
+    while !&send_server.stop {
+        if let Err(_) = send_sock.writable().await {
+            continue;
+        };
+
+        // sleep an entire tick
+        sleep(Duration::from_millis(50)).await;
+
+        let mut clients = send_server.connections.lock().unwrap();
+        for (addr, _) in clients.clone().iter() {
+            let client = clients.get_mut(addr).expect("Could not get connection");
+            client.do_tick();
+
+            let dispatch = client.event_dispatch.clone();
+            client.event_dispatch.clear();
+
+            // emit events if there is a listener for the
+            for event in dispatch.iter() {
+                // println!("DEBUG => Dispatching: {:?}", &event.get_name());
+                if let Some(result) = send_channel.send(event.clone()) {
+                    match result {
+                        RakResult::Motd(_v) => {
+                            // we don't really support changing
+                            // client MOTD at the moment...
+                            // so we don't do anything for this.
+                        }
+                        RakResult::Error(v) => {
+                            // Calling error forces an error to raise.
+                            panic!("{}", v);
+                        }
+                        RakResult::Disconnect(_) => {
+                            client.state = ConnectionState::Offline; // simple hack
+                            break;
+                        }
+                    }
                 }
             }
-        }.await;
 
-        async {
-            while !&self.stop {
-                if let Err(_) = socket.writable().await {
-                    continue;
-                };
-
-                // sleep an entire tick
-                sleep(Duration::from_millis(50)).await;
-
-                let mut clients = self.connections.lock().unwrap();
-                for (addr, _) in clients.clone().iter() {
-                    let client = clients.get_mut(addr).expect("Could not get connection");
-                    client.do_tick();
-
-                    let dispatch = client.event_dispatch.clone();
-                    client.event_dispatch.clear();
-
-                    // emit events if there is a listener for the
-                    for event in dispatch.iter() {
-                        // println!("DEBUG => Dispatching: {:?}", &event.get_name());
-                        if let Some(result) = send_channel.send(event.clone()) {
-                            match result {
-                                RakResult::Motd(_v) => {
-                                    // we don't really support changing
-                                    // client MOTD at the moment...
-                                    // so we don't do anything for this.
-                                }
-                                RakResult::Error(v) => {
-                                    // Calling error forces an error to raise.
-                                    panic!("{}", v);
-                                }
-                                RakResult::Disconnect(_) => {
-                                    client.state = ConnectionState::Offline; // simple hack
-                                    break;
-                                }
-                            }
-                        }
-                    }
-
-                    if client.state == ConnectionState::Offline {
-                        clients.remove(addr);
-                        continue;
-                    }
-
-                    if client.send_queue.len() == 0 {
-                        continue;
-                    }
-
-                    for pk in client.clone().send_queue.into_iter() {
-                        match socket.send_to(&pk[..], &from_tokenized(addr.clone())).await
-                        {
-                            // Add proper handling!
-                            Err(e) => eprintln!("Error Sending Packet [{}]: ", e),
-                            Ok(_) => continue, // println!("\nSent Packet [{}]: {:?}", addr, pk)
-                        }
-                    }
-                    client.send_queue.clear();
-                }
-                drop(clients);
+            if client.state == ConnectionState::Offline {
+                clients.remove(addr);
+                continue;
             }
-        }.await;
+
+            if client.send_queue.len() == 0 {
+                continue;
+            }
+
+            for pk in client.clone().send_queue.into_iter() {
+                match send_sock.send_to(&pk[..], &from_tokenized(addr.clone())).await
+                {
+                    // Add proper handling!
+                    Err(e) => eprintln!("[RakNet] Error Sending Packet [{}]: ", e),
+                    Ok(_) => println!("[RakNet] Sending Packet [{}]: {:?}", addr, pk)
+                }
+            }
+            client.send_queue.clear();
+        }
+        drop(clients);
     }
 }
