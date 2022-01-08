@@ -42,12 +42,12 @@ fn main() {
         server_id: server.server_id.into()
     });
 
-    raknet_start!(server, |event: &RakNetEvent| {
+    raknet_start!(server, |event: &RakEvent| {
         match *event {
-            RakNetEvent::Disconnect(address, reason) => {
+            RakEvent::Disconnect(address, reason) => {
                 println!("{} was disconnected due to: {}", address, reason);
             },
-            RakNetEvent::ConnectionCreated(address) => {
+            RakEvent::ConnectionCreated(address) => {
                 println!("{} has joined the server.");
             },
             _ => return

@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 use crate::conn::{Connection, ConnectionState};
 use crate::util::tokenize_addr;
-use crate::RakNetEvent;
+use crate::RakEvent;
 use binary_utils::error::BinaryError;
 use binary_utils::*;
 use byteorder::{BigEndian, WriteBytesExt};
@@ -147,7 +147,7 @@ pub fn handle_online(
         }
         OnlinePackets::Disconnect => {
             connection.state = ConnectionState::Offline;
-            connection.event_dispatch.push_back(RakNetEvent::Disconnect(
+            connection.event_dispatch.push_back(RakEvent::Disconnect(
                 tokenize_addr(connection.address),
                 "Client disconnect".to_owned(),
             ));
