@@ -309,7 +309,6 @@ version = "0.2.1"
 dependencies = [
  "binary_utils",
  "byteorder",
- "crossbeam",
  "netrex_events",
  "rand",
  "tokio",
