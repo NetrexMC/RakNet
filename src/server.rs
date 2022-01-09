@@ -76,14 +76,14 @@ pub enum RakEvent {
 
 impl RakEvent {
     pub fn get_name(&self) -> String {
-        match self.clone() {
+        match self {
             RakEvent::ConnectionCreated(_) => "ConnectionCreated".into(),
             RakEvent::Disconnect(_, _) => "Disconnect".into(),
             RakEvent::GamePacket(_, _) => "GamePacket".into(),
             RakEvent::Motd(_, _) => "Motd".into(),
             RakEvent::Error(_) => "Error".into(),
             RakEvent::ComplexBinaryError(_, _, _) => "ComplexBinaryError".into(),
-        }
+        } 
     }
 }
 
@@ -111,7 +111,7 @@ pub struct RakNetServer {
     pub version: RakNetVersion,
     pub connections: Arc<Mutex<HashMap<String, Connection>>>,
     pub start_time: SystemTime,
-    pub motd: Motd,
+    pub server_guid: u64,
     pub stop: bool,
 }
 
@@ -122,7 +122,7 @@ impl RakNetServer {
             version: RakNetVersion::MinecraftRecent,
             connections: Arc::new(Mutex::new(HashMap::new())),
             start_time: SystemTime::now(),
-            motd: Motd::default(),
+            server_guid: rand::random::<u64>(),
             stop: false
         }
     }
@@ -148,7 +148,7 @@ pub async fn start<'a>(s: RakNetServer, send_channel: Channel<'a, RakEvent, RakR
     let send_sock = Arc::new(sock);
     let socket = send_sock.clone();
     let start_time = server.start_time.clone();
-    let motd = server.motd.clone();
+    let server_id = server.server_guid.clone();
     tokio::spawn(async move {
         loop {
             if let Err(_) = socket.readable().await {
@@ -169,7 +169,7 @@ pub async fn start<'a>(s: RakNetServer, send_channel: Channel<'a, RakEvent, RakR
                         // add the client!
                         // we need to add cooldown here eventually.
                         if !clients.contains_key(&address_token) {
-                            let mut c = Connection::new(addr, start_time, motd.clone());
+                            let mut c = Connection::new(addr, start_time, server_id);
                             c.recv(&data.to_vec());
                             clients.insert(address_token, c);
                         } else {

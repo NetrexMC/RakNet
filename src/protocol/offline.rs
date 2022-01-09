@@ -21,7 +21,7 @@ pub enum OfflinePackets {
 }
 
 impl OfflinePackets {
-    pub fn recv(byte: u8) -> Self {
+    pub fn from_byte(byte: u8) -> Self {
         match byte {
             0x01 => OfflinePackets::UnconnectedPing,
             0x05 => OfflinePackets::OpenConnectRequest,
@@ -66,7 +66,7 @@ impl std::fmt::Display for OfflinePackets {
 /// Unconnected Ping
 #[derive(Debug, BinaryStream)]
 pub struct UnconnectedPing {
-    timestamp: i64,
+    timestamp: u64,
     magic: Magic,
     client_id: i64,
 }
@@ -75,8 +75,8 @@ pub struct UnconnectedPing {
 #[derive(Debug, BinaryStream)]
 pub struct UnconnectedPong {
     id: u8,
-    timestamp: i64,
-    server_id: i64,
+    timestamp: u64,
+    server_id: u64,
     magic: Magic,
     motd: String,
 }
@@ -132,7 +132,7 @@ impl Streamable for OpenConnectRequest {
 pub struct OpenConnectReply {
     id: u8,
     magic: Magic,
-    server_id: i64,
+    server_id: u64,
     security: bool,
     mtu_size: u16,
 }
@@ -141,7 +141,7 @@ pub struct OpenConnectReply {
 pub struct SessionInfoRequest {
     magic: Magic,
     address: SocketAddr,
-    mtu_size: i16,
+    mtu_size: u16,
     client_id: i64,
 }
 
@@ -150,9 +150,9 @@ pub struct SessionInfoRequest {
 pub struct SessionInfoReply {
     id: u8,
     magic: Magic,
-    server_id: i64,
+    server_id: u64,
     client_address: SocketAddr,
-    mtu_size: i16,
+    mtu_size: u16,
     security: bool,
 }
 
@@ -161,7 +161,7 @@ pub struct IncompatibleProtocolVersion {
     id: u8,
     protocol: u8,
     magic: Magic,
-    server_id: i64,
+    server_id: u64,
 }
 
 pub fn handle_offline(
@@ -173,8 +173,8 @@ pub fn handle_offline(
         OfflinePackets::UnconnectedPing => {
             let pong = UnconnectedPong {
                 id: OfflinePackets::UnconnectedPong.to_byte(),
-                server_id: SERVER_ID,
-                timestamp: connection.time.elapsed().unwrap().as_millis() as i64,
+                server_id: connection.server_guid,
+                timestamp: connection.time.elapsed().unwrap().as_millis() as u64,
                 magic: Magic::new(),
                 motd: connection.get_motd().encode(),
             };
@@ -190,7 +190,7 @@ pub fn handle_offline(
                     id: OfflinePackets::IncompatibleProtocolVersion.to_byte(),
                     protocol: request.protocol,
                     magic: Magic::new(),
-                    server_id: SERVER_ID,
+                    server_id: connection.server_guid,
                 };
 
                 return incompatible.parse();
@@ -198,7 +198,7 @@ pub fn handle_offline(
 
             let reply = OpenConnectReply {
                 id: OfflinePackets::OpenConnectReply.to_byte(),
-                server_id: SERVER_ID,
+                server_id: connection.server_guid,
                 security: USE_SECURITY,
                 magic: Magic::new(),
                 mtu_size: request.mtu_size,
@@ -210,7 +210,7 @@ pub fn handle_offline(
             let request = SessionInfoRequest::compose(&stream[..], &mut 1)?;
             let reply = SessionInfoReply {
                 id: OfflinePackets::SessionInfoReply.to_byte(),
-                server_id: SERVER_ID,
+                server_id: connection.server_guid,
                 client_address: connection.address.clone(),
                 magic: Magic::new(),
                 mtu_size: request.mtu_size,

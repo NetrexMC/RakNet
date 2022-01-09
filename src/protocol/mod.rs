@@ -16,11 +16,11 @@ pub struct Motd {
     pub player_count: u16,
     pub player_max: u16,
     pub gamemode: String,
-    pub server_id: i64,
+    pub server_guid: u64,
 }
 
 impl Motd {
-    pub fn default() -> Self {
+    pub fn new(server_guid: u64) -> Self {
         Self {
             name: String::from("Netrex Server"),
             player_count: 10,
@@ -28,7 +28,7 @@ impl Motd {
             protocol: 448,
             gamemode: String::from("Creative"),
             version: String::from("1.17.10"),
-            server_id: SERVER_ID,
+            server_guid,
         }
     }
 
@@ -37,7 +37,7 @@ impl Motd {
         let prot = self.protocol.to_string();
         let pcount = self.player_count.to_string();
         let pmax = self.player_max.to_string();
-        let server_id = SERVER_ID.to_string();
+        let server_id = self.server_guid.to_string();
         let props = vec![
             "MCPE",
             self.name.as_str(),

@@ -141,10 +141,17 @@ pub struct Connection {
     nack: NAckQueue,
     /// The Motd reference.
     motd: Motd,
+    /// The last packet that was recieved from the client.
+    /// This is a Tuple:
+    ///  - The Time the packet was recieved
+    ///  - The packet data
+    last_recv: (SystemTime, Vec<u8>),
+    /// The server GUID.
+    pub server_guid: u64,
 }
 
 impl Connection {
-    pub fn new(address: SocketAddr, start_time: SystemTime, motd: Motd) -> Self {
+    pub fn new(address: SocketAddr, start_time: SystemTime, server_guid: u64) -> Self {
         Self {
             address,
             address_token: tokenize_addr(address),
@@ -162,7 +169,9 @@ impl Connection {
             fragment_id: 0,
             ack: AckQueue::new(),
             nack: NAckQueue::new(),
-            motd,
+            motd: Motd::new(server_guid),
+            last_recv: (SystemTime::now(), Vec::new()),
+            server_guid
         }
     }
 
@@ -208,8 +217,9 @@ impl Connection {
         let mut stream = Cursor::new(buf);
         // Update the recieve time.
         self.recv_time = SystemTime::now();
+        self.last_recv = (SystemTime::now(), buf.clone());
         if self.state.is_disconnected() {
-            let pk = OfflinePackets::recv(stream.read_u8().unwrap());
+            let pk = OfflinePackets::from_byte(stream.read_u8().unwrap());
             let handler = handle_offline(self, pk, stream.get_mut());
             match handler {
                 Ok(buffer) => self.send_stream(buffer, true),
@@ -219,9 +229,10 @@ impl Connection {
                     conn_create_error_event!(self, buf.clone(), error.get_message())
                 }
             }
-        } else {
+        }
+        if self.state.is_connected() {
             // this packet is almost always a frame packet
-            let online_packet = OnlinePackets::recv(stream.read_u8().unwrap());
+            let online_packet = OnlinePackets::from_byte(stream.read_u8().unwrap());
 
             if is_ack_or_nack(online_packet.to_byte()) {
                 stream.set_position(0);
@@ -344,7 +355,7 @@ impl Connection {
         // todo Check if the frames should be recieved, if not purge them
         // todo EG: add implementation for ordering and sequenced frames!
         let mut body_stream = Cursor::new(frame.body.clone());
-        let online_packet = OnlinePackets::recv(body_stream.read_u8().unwrap());
+        let online_packet = OnlinePackets::from_byte(body_stream.read_u8().unwrap());
 
         if online_packet == OnlinePackets::GamePacket {
             // self.recv.as_ref()(self, &mut body_stream.get_mut());
@@ -387,6 +398,17 @@ impl Connection {
     pub fn do_tick(&mut self) {
         if self.state == ConnectionState::Offline {
             return;
+        }
+
+        if self.state == ConnectionState::Connected {
+            let id = self.last_recv.1[0];
+            if OnlinePackets::from_byte(id).is_unknown() && self.last_recv.0.elapsed().unwrap().as_secs() <= 3 {
+                self.state = ConnectionState::Disconnected;
+                self.event_dispatch.push_back(RakEvent::Disconnect(
+                    self.address_token.clone(),
+                    "Connection timed out.".to_owned(),
+                ));
+            }
         }
 
         if self.recv_time.elapsed().unwrap().as_secs() >= 10 {

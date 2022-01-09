@@ -24,7 +24,7 @@ pub enum OnlinePackets {
 }
 
 impl OnlinePackets {
-    pub fn recv(byte: u8) -> Self {
+    pub fn from_byte(byte: u8) -> Self {
         match byte {
             0x00 => OnlinePackets::ConnectedPing,
             0x03 => OnlinePackets::ConnectedPong,
@@ -49,6 +49,13 @@ impl OnlinePackets {
             OnlinePackets::GamePacket => 0xfe,
             OnlinePackets::FramePacket(b) => b,
             OnlinePackets::UnknownPacket(byte) => byte,
+        }
+    }
+
+    pub fn is_unknown(&self) -> bool {
+        match *self {
+            OnlinePackets::UnknownPacket(_) => true,
+            _ => false,
         }
     }
 }
