@@ -158,7 +158,7 @@ pub async fn start<'a>(s: RakNetServer, send_channel: Channel<'a, RakEvent, RakR
     let socket = send_sock.clone();
     let start_time = server.start_time.clone();
     let server_id = server.server_guid.clone();
-    println!("Server GUID: {}", server_id);
+    // println!("Server GUID: {}", server_id);
     tokio::spawn(async move {
         loop {
             if let Err(_) = socket.readable().await {
@@ -170,7 +170,7 @@ pub async fn start<'a>(s: RakNetServer, send_channel: Channel<'a, RakEvent, RakR
                 let data = &buf[..len];
                 let address_token = tokenize_addr(addr);
 
-                // println!("[RakNet] [{}] Received packet: Packet(ID={:#04x})", addr, &data[0]);
+                // // println!("[RakNet] [{}] Received packet: Packet(ID={:#04x})", addr, &data[0]);
 
                 if let Ok(mut clients) = server.connections.lock() {
                     if let Some(c) = clients.get_mut(&address_token) {
@@ -189,7 +189,7 @@ pub async fn start<'a>(s: RakNetServer, send_channel: Channel<'a, RakEvent, RakR
                 }
             } else {
                 // log error in future!
-                println!("[RakNet] Unknown error decoding packet!");
+                // println!("[RakNet] Unknown error decoding packet!");
                 continue;
             }
         }
@@ -214,7 +214,7 @@ pub async fn start<'a>(s: RakNetServer, send_channel: Channel<'a, RakEvent, RakR
 
             // emit events if there is a listener for the
             for event in dispatch.iter() {
-                // println!("DEBUG => Dispatching: {:?}", &event.get_name());
+                // // println!("DEBUG => Dispatching: {:?}", &event.get_name());
                 if let Some(result) = send_channel.send(event.clone()) {
                     match result {
                         RakResult::Motd(v) => {
@@ -248,7 +248,7 @@ pub async fn start<'a>(s: RakNetServer, send_channel: Channel<'a, RakEvent, RakR
                     .await
                 {
                     // Add proper handling!
-                    Err(e) => eprintln!("[RakNet] [{}] Error sending packet: {}", addr, e),
+                    Err(e) => println!("[RakNet] [{}] Error sending packet: {}", addr, e),
                     Ok(_) => {
                         if client.state.is_connected() {
                             log_online(format!(

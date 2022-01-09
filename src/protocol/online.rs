@@ -131,7 +131,7 @@ pub struct ConnectedPong {
 }
 
 pub fn log_online(message: String) {
-    println!("[RakNet] [Online Packet Handler] {}", message);
+    // println!("[RakNet] [Online Packet Handler] {}", message);
 }
 
 pub fn handle_online(
@@ -182,7 +182,7 @@ pub fn handle_online(
             pong.parse()
         }
         OnlinePackets::FramePacket(_v) => {
-            println!("Condition should never be met.");
+            // println!("Condition should never be met.");
             Ok(Vec::new())
         }
         _ => Ok(Vec::new()), // TODO: Throw an UnknownPacket here rather than sending an empty binary stream

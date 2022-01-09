@@ -167,7 +167,7 @@ pub struct IncompatibleProtocolVersion {
 }
 
 pub fn log_offline(message: String) {
-    println!("[RakNet] [Offline Packet Handler] {}", message);
+    // println!("[RakNet] [Offline Packet Handler] {}", message);
 }
 
 pub fn handle_offline(
@@ -194,8 +194,8 @@ pub fn handle_offline(
                 motd: connection.get_motd().encode(),
             };
 
-            // println!("Pong MOTD: {:?}", pong.motd.parse()?);
-            // println!("[RakNet] [{}] Pong data: {:?}", &connection.address, pong.motd);
+            // // println!("Pong MOTD: {:?}", pong.motd.parse()?);
+            // // println!("[RakNet] [{}] Pong data: {:?}", &connection.address, pong.motd);
             pong.parse()
         }
         OfflinePackets::OpenConnectRequest => {

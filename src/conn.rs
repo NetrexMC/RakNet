@@ -274,7 +274,7 @@ impl Connection {
             // if we're not connected or disconnected, we need to handle the packet
             // as an offline packet
             if !self.state.is_reliable() {
-                println!("[Client {}] is in {} state (unreliable). But sent a packet, setting state to disconnected due to anomaly.", self.address, self.state);
+                // println!("[Client {}] is in {} state (unreliable). But sent a packet, setting state to disconnected due to anomaly.", self.address, self.state);
                 self.state = ConnectionState::Disconnected;
             }
         }
