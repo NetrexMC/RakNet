@@ -12,7 +12,6 @@ use byteorder::ReadBytesExt;
 use std::collections::VecDeque;
 use std::io::Cursor;
 use std::net::SocketAddr;
-use std::sync::Arc;
 use std::time::SystemTime;
 
 pub type RecievePacketFn = fn(&mut Connection, &mut Vec<u8>);
@@ -76,6 +75,19 @@ macro_rules! conn_create_error_event {
             ))
     };
 }
+
+/// Connection struct.
+/// Connections are used internally by RakNet to manage connecting clients.
+/// > It is important to not hold a reference to this struct as it is thread blocking!
+/// > This is because the `Connection` struct is used within a mutex and can cause a deadlock.
+/// ```rust no_run
+/// use rakrs::conn::Connection;
+/// use rakrs::util::from_tokenized;
+/// fn main() {
+///     // create a connection!
+///     let conn = Connection::new(from_tokenized("192.168.0.1:25565"), 0, Motd::new());
+/// }
+/// ```
 #[derive(Clone)]
 pub struct Connection {
     /// The address the client is connected with.
@@ -96,9 +108,6 @@ pub struct Connection {
     pub state: ConnectionState,
     /// A list of events to be emitted on next tick.
     pub event_dispatch: VecDeque<RakEvent>,
-    /// A function that is called when the server recieves a
-    /// `GamePacket: 0xfe` from the client.
-    // pub recv: Arc<RecievePacketFn>,
     /// The last time the client has sent something to the server, that was a connected packet.
     pub recv_time: SystemTime,
     /// A Vector of streams to be sent.
