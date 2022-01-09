@@ -80,13 +80,11 @@ impl Display for ConnectionState {
 
 macro_rules! conn_create_error_event {
     ($self: expr, $buffer: expr, $message: expr) => {
-        $self
-            .event_dispatch
-            .push_back(RakEvent::ComplexBinaryError(
-                $self.address_token.clone(),
-                $buffer,
-                $message,
-            ))
+        $self.event_dispatch.push_back(RakEvent::ComplexBinaryError(
+            $self.address_token.clone(),
+            $buffer,
+            $message,
+        ))
     };
 }
 
@@ -179,7 +177,7 @@ impl Connection {
             ack: AckQueue::new(),
             nack: NAckQueue::new(),
             motd: Motd::new(server_guid),
-            server_guid
+            server_guid,
         }
     }
 

@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use crate::conn::{Connection, ConnectionState};
-use crate::{Magic, RakNetVersion, USE_SECURITY, RakEvent};
+use crate::{Magic, RakEvent, RakNetVersion, USE_SECURITY};
 use binary_utils::error::BinaryError;
 use binary_utils::*;
 use byteorder::WriteBytesExt;
@@ -57,7 +57,9 @@ impl std::fmt::Display for OfflinePackets {
             OfflinePackets::SessionInfoRequest => write!(f, "SessionInfoRequest()"),
             OfflinePackets::SessionInfoReply => write!(f, "SessionInfoReply()"),
             OfflinePackets::UnconnectedPong => write!(f, "UnconnectedPong()"),
-            OfflinePackets::IncompatibleProtocolVersion => write!(f, "IncompatibleProtocolVersion()"),
+            OfflinePackets::IncompatibleProtocolVersion => {
+                write!(f, "IncompatibleProtocolVersion()")
+            }
             OfflinePackets::UnknownPacket(byte) => write!(f, "UnknownPacket(ID={:#04x})", byte),
         }
     }
@@ -173,7 +175,10 @@ pub fn handle_offline(
     pk: OfflinePackets,
     stream: &mut &Vec<u8>,
 ) -> Result<Vec<u8>, BinaryError> {
-    log_offline(format!("[{}] Received packet: {}", &connection.address, &pk));
+    log_offline(format!(
+        "[{}] Received packet: {}",
+        &connection.address, &pk
+    ));
     match pk {
         OfflinePackets::UnconnectedPing => {
             connection.event_dispatch.push_back(RakEvent::Motd(

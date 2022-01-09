@@ -15,6 +15,4 @@ pub const USE_SECURITY: bool = false;
 
 pub use self::{frame::*, protocol::*, server::*, util::*};
 
-pub use self::server::{
-    start
-};
+pub use self::server::start;

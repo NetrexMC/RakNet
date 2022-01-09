@@ -139,7 +139,10 @@ pub fn handle_online(
     pk: OnlinePackets,
     stream: &mut Vec<u8>,
 ) -> Result<Vec<u8>, BinaryError> {
-    log_online(format!("[{}] Received packet: {}", &connection.address, &pk));
+    log_online(format!(
+        "[{}] Received packet: {}",
+        &connection.address, &pk
+    ));
     match pk {
         OnlinePackets::ConnectionRequest => {
             let request = ConnectionRequest::compose(stream, &mut 1)?;

@@ -1,10 +1,8 @@
-use rakrs::Motd;
+use rakrs::start;
 use rakrs::RakEvent;
 use rakrs::RakNetServer;
 use rakrs::RakResult;
-use rakrs::start;
 use tokio::runtime::Runtime;
-
 
 #[test]
 pub fn test_boot() {
@@ -17,7 +15,10 @@ pub fn test_boot() {
                 println!("[RakNet] [{}] Client connected", address);
             }
             RakEvent::Disconnect(address, reason) => {
-                println!("[RakNet] [{}] Client disconnected due to: {}", address, reason);
+                println!(
+                    "[RakNet] [{}] Client disconnected due to: {}",
+                    address, reason
+                );
             }
             RakEvent::Motd(address, mut motd) => {
                 println!("[RakNet] [{}] Client requested motd: {:?}", address, motd);

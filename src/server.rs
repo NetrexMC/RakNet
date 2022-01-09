@@ -1,21 +1,19 @@
-use crate::Motd;
 use crate::conn::Connection;
+use crate::conn::ConnectionState;
 use crate::from_tokenized;
-use crate::offline::OfflinePackets;
-use crate::offline::log_offline;
-use crate::online::OnlinePackets;
 use crate::online::log_online;
+use crate::online::OnlinePackets;
 use crate::tokenize_addr;
+use crate::Motd;
+use netrex_events::Channel;
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::time::Duration;
 use std::time::SystemTime;
-use crate::conn::ConnectionState;
-use netrex_events::Channel;
 use tokio::net::UdpSocket;
 use tokio::time::sleep;
-use std::net::SocketAddr;
-use std::time::Duration;
 
 pub enum RakNetVersion {
     MinecraftRecent,
@@ -127,7 +125,7 @@ impl RakNetServer {
             connections: Arc::new(Mutex::new(HashMap::new())),
             start_time: SystemTime::now(),
             server_guid: rand::random::<u64>(),
-            stop: false
+            stop: false,
         }
     }
 
@@ -148,7 +146,14 @@ impl RakNetServer {
 pub async fn start<'a>(s: RakNetServer, send_channel: Channel<'a, RakEvent, RakResult>) {
     let server = Arc::new(s);
     let send_server = server.clone();
-    let sock = UdpSocket::bind(server.address.parse::<SocketAddr>().expect("Failed to bind to address.")).await.unwrap();
+    let sock = UdpSocket::bind(
+        server
+            .address
+            .parse::<SocketAddr>()
+            .expect("Failed to bind to address."),
+    )
+    .await
+    .unwrap();
     let send_sock = Arc::new(sock);
     let socket = send_sock.clone();
     let start_time = server.start_time.clone();
@@ -238,13 +243,19 @@ pub async fn start<'a>(s: RakNetServer, send_channel: Channel<'a, RakEvent, RakR
             }
 
             for pk in client.clone().send_queue.into_iter() {
-                match send_sock.send_to(&pk[..], &from_tokenized(addr.clone())).await
+                match send_sock
+                    .send_to(&pk[..], &from_tokenized(addr.clone()))
+                    .await
                 {
                     // Add proper handling!
                     Err(e) => eprintln!("[RakNet] [{}] Error sending packet: {}", addr, e),
                     Ok(_) => {
                         if client.state.is_connected() {
-                            log_online(format!("[{}] Sent packet: {}", addr, OnlinePackets::from_byte(pk[0])));
+                            log_online(format!(
+                                "[{}] Sent packet: {}",
+                                addr,
+                                OnlinePackets::from_byte(pk[0])
+                            ));
                         } else {
                             // log_offline(format!("[{}] Sent packet: {}", addr, OfflinePackets::from_byte(pk[0])));
                         }
