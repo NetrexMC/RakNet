@@ -17,8 +17,8 @@ pub fn test_boot() {
             RakEvent::ConnectionCreated(address) => {
                 println!("[RakNet] [{}] Client connected", address);
             }
-            RakEvent::Disconnect(address, _) => {
-                println!("[RakNet] [{}] Client disconnected", address);
+            RakEvent::Disconnect(address, reason) => {
+                println!("[RakNet] [{}] Client disconnected due to: {}", address, reason);
             }
             _ => {
                 unknown += 1;

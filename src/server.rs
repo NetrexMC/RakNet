@@ -168,7 +168,6 @@ pub async fn start<'a>(s: RakNetServer, send_channel: Channel<'a, RakEvent, RakR
                 // println!("[RakNet] [{}] Received packet: Packet(ID={:#04x})", addr, &data[0]);
 
                 if let Ok(mut clients) = server.connections.lock() {
-                    println!("[RakNet] Clients Connected: {:?}", clients.iter().map(|c| tokenize_addr(c.1.address)).collect::<Vec<String>>());
                     if let Some(c) = clients.get_mut(&address_token) {
                         c.recv(&data.to_vec());
                     } else {
@@ -246,7 +245,7 @@ pub async fn start<'a>(s: RakNetServer, send_channel: Channel<'a, RakEvent, RakR
                         if client.state.is_connected() {
                             log_online(format!("[{}] Sent packet: {}", addr, OnlinePackets::from_byte(pk[0])));
                         } else {
-                            log_offline(format!("[{}] Sent packet: {}", addr, OfflinePackets::from_byte(pk[0])));
+                            // log_offline(format!("[{}] Sent packet: {}", addr, OfflinePackets::from_byte(pk[0])));
                         }
                     }
                 }

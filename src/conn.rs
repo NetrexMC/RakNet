@@ -10,6 +10,7 @@ use crate::{Motd, RakEvent};
 use binary_utils::*;
 use byteorder::ReadBytesExt;
 use std::collections::VecDeque;
+use std::fmt::Display;
 use std::io::Cursor;
 use std::net::SocketAddr;
 use std::time::SystemTime;
@@ -43,11 +44,12 @@ impl ConnectionState {
     }
 
     /// Whether or not the Connection is:
-    /// - **Connected** or **TimingOut**
-    pub fn is_available(&self) -> bool {
+    /// - **Offline**
+    /// - **TimingOut**
+    pub fn is_unavailable(&self) -> bool {
         match *self {
-            Self::Offline | Self::TimingOut => false,
-            _ => true,
+            Self::Offline | Self::TimingOut => true,
+            _ => false,
         }
     }
 
@@ -60,6 +62,18 @@ impl ConnectionState {
         match *self {
             Self::Disconnected | Self::Connected | Self::Connecting => true,
             _ => false,
+        }
+    }
+}
+
+impl Display for ConnectionState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            Self::Connecting => write!(f, "Connecting"),
+            Self::Connected => write!(f, "Connected"),
+            Self::Disconnected => write!(f, "Disconnected"),
+            Self::TimingOut => write!(f, "TimingOut"),
+            Self::Offline => write!(f, "Offline"),
         }
     }
 }
@@ -141,11 +155,6 @@ pub struct Connection {
     nack: NAckQueue,
     /// The Motd reference.
     motd: Motd,
-    /// The last packet that was recieved from the client.
-    /// This is a Tuple:
-    ///  - The Time the packet was recieved
-    ///  - The packet data
-    last_recv: (SystemTime, Vec<u8>),
     /// The server GUID.
     pub server_guid: u64,
 }
@@ -170,7 +179,6 @@ impl Connection {
             ack: AckQueue::new(),
             nack: NAckQueue::new(),
             motd: Motd::new(server_guid),
-            last_recv: (SystemTime::now(), Vec::new()),
             server_guid
         }
     }
@@ -217,7 +225,7 @@ impl Connection {
         let mut stream = Cursor::new(buf);
         // Update the recieve time.
         self.recv_time = SystemTime::now();
-        self.last_recv = (SystemTime::now(), buf.clone());
+
         if self.state.is_disconnected() {
             let pk = OfflinePackets::from_byte(stream.read_u8().unwrap());
             let handler = handle_offline(self, pk, stream.get_mut());
@@ -229,8 +237,7 @@ impl Connection {
                     conn_create_error_event!(self, buf.clone(), error.get_message())
                 }
             }
-        }
-        if self.state.is_connected() {
+        } else if self.state.is_reliable() {
             // this packet is almost always a frame packet
             let online_packet = OnlinePackets::from_byte(stream.read_u8().unwrap());
 
@@ -264,6 +271,13 @@ impl Connection {
                     return;
                 }
                 _ => {}
+            }
+        } else {
+            // if we're not connected or disconnected, we need to handle the packet
+            // as an offline packet
+            if !self.state.is_reliable() {
+                println!("[Client {}] is in {} state (unreliable). But sent a packet, setting state to disconnected due to anomaly.", self.address, self.state);
+                self.state = ConnectionState::Disconnected;
             }
         }
     }
@@ -400,17 +414,6 @@ impl Connection {
             return;
         }
 
-        if self.state == ConnectionState::Connected {
-            let id = self.last_recv.1[0];
-            if OnlinePackets::from_byte(id).is_unknown() && self.last_recv.0.elapsed().unwrap().as_secs() <= 3 {
-                self.state = ConnectionState::Disconnected;
-                self.event_dispatch.push_back(RakEvent::Disconnect(
-                    self.address_token.clone(),
-                    "Connection timed out.".to_owned(),
-                ));
-            }
-        }
-
         if self.recv_time.elapsed().unwrap().as_secs() >= 10 {
             self.state = ConnectionState::Offline;
             self.event_dispatch.push_back(RakEvent::Disconnect(
@@ -422,6 +425,7 @@ impl Connection {
 
         if self.recv_time.elapsed().unwrap().as_secs() >= 5 && self.state.is_reliable() {
             self.state = ConnectionState::TimingOut;
+            return;
         }
 
         if self.state.is_reliable() {
