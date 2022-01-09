@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use crate::conn::{Connection, ConnectionState};
-use crate::{Magic, RakNetVersion, SERVER_ID, USE_SECURITY};
+use crate::{Magic, RakNetVersion, USE_SECURITY};
 use binary_utils::error::BinaryError;
 use binary_utils::*;
 use byteorder::WriteBytesExt;
@@ -164,11 +164,16 @@ pub struct IncompatibleProtocolVersion {
     server_id: u64,
 }
 
+pub fn log_offline(message: String) {
+    println!("[RakNet] [Offline Packet Handler] {}", message);
+}
+
 pub fn handle_offline(
     connection: &mut Connection,
     pk: OfflinePackets,
     stream: &mut &Vec<u8>,
 ) -> Result<Vec<u8>, BinaryError> {
+    log_offline(format!("[{}] Received packet: {}", &connection.address, &pk));
     match pk {
         OfflinePackets::UnconnectedPing => {
             let pong = UnconnectedPong {
@@ -178,8 +183,8 @@ pub fn handle_offline(
                 magic: Magic::new(),
                 motd: connection.get_motd().encode(),
             };
-            println!("Pong MOTD: {:?}", pong.motd.parse()?);
-            println!("Pong Message: {:?}\n\n", pong.motd);
+            // println!("Pong MOTD: {:?}", pong.motd.parse()?);
+            // println!("[RakNet] [{}] Pong data: {:?}", &connection.address, pong.motd);
             pong.parse()
         }
         OfflinePackets::OpenConnectRequest => {
