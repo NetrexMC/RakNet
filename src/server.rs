@@ -149,6 +149,7 @@ pub async fn start<'a>(s: RakNetServer, send_channel: Channel<'a, RakEvent, RakR
     let socket = send_sock.clone();
     let start_time = server.start_time.clone();
     let server_id = server.server_guid.clone();
+    println!("Server GUID: {}", server_id);
     tokio::spawn(async move {
         loop {
             if let Err(_) = socket.readable().await {
@@ -160,9 +161,10 @@ pub async fn start<'a>(s: RakNetServer, send_channel: Channel<'a, RakEvent, RakR
                 let data = &buf[..len];
                 let address_token = tokenize_addr(addr);
 
-                println!("[RakNet] {}: Sent packet: {:?}", addr, &data);
+                // println!("[RakNet] {}: Sent packet: {:?}", addr, &data);
 
                 if let Ok(mut clients) = server.connections.lock() {
+                    println!("[RakNet] Clients Connected: {:?}", clients.iter().map(|c| tokenize_addr(c.1.address)).collect::<Vec<String>>());
                     if let Some(c) = clients.get_mut(&address_token) {
                         c.recv(&data.to_vec());
                     } else {
@@ -236,7 +238,7 @@ pub async fn start<'a>(s: RakNetServer, send_channel: Channel<'a, RakEvent, RakR
                 {
                     // Add proper handling!
                     Err(e) => eprintln!("[RakNet] Error Sending Packet [{}]: ", e),
-                    Ok(_) => println!("[RakNet] Sending Packet [{}]: {:?}", addr, pk)
+                    Ok(_) => (),// println!("[RakNet] Sending Packet [{}]: {:?}", addr, pk)
                 }
             }
             client.send_queue.clear();

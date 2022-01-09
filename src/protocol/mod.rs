@@ -1,4 +1,3 @@
-use crate::SERVER_ID;
 use std::io::Cursor;
 pub mod offline;
 pub mod online;
