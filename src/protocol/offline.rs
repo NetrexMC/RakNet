@@ -51,14 +51,14 @@ impl OfflinePackets {
 impl std::fmt::Display for OfflinePackets {
     fn fmt(&self, f: &mut Formatter<'_>) -> FResult {
         match *self {
-            OfflinePackets::UnconnectedPing => write!(f, "{}", self.to_byte()),
-            OfflinePackets::OpenConnectRequest => write!(f, "{}", self.to_byte()),
-            OfflinePackets::OpenConnectReply => write!(f, "{}", self.to_byte()),
-            OfflinePackets::SessionInfoRequest => write!(f, "{}", self.to_byte()),
-            OfflinePackets::SessionInfoReply => write!(f, "{}", self.to_byte()),
-            OfflinePackets::UnconnectedPong => write!(f, "{}", self.to_byte()),
-            OfflinePackets::IncompatibleProtocolVersion => write!(f, "{}", self.to_byte()),
-            OfflinePackets::UnknownPacket(byte) => write!(f, "{}", byte),
+            OfflinePackets::UnconnectedPing => write!(f, "UnconnectedPing()"),
+            OfflinePackets::OpenConnectRequest => write!(f, "OpenConnectRequest()"),
+            OfflinePackets::OpenConnectReply => write!(f, "OpenConnectReply()"),
+            OfflinePackets::SessionInfoRequest => write!(f, "SessionInfoRequest()"),
+            OfflinePackets::SessionInfoReply => write!(f, "SessionInfoReply()"),
+            OfflinePackets::UnconnectedPong => write!(f, "UnconnectedPong()"),
+            OfflinePackets::IncompatibleProtocolVersion => write!(f, "IncompatibleProtocolVersion()"),
+            OfflinePackets::UnknownPacket(byte) => write!(f, "UnknownPacket(ID={:#04x})", byte),
         }
     }
 }
