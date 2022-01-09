@@ -51,14 +51,14 @@ impl OfflinePackets {
 impl std::fmt::Display for OfflinePackets {
     fn fmt(&self, f: &mut Formatter<'_>) -> FResult {
         match *self {
-            OfflinePackets::UnconnectedPing => write!(f, "{}", self.to_byte()),
-            OfflinePackets::OpenConnectRequest => write!(f, "{}", self.to_byte()),
-            OfflinePackets::OpenConnectReply => write!(f, "{}", self.to_byte()),
-            OfflinePackets::SessionInfoRequest => write!(f, "{}", self.to_byte()),
-            OfflinePackets::SessionInfoReply => write!(f, "{}", self.to_byte()),
-            OfflinePackets::UnconnectedPong => write!(f, "{}", self.to_byte()),
-            OfflinePackets::IncompatibleProtocolVersion => write!(f, "{}", self.to_byte()),
-            OfflinePackets::UnknownPacket(byte) => write!(f, "{}", byte),
+            OfflinePackets::UnconnectedPing => write!(f, "UnconnectedPing()"),
+            OfflinePackets::OpenConnectRequest => write!(f, "OpenConnectRequest()"),
+            OfflinePackets::OpenConnectReply => write!(f, "OpenConnectReply()"),
+            OfflinePackets::SessionInfoRequest => write!(f, "SessionInfoRequest()"),
+            OfflinePackets::SessionInfoReply => write!(f, "SessionInfoReply()"),
+            OfflinePackets::UnconnectedPong => write!(f, "UnconnectedPong()"),
+            OfflinePackets::IncompatibleProtocolVersion => write!(f, "IncompatibleProtocolVersion()"),
+            OfflinePackets::UnknownPacket(byte) => write!(f, "UnknownPacket(ID={:#04x})", byte),
         }
     }
 }
@@ -164,11 +164,16 @@ pub struct IncompatibleProtocolVersion {
     server_id: u64,
 }
 
+pub fn log_offline(message: String) {
+    println!("[RakNet] [Offline Packet Handler] {}", message);
+}
+
 pub fn handle_offline(
     connection: &mut Connection,
     pk: OfflinePackets,
     stream: &mut &Vec<u8>,
 ) -> Result<Vec<u8>, BinaryError> {
+    log_offline(format!("[{}] Received packet: {}", &connection.address, &pk));
     match pk {
         OfflinePackets::UnconnectedPing => {
             let pong = UnconnectedPong {
@@ -178,8 +183,8 @@ pub fn handle_offline(
                 magic: Magic::new(),
                 motd: connection.get_motd().encode(),
             };
-            println!("Pong MOTD: {:?}", pong.motd.parse()?);
-            println!("Pong Message: {:?}\n\n", pong.motd);
+            // println!("Pong MOTD: {:?}", pong.motd.parse()?);
+            // println!("[RakNet] [{}] Pong data: {:?}", &connection.address, pong.motd);
             pong.parse()
         }
         OfflinePackets::OpenConnectRequest => {

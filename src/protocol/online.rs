@@ -63,15 +63,15 @@ impl OnlinePackets {
 impl std::fmt::Display for OnlinePackets {
     fn fmt(&self, f: &mut Formatter<'_>) -> FResult {
         match *self {
-            OnlinePackets::ConnectedPing => write!(f, "{}", self.to_byte()),
-            OnlinePackets::ConnectedPong => write!(f, "{}", self.to_byte()),
-            OnlinePackets::ConnectionRequest => write!(f, "{}", self.to_byte()),
-            OnlinePackets::ConnectionAccept => write!(f, "{}", self.to_byte()),
-            OnlinePackets::NewConnection => write!(f, "{}", self.to_byte()),
-            OnlinePackets::Disconnect => write!(f, "{}", self.to_byte()),
-            OnlinePackets::GamePacket => write!(f, "{}", self.to_byte()),
-            OnlinePackets::UnknownPacket(byte) => write!(f, "{}", byte),
-            OnlinePackets::FramePacket(byte) => write!(f, "{}", byte),
+            OnlinePackets::ConnectedPing => write!(f, "ConnectedPing()"),
+            OnlinePackets::ConnectedPong => write!(f, "ConnectedPong()"),
+            OnlinePackets::ConnectionRequest => write!(f, "ConnectionRequest()"),
+            OnlinePackets::ConnectionAccept => write!(f, "ConnectionAccept()"),
+            OnlinePackets::NewConnection => write!(f, "NewConnection()"),
+            OnlinePackets::Disconnect => write!(f, "Disconnect()"),
+            OnlinePackets::GamePacket => write!(f, "GamePacket()"),
+            OnlinePackets::UnknownPacket(byte) => write!(f, "UnknownPacket(ID={:#04x})", byte),
+            OnlinePackets::FramePacket(byte) => write!(f, "FramePacket(ID={:#04x})", byte),
         }
     }
 }
@@ -130,11 +130,16 @@ pub struct ConnectedPong {
     pong_time: i64,
 }
 
+pub fn log_online(message: String) {
+    println!("[RakNet] [Online Packet Handler] {}", message);
+}
+
 pub fn handle_online(
     connection: &mut Connection,
     pk: OnlinePackets,
     stream: &mut Vec<u8>,
 ) -> Result<Vec<u8>, BinaryError> {
+    log_online(format!("[{}] Received packet: {}", &connection.address, &pk));
     match pk {
         OnlinePackets::ConnectionRequest => {
             let request = ConnectionRequest::compose(stream, &mut 1)?;

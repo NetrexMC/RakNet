@@ -1,6 +1,10 @@
 use crate::Motd;
 use crate::conn::Connection;
 use crate::from_tokenized;
+use crate::offline::OfflinePackets;
+use crate::offline::log_offline;
+use crate::online::OnlinePackets;
+use crate::online::log_online;
 use crate::tokenize_addr;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -83,7 +87,7 @@ impl RakEvent {
             RakEvent::Motd(_, _) => "Motd".into(),
             RakEvent::Error(_) => "Error".into(),
             RakEvent::ComplexBinaryError(_, _, _) => "ComplexBinaryError".into(),
-        } 
+        }
     }
 }
 
@@ -161,7 +165,7 @@ pub async fn start<'a>(s: RakNetServer, send_channel: Channel<'a, RakEvent, RakR
                 let data = &buf[..len];
                 let address_token = tokenize_addr(addr);
 
-                // println!("[RakNet] {}: Sent packet: {:?}", addr, &data);
+                // println!("[RakNet] [{}] Received packet: Packet(ID={:#04x})", addr, &data[0]);
 
                 if let Ok(mut clients) = server.connections.lock() {
                     println!("[RakNet] Clients Connected: {:?}", clients.iter().map(|c| tokenize_addr(c.1.address)).collect::<Vec<String>>());
@@ -237,8 +241,14 @@ pub async fn start<'a>(s: RakNetServer, send_channel: Channel<'a, RakEvent, RakR
                 match send_sock.send_to(&pk[..], &from_tokenized(addr.clone())).await
                 {
                     // Add proper handling!
-                    Err(e) => eprintln!("[RakNet] Error Sending Packet [{}]: ", e),
-                    Ok(_) => (),// println!("[RakNet] Sending Packet [{}]: {:?}", addr, pk)
+                    Err(e) => eprintln!("[RakNet] [{}] Error sending packet: {}", addr, e),
+                    Ok(_) => {
+                        if client.state.is_connected() {
+                            log_online(format!("[{}] Sent packet: {}", addr, OnlinePackets::from_byte(pk[0])));
+                        } else {
+                            log_offline(format!("[{}] Sent packet: {}", addr, OfflinePackets::from_byte(pk[0])));
+                        }
+                    }
                 }
             }
             client.send_queue.clear();
