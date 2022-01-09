@@ -9,7 +9,6 @@ use tokio::runtime::Runtime;
 #[test]
 pub fn test_boot() {
     let server = RakNetServer::new(String::from("0.0.0.0:19132"));
-    let motd = Motd::new(server.server_guid);
     let channel = netrex_events::Channel::<RakEvent, RakResult>::new();
     let mut unknown = 0;
     let mut listener = |event, _| {
@@ -19,6 +18,11 @@ pub fn test_boot() {
             }
             RakEvent::Disconnect(address, reason) => {
                 println!("[RakNet] [{}] Client disconnected due to: {}", address, reason);
+            }
+            RakEvent::Motd(address, mut motd) => {
+                println!("[RakNet] [{}] Client requested motd: {:?}", address, motd);
+                motd.name = String::from("test");
+                return Some(RakResult::Motd(motd));
             }
             _ => {
                 unknown += 1;

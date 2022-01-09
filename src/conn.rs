@@ -154,7 +154,7 @@ pub struct Connection {
     /// The NACK queue (Packets we didn't get)
     nack: NAckQueue,
     /// The Motd reference.
-    motd: Motd,
+    pub motd: Motd,
     /// The server GUID.
     pub server_guid: u64,
 }

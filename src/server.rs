@@ -205,15 +205,15 @@ pub async fn start<'a>(s: RakNetServer, send_channel: Channel<'a, RakEvent, RakR
             let dispatch = client.event_dispatch.clone();
             client.event_dispatch.clear();
 
+            let mut force_disconnect = false;
+
             // emit events if there is a listener for the
             for event in dispatch.iter() {
                 // println!("DEBUG => Dispatching: {:?}", &event.get_name());
                 if let Some(result) = send_channel.send(event.clone()) {
                     match result {
-                        RakResult::Motd(_v) => {
-                            // we don't really support changing
-                            // client MOTD at the moment...
-                            // so we don't do anything for this.
+                        RakResult::Motd(v) => {
+                            client.motd = v;
                         }
                         RakResult::Error(v) => {
                             // Calling error forces an error to raise.
@@ -221,13 +221,14 @@ pub async fn start<'a>(s: RakNetServer, send_channel: Channel<'a, RakEvent, RakR
                         }
                         RakResult::Disconnect(_) => {
                             client.state = ConnectionState::Offline; // simple hack
+                            force_disconnect = true;
                             break;
                         }
                     }
                 }
             }
 
-            if client.state == ConnectionState::Offline {
+            if client.state == ConnectionState::Offline || force_disconnect {
                 clients.remove(addr);
                 continue;
             }

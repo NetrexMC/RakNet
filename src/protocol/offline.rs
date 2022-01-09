@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use crate::conn::{Connection, ConnectionState};
-use crate::{Magic, RakNetVersion, USE_SECURITY};
+use crate::{Magic, RakNetVersion, USE_SECURITY, RakEvent};
 use binary_utils::error::BinaryError;
 use binary_utils::*;
 use byteorder::WriteBytesExt;
@@ -176,6 +176,11 @@ pub fn handle_offline(
     log_offline(format!("[{}] Received packet: {}", &connection.address, &pk));
     match pk {
         OfflinePackets::UnconnectedPing => {
+            connection.event_dispatch.push_back(RakEvent::Motd(
+                connection.address_token.clone(),
+                connection.motd.clone(),
+            ));
+
             let pong = UnconnectedPong {
                 id: OfflinePackets::UnconnectedPong.to_byte(),
                 server_id: connection.server_guid,
@@ -183,6 +188,7 @@ pub fn handle_offline(
                 magic: Magic::new(),
                 motd: connection.get_motd().encode(),
             };
+
             // println!("Pong MOTD: {:?}", pong.motd.parse()?);
             // println!("[RakNet] [{}] Pong data: {:?}", &connection.address, pong.motd);
             pong.parse()
