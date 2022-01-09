@@ -130,11 +130,16 @@ pub struct ConnectedPong {
     pong_time: i64,
 }
 
+pub fn log_online(message: String) {
+    println!("[RakNet] [Online Packet Handler] {}", message);
+}
+
 pub fn handle_online(
     connection: &mut Connection,
     pk: OnlinePackets,
     stream: &mut Vec<u8>,
 ) -> Result<Vec<u8>, BinaryError> {
+    log_online(format!("[{}] Received packet: {}", &connection.address, &pk));
     match pk {
         OnlinePackets::ConnectionRequest => {
             let request = ConnectionRequest::compose(stream, &mut 1)?;
