@@ -37,6 +37,8 @@ pub fn test_boot() {
     let rt = Runtime::new().unwrap();
     let handle = rt.handle();
     handle.block_on(async move {
-        start(server, channel).await;
+        let v = start(server, channel).await;
+        // share your raknet arc here.
+        v.0.await;
     });
 }
