@@ -87,7 +87,7 @@ impl RakEvent {
             RakEvent::Motd(_, _) => "Motd".into(),
             RakEvent::Error(_) => "Error".into(),
             RakEvent::ComplexBinaryError(_, _, _) => "ComplexBinaryError".into(),
-        } 
+        }
     }
 }
 
@@ -153,6 +153,7 @@ pub async fn start<'a>(s: RakNetServer, send_channel: Channel<'a, RakEvent, RakR
     let socket = send_sock.clone();
     let start_time = server.start_time.clone();
     let server_id = server.server_guid.clone();
+    println!("Server GUID: {}", server_id);
     tokio::spawn(async move {
         loop {
             if let Err(_) = socket.readable().await {
@@ -167,6 +168,7 @@ pub async fn start<'a>(s: RakNetServer, send_channel: Channel<'a, RakEvent, RakR
                 // println!("[RakNet] [{}] Received packet: Packet(ID={:#04x})", addr, &data[0]);
 
                 if let Ok(mut clients) = server.connections.lock() {
+                    println!("[RakNet] Clients Connected: {:?}", clients.iter().map(|c| tokenize_addr(c.1.address)).collect::<Vec<String>>());
                     if let Some(c) = clients.get_mut(&address_token) {
                         c.recv(&data.to_vec());
                     } else {
