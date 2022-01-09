@@ -3,8 +3,6 @@ use rakrs::RakEvent;
 use rakrs::RakNetServer;
 use rakrs::RakResult;
 use rakrs::start;
-use futures::Future;
-use tokio::runtime::Handle;
 use tokio::runtime::Runtime;
 
 
@@ -14,13 +12,13 @@ pub fn test_boot() {
     let motd = Motd::new(server.server_guid);
     let channel = netrex_events::Channel::<RakEvent, RakResult>::new();
     let mut unknown = 0;
-    let mut listener = |event, result| {
+    let mut listener = |event, _| {
         match event {
-            RakEvent::ConnectionCreated(_) => {
-                println!("Client connected");
+            RakEvent::ConnectionCreated(address) => {
+                println!("[RakNet] [{}] Client connected", address);
             }
-            RakEvent::Disconnect(_, _) => {
-                println!("Client disconnected");
+            RakEvent::Disconnect(address, _) => {
+                println!("[RakNet] [{}] Client disconnected", address);
             }
             _ => {
                 unknown += 1;
@@ -31,9 +29,6 @@ pub fn test_boot() {
     };
     channel.receive(&mut listener);
 
-    // this is a hack!
-    // get the tokio runtime and wait pulling!
-    println!("Hi I am running concurrently.");
     let rt = Runtime::new().unwrap();
     let handle = rt.handle();
     handle.block_on(async move {
