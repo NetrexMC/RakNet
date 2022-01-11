@@ -6,7 +6,7 @@ use tokio::runtime::Runtime;
 
 #[test]
 pub fn test_boot() {
-    let server = RakNetServer::new(String::from("0.0.0.0:19132"));
+    let server = RakNetServer::new(String::from("0.0.0.0:19136"));
     let channel = netrex_events::Channel::<RakEvent, RakResult>::new();
     let mut unknown = 0;
     let mut listener = |event, _| {
@@ -22,7 +22,7 @@ pub fn test_boot() {
             }
             RakEvent::Motd(address, mut motd) => {
                 println!("[RakNet] [{}] Client requested motd: {:?}", address, motd);
-                motd.name = String::from("test");
+                motd.name = String::from("Bob Ross and painting is my life.");
                 return Some(RakResult::Motd(motd));
             }
             _ => {

@@ -166,7 +166,7 @@ pub struct IncompatibleProtocolVersion {
     server_id: u64,
 }
 
-pub fn log_offline(message: String) {
+pub fn log_offline(_message: String) {
     // println!("[RakNet] [Offline Packet Handler] {}", message);
 }
 

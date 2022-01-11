@@ -130,7 +130,7 @@ pub struct ConnectedPong {
     pong_time: i64,
 }
 
-pub fn log_online(message: String) {
+pub fn log_online(_message: String) {
     // println!("[RakNet] [Online Packet Handler] {}", message);
 }
 

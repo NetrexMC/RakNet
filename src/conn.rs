@@ -158,7 +158,7 @@ pub struct Connection {
 }
 
 impl Connection {
-    pub fn new(address: SocketAddr, start_time: SystemTime, server_guid: u64) -> Self {
+    pub fn new(address: SocketAddr, start_time: SystemTime, server_guid: u64, port: String) -> Self {
         Self {
             address,
             address_token: tokenize_addr(address),
@@ -176,7 +176,7 @@ impl Connection {
             fragment_id: 0,
             ack: AckQueue::new(),
             nack: NAckQueue::new(),
-            motd: Motd::new(server_guid),
+            motd: Motd::new(server_guid, port),
             server_guid,
         }
     }

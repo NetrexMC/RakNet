@@ -16,10 +16,11 @@ pub struct Motd {
     pub player_max: u16,
     pub gamemode: String,
     pub server_guid: u64,
+    pub port: String
 }
 
 impl Motd {
-    pub fn new(server_guid: u64) -> Self {
+    pub fn new(server_guid: u64, port: String) -> Self {
         Self {
             name: String::from("Netrex Server"),
             player_count: 10,
@@ -28,6 +29,7 @@ impl Motd {
             gamemode: String::from("Creative"),
             version: String::from("1.17.10"),
             server_guid,
+            port
         }
     }
 
@@ -48,7 +50,7 @@ impl Motd {
             "Netrex",
             self.gamemode.as_str(),
             "1",
-            "19132",
+            self.port.as_str(),
             "19133",
         ];
 

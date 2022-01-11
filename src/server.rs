@@ -10,7 +10,7 @@ use netrex_events::Channel;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::sync::Mutex;
+use std::sync::RwLock;
 use std::time::Duration;
 use std::time::SystemTime;
 use tokio::net::UdpSocket;
@@ -112,7 +112,7 @@ pub enum RakResult {
 pub struct RakNetServer {
     pub address: String,
     pub version: RakNetVersion,
-    pub connections: Arc<Mutex<HashMap<String, Connection>>>,
+    pub connections: Arc<RwLock<HashMap<String, Connection>>>,
     pub start_time: SystemTime,
     pub server_guid: u64,
     pub stop: bool,
@@ -123,45 +123,48 @@ impl RakNetServer {
         Self {
             address,
             version: RakNetVersion::MinecraftRecent,
-            connections: Arc::new(Mutex::new(HashMap::new())),
+            connections: Arc::new(RwLock::new(HashMap::new())),
             start_time: SystemTime::now(),
             server_guid: rand::random::<u64>(),
             stop: false,
         }
     }
-
-    /// Sends a stream to the specified address.
-    /// Instant skips the tick and forcefully sends the packet to the client.
-    /// Params:
-    /// - instant(true) -> Skips entire fragmentation and immediately sequences the
-    ///   buffer into a stream.
-    pub fn send(&mut self, address: String, stream: Vec<u8>, instant: bool) {
-        let clients = self.connections.lock();
-        match clients.unwrap().get_mut(&address) {
-            Some(c) => c.send(stream, instant),
-            None => return,
-        };
-    }
 }
 
-pub async fn start<'a>(s: RakNetServer, send_channel: Channel<'a, RakEvent, RakResult>) -> (impl Future + 'a, Arc<RakNetServer>) {
+pub async fn start<'a>(s: RakNetServer, send_channel: Channel<'a, RakEvent, RakResult>) -> (impl Future + 'a, Arc<RakNetServer>, tokio::sync::mpsc::Sender<(String, Vec<u8>, bool)>) {
     let server = Arc::new(s);
     let send_server = server.clone();
+    let task_server = send_server.clone();
     let ret_server = send_server.clone();
     let sock = UdpSocket::bind(
         server
-            .address
-            .parse::<SocketAddr>()
-            .expect("Failed to bind to address."),
+        .address
+        .parse::<SocketAddr>()
+        .expect("Failed to bind to address."),
     )
     .await
     .unwrap();
+    let port = server.address.parse::<SocketAddr>().unwrap().port();
     let send_sock = Arc::new(sock);
     let socket = send_sock.clone();
     let start_time = server.start_time.clone();
     let server_id = server.server_guid.clone();
+    let (send, mut recv) = tokio::sync::mpsc::channel::<(String, Vec<u8>, bool)>(2048);
     // println!("Server GUID: {}", server_id);
     let tasks = async move {
+        tokio::spawn(async move {
+            loop {
+                if let Some((address, buf, instant)) = recv.recv().await {
+                    let clients = task_server.connections.read().unwrap();
+                    match clients.get(&address) {
+                        Some(_) => {
+                            task_server.connections.write().unwrap().get_mut(&address).unwrap().send(buf, instant);
+                        },
+                        None => continue,
+                    };
+                }
+            }
+        });
         tokio::spawn(async move {
             loop {
                 if let Err(_) = socket.readable().await {
@@ -175,14 +178,14 @@ pub async fn start<'a>(s: RakNetServer, send_channel: Channel<'a, RakEvent, RakR
 
                     // // println!("[RakNet] [{}] Received packet: Packet(ID={:#04x})", addr, &data[0]);
 
-                    if let Ok(mut clients) = server.connections.lock() {
+                    if let Ok(mut clients) = server.connections.write() {
                         if let Some(c) = clients.get_mut(&address_token) {
                             c.recv(&data.to_vec());
                         } else {
                             // add the client!
                             // we need to add cooldown here eventually.
                             if !clients.contains_key(&address_token) {
-                                let mut c = Connection::new(addr, start_time, server_id);
+                                let mut c = Connection::new(addr, start_time, server_id, port.to_string());
                                 c.recv(&data.to_vec());
                                 clients.insert(address_token, c);
                             } else {
@@ -205,7 +208,7 @@ pub async fn start<'a>(s: RakNetServer, send_channel: Channel<'a, RakEvent, RakR
             // sleep an entire tick
             sleep(Duration::from_millis(50)).await;
 
-            let mut clients = send_server.connections.lock().unwrap();
+            let mut clients = send_server.connections.write().unwrap();
             for (addr, _) in clients.clone().iter() {
                 let client = clients.get_mut(addr).expect("Could not get connection");
                 client.do_tick();
@@ -271,5 +274,5 @@ pub async fn start<'a>(s: RakNetServer, send_channel: Channel<'a, RakEvent, RakR
         }
     };
 
-    return (tasks, ret_server);
+    return (tasks, ret_server, send);
 }
