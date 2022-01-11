@@ -155,6 +155,7 @@ pub async fn start<'a>(s: RakNetServer, send_channel: Channel<'a, RakEvent, RakR
         tokio::spawn(async move {
             loop {
                 if let Some((address, buf, instant)) = recv.recv().await {
+                    println!("Got packet to send for {}", address);
                     let clients = task_server.connections.read().unwrap();
                     match clients.get(&address) {
                         Some(_) => {
