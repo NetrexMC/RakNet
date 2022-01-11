@@ -156,17 +156,17 @@ pub async fn start<'a>(s: RakNetServer, send_channel: Channel<'a, RakEvent, RakR
             loop {
                 println!("Waiting for packets...");
                 if let Some((address, buf, instant)) = recv.recv().await {
-                    println!("Got packet to send for {}", address);
-                    let clients = task_server.connections.read().unwrap();
-                    match clients.get(&address) {
-                        Some(_) => {
-                            let mut lock = task_server.connections.write().unwrap();
-                            lock.get_mut(&address).unwrap().send(buf, instant);
-                            drop(lock);
-                        },
-                        None => continue,
-                    };
-                    drop(clients);
+                    println!("Got packet to send for {} (creating read/write lock!)", address);
+                    let mut clients = task_server.connections.write().unwrap();
+                    if clients.contains_key(&address) {
+                        println!("That client exists!");
+                        let client = clients.get_mut(&address).unwrap();
+                        client.send(buf, instant);
+                        drop(client);
+                        drop(clients);
+                    } else {
+                        drop(clients);
+                    }
                 }
             }
         });
