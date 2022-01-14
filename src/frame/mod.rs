@@ -2,7 +2,7 @@ pub mod fragment;
 pub mod reliability;
 
 use binary_utils::{self, error::BinaryError, u24::u24, Streamable};
-use byteorder::{ReadBytesExt, WriteBytesExt, BE, LittleEndian};
+use byteorder::{ReadBytesExt, WriteBytesExt, BE};
 use fragment::FragmentInfo;
 use reliability::Reliability;
 use std::io::{Cursor, Write};
@@ -63,15 +63,15 @@ impl Streamable for Frame {
         let bit_length = stream.read_u16::<BE>()?;
 
         if Reliability::is_reliable(frame.reliability.to_byte()) {
-            frame.reliable_index = Some(stream.read_u24::<LittleEndian>()?.into());
+            frame.reliable_index = Some(stream.read_u24::<BE>()?.into());
         }
 
         if Reliability::is_seq(frame.reliability.to_byte()) {
-            frame.sequence_index = Some(stream.read_u24::<LittleEndian>()?.into());
+            frame.sequence_index = Some(stream.read_u24::<BE>()?.into());
         }
 
         if Reliability::is_ord(frame.reliability.to_byte()) {
-            frame.order_index = Some(stream.read_u24::<LittleEndian>()?.into());
+            frame.order_index = Some(stream.read_u24::<BE>()?.into());
             frame.order_channel = Some(stream.read_u8()?);
         }
 
@@ -107,18 +107,18 @@ impl Streamable for Frame {
         }
 
         stream.write_u8(flags)?;
-        stream.write_u16::<LittleEndian>((self.body.len() as u16) * 8)?;
+        stream.write_u16::<BE>((self.body.len() as u16) * 8)?;
 
         if self.reliable_index.is_some() {
-            stream.write_u24::<LittleEndian>(self.reliable_index.unwrap())?;
+            stream.write_u24::<BE>(self.reliable_index.unwrap())?;
         }
 
         if self.sequence_index.is_some() {
-            stream.write_u24::<LittleEndian>(self.sequence_index.unwrap())?
+            stream.write_u24::<BE>(self.sequence_index.unwrap())?
         }
 
         if self.order_index.is_some() {
-            stream.write_u24::<LittleEndian>(self.order_index.unwrap())?;
+            stream.write_u24::<BE>(self.order_index.unwrap())?;
             stream.write_u8(self.order_channel.unwrap())?;
         }
 
@@ -159,7 +159,7 @@ impl Streamable for FramePacket {
     fn parse(&self) -> Result<Vec<u8>, BinaryError> {
         let mut stream = Vec::new();
         stream.write_u8(0x80)?;
-        stream.write_u24::<LittleEndian>(self.seq.into())?;
+        stream.write_u24::<BE>(self.seq.into())?;
 
         for f in self.frames.iter() {
             stream.write_all(&f.parse()?)?;
@@ -171,7 +171,7 @@ impl Streamable for FramePacket {
         let mut packet = FramePacket::new();
         let mut stream = Cursor::new(source);
         stream.set_position(*position as u64);
-        packet.seq = stream.read_u24::<LittleEndian>().unwrap().into();
+        packet.seq = stream.read_u24::<BE>().unwrap().into();
 
         loop {
             if stream.position() >= source.len() as u64 {
