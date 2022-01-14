@@ -453,7 +453,7 @@ impl Connection {
             current_frames.push(FragmentList::from(part, safe_size.into()));
         }
 
-        if cfg!(feature = "dbg-verbose") {
+        if cfg!(feature = "dbg-verbose") && current_frames.len() > 0 {
             log_online(format!("[{}] Sending packets: {:?}\n", self.address_token, &current_frames));
         }
 
