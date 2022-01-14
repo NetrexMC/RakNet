@@ -7,6 +7,7 @@ edition = "2021"
 [features]
 default = []
 dbg = []
+dbg-verbose = []
 
 [dependencies]
 rand = "0.8.3"
