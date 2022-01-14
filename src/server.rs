@@ -271,13 +271,13 @@ pub async fn start<'a>(
                                 log_online(format!(
                                     "[{}] Sent packet: {}",
                                     addr,
-                                    OnlinePackets::from_byte(pk[0])
+                                    OnlinePackets::from_byte(*pk.get(0).unwrap_or(&0))
                                 ));
                             } else {
                                 log_offline(format!(
                                     "[{}] Sent packet: {}",
                                     addr,
-                                    OnlinePackets::from_byte(pk[0])
+                                    OnlinePackets::from_byte(*pk.get(0).unwrap_or(&0))
                                 ));
                             }
                         }
