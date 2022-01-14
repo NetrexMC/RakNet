@@ -453,14 +453,15 @@ impl Connection {
             current_frames.push(FragmentList::from(part, safe_size.into()));
         }
 
+        if cfg!(feature = "dbg-verbose") {
+            log_online(format!("[{}] Sending packets: {:?}\n", self.address_token, &current_frames));
+        }
+
         for safely_sized in current_frames.iter_mut() {
             let packets = safely_sized.assemble(safe_size as i16, self.fragment_id);
 
             if packets.is_some() {
                 for pk in packets.unwrap() {
-                    if cfg!(feature = "dbg-verbose") {
-                        log_online(format!("[{}] Sending packet: {:?}\n", self.address_token, &pk));
-                    }
                     self.send_stream(pk.fparse(), true);
                 }
 
