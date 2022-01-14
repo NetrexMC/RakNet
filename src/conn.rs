@@ -2,7 +2,7 @@ use crate::ack::is_ack_or_nack;
 use crate::ack::{queue::AckQueue, queue::NAckQueue, Ack, Record};
 use crate::fragment::{FragmentList, FragmentStore};
 use crate::frame::{Frame, FramePacket};
-use crate::online::{handle_online, OnlinePackets};
+use crate::online::{handle_online, OnlinePackets, log_online};
 use crate::protocol::offline::*;
 use crate::reliability::{Reliability, ReliabilityFlag};
 use crate::util::tokenize_addr;
@@ -391,9 +391,7 @@ impl Connection {
                     new_frame.reliability = Reliability::new(ReliabilityFlag::Unreliable);
                     new_framepk.frames.push(new_frame);
                     new_framepk.seq = self.send_seq.into();
-                    if cfg!(feature = "dbg-verbose") {
-                        log_offline(format!("[{}] Sent payload: {:?}", self.address, new_framepk.fparse()));
-                    }
+
                     self.send_stream(new_framepk.fparse(), true);
                     self.send_seq = self.send_seq + 1;
                 }
@@ -460,6 +458,9 @@ impl Connection {
 
             if packets.is_some() {
                 for pk in packets.unwrap() {
+                    if cfg!(feature = "dbg-verbose") {
+                        log_online(format!("[{}] Sending packet: {:?}\n", self.address_token, &pk));
+                    }
                     self.send_stream(pk.fparse(), true);
                 }
 
