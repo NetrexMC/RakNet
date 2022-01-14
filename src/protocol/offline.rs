@@ -166,8 +166,10 @@ pub struct IncompatibleProtocolVersion {
     server_id: u64,
 }
 
-pub fn log_offline(_message: String) {
-    // println!("[RakNet] [Offline Packet Handler] {}", message);
+pub fn log_offline(message: String) {
+    if cfg!(feature = "dbg") {
+        println!("[RakNet] [Offline Packet Handler] {}", message);
+    }
 }
 
 pub fn handle_offline(

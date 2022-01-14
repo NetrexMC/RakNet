@@ -158,7 +158,12 @@ pub struct Connection {
 }
 
 impl Connection {
-    pub fn new(address: SocketAddr, start_time: SystemTime, server_guid: u64, port: String) -> Self {
+    pub fn new(
+        address: SocketAddr,
+        start_time: SystemTime,
+        server_guid: u64,
+        port: String,
+    ) -> Self {
         Self {
             address,
             address_token: tokenize_addr(address),

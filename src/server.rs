@@ -1,6 +1,7 @@
 use crate::conn::Connection;
 use crate::conn::ConnectionState;
 use crate::from_tokenized;
+use crate::offline::log_offline;
 use crate::online::log_online;
 use crate::online::OnlinePackets;
 use crate::tokenize_addr;
@@ -131,16 +132,23 @@ impl RakNetServer {
     }
 }
 
-pub async fn start<'a>(s: RakNetServer, send_channel: Channel<'a, RakEvent, RakResult>) -> (impl Future + 'a, Arc<RakNetServer>, tokio::sync::mpsc::Sender<(String, Vec<u8>, bool)>) {
+pub async fn start<'a>(
+    s: RakNetServer,
+    send_channel: Channel<'a, RakEvent, RakResult>,
+) -> (
+    impl Future + 'a,
+    Arc<RakNetServer>,
+    tokio::sync::mpsc::Sender<(String, Vec<u8>, bool)>,
+) {
     let server = Arc::new(s);
     let send_server = server.clone();
     let task_server = send_server.clone();
     let ret_server = send_server.clone();
     let sock = UdpSocket::bind(
         server
-        .address
-        .parse::<SocketAddr>()
-        .expect("Failed to bind to address."),
+            .address
+            .parse::<SocketAddr>()
+            .expect("Failed to bind to address."),
     )
     .await
     .unwrap();
@@ -187,7 +195,8 @@ pub async fn start<'a>(s: RakNetServer, send_channel: Channel<'a, RakEvent, RakR
                             // add the client!
                             // we need to add cooldown here eventually.
                             if !clients.contains_key(&address_token) {
-                                let mut c = Connection::new(addr, start_time, server_id, port.to_string());
+                                let mut c =
+                                    Connection::new(addr, start_time, server_id, port.to_string());
                                 c.recv(&data.to_vec());
                                 clients.insert(address_token, c);
                             } else {
@@ -265,7 +274,11 @@ pub async fn start<'a>(s: RakNetServer, send_channel: Channel<'a, RakEvent, RakR
                                     OnlinePackets::from_byte(pk[0])
                                 ));
                             } else {
-                                // log_offline(format!("[{}] Sent packet: {}", addr, OfflinePackets::from_byte(pk[0])));
+                                log_offline(format!(
+                                    "[{}] Sent packet: {}",
+                                    addr,
+                                    OnlinePackets::from_byte(pk[0])
+                                ));
                             }
                         }
                     }

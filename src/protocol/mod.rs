@@ -16,7 +16,7 @@ pub struct Motd {
     pub player_max: u16,
     pub gamemode: String,
     pub server_guid: u64,
-    pub port: String
+    pub port: String,
 }
 
 impl Motd {
@@ -29,7 +29,7 @@ impl Motd {
             gamemode: String::from("Creative"),
             version: String::from("1.17.10"),
             server_guid,
-            port
+            port,
         }
     }
 
