@@ -453,10 +453,6 @@ impl Connection {
             current_frames.push(FragmentList::from(part, safe_size.into()));
         }
 
-        if cfg!(feature = "dbg-verbose") && current_frames.len() > 0 {
-            log_online(format!("[{}] Sending packets: {:?}\n", self.address_token, &current_frames));
-        }
-
         for safely_sized in current_frames.iter_mut() {
             let packets = safely_sized.assemble(safe_size as i16, self.fragment_id);
 

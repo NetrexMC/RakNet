@@ -166,7 +166,7 @@ pub async fn start<'a>(
                     let mut clients = task_server.connections.write().unwrap();
                     if clients.contains_key(&address) {
                         let client = clients.get_mut(&address).unwrap();
-                        client.send(buf, instant);
+                        client.send(buf, false);
                         drop(client);
                         drop(clients);
                     } else {
@@ -268,11 +268,15 @@ pub async fn start<'a>(
                         Err(e) => println!("[RakNet] [{}] Error sending packet: {}", addr, e),
                         Ok(_) => {
                             if client.state.is_connected() {
-                                log_online(format!(
-                                    "[{}] Sent packet: {}",
-                                    addr,
-                                    OnlinePackets::from_byte(*pk.get(0).unwrap_or(&0))
-                                ));
+                                if cfg!(feature = "dbg-verbose") {
+                                    log_online(format!("[{}] Sent packet: {:?}\n", addr, &pk));
+                                } else {
+                                    log_online(format!(
+                                        "[{}] Sent packet: {}",
+                                        addr,
+                                        OnlinePackets::from_byte(*pk.get(0).unwrap_or(&0))
+                                    ));
+                                }
                             } else {
                                 log_offline(format!(
                                     "[{}] Sent packet: {}",
