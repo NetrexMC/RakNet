@@ -131,7 +131,7 @@ pub struct ConnectedPong {
 }
 
 pub fn log_online(message: String) {
-    if cfg!(feature = "dbg") {
+    if cfg!(any(test, feature = "dbg")) {
         println!("[RakNet] [Online Packet Handler] {}", message);
     }
 }

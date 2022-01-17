@@ -268,7 +268,7 @@ pub async fn start<'a>(
                         Err(e) => println!("[RakNet] [{}] Error sending packet: {}", addr, e),
                         Ok(_) => {
                             if client.state.is_connected() {
-                                if cfg!(feature = "dbg-verbose") {
+                                if cfg!(any(test, feature = "dbg-verbose")) {
                                     log_online(format!("[{}] Sent packet: {:?}\n", addr, &pk));
                                 } else {
                                     log_online(format!(

@@ -255,15 +255,6 @@ impl FragmentStore {
         }
     }
 
-    pub fn ready(&mut self, index: u16) -> bool {
-        if self.fragment_table.contains_key(&index.into()) {
-            let fragment_list = self.fragment_table.get_mut(&index.into()).unwrap();
-            return fragment_list.fragments.len() as u64 == fragment_list.size;
-        } else {
-            return false;
-        }
-    }
-
     /// Assembles a FramePacket from the given fragment index
     /// assuming that all fragments have been sent.
     pub fn assemble_frame(&mut self, index: u16, size: i16, usable_id: u16) -> Option<FramePacket> {
