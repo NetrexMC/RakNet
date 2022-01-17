@@ -3,15 +3,15 @@ use std::net::IpAddr;
 use std::net::Ipv4Addr;
 use std::net::SocketAddr;
 
-use binary_utils::*;
 use binary_utils::error::BinaryError;
+use binary_utils::*;
 use byteorder::BigEndian;
 use byteorder::WriteBytesExt;
 
-use crate::{packet_id, register_packets};
-use super::PacketId;
 use super::Packet;
+use super::PacketId;
 use super::Payload;
+use crate::{packet_id, register_packets};
 
 /// A enum that represents all online packets.
 #[derive(Clone, Debug)]
@@ -21,7 +21,7 @@ pub enum OnlinePacket {
     ConnectionRequest(ConnectionRequest),
     ConnectionAccept(ConnectionAccept),
     NewConnection(NewConnection),
-    Disconnect(Disconnect)
+    Disconnect(Disconnect),
 }
 
 register_packets![
@@ -39,7 +39,7 @@ register_packets![
 /// The server should respond with a `ConnectedPong` packet.
 #[derive(Clone, Debug, BinaryStream)]
 pub struct ConnectedPing {
-    pub time: i64
+    pub time: i64,
 }
 packet_id!(ConnectedPing, 0x00);
 
@@ -48,7 +48,7 @@ packet_id!(ConnectedPing, 0x00);
 #[derive(Clone, Debug, BinaryStream)]
 pub struct ConnectedPong {
     pub ping_time: i64,
-    pub pong_time: i64
+    pub pong_time: i64,
 }
 packet_id!(ConnectedPong, 0x03);
 
@@ -57,7 +57,7 @@ packet_id!(ConnectedPong, 0x03);
 #[derive(Clone, Debug, BinaryStream)]
 pub struct ConnectionRequest {
     pub client_id: i64,
-    pub time: i64
+    pub time: i64,
 }
 packet_id!(ConnectionRequest, 0x09);
 

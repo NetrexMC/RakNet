@@ -32,7 +32,7 @@ pub enum SessionState {
     /// The session is not connected and is not trying to connect.
     /// During this state the session will be dropped. This state occurs when a client
     /// has completely stopped responding to packets or their socket is destroyed.
-    Offline
+    Offline,
 }
 
 impl SessionState {
@@ -44,7 +44,7 @@ impl SessionState {
     pub fn is_reliable(&self) -> bool {
         match self {
             Self::Disconnected | Self::TimingOut | Self::Offline => false,
-            _ => true
+            _ => true,
         }
     }
 
@@ -57,7 +57,7 @@ impl SessionState {
     pub fn is_available(&self) -> bool {
         match self {
             Self::Connected | Self::Connecting | Self::Unidentified | Self::Disconnecting => true,
-            _ => false
+            _ => false,
         }
     }
 }
@@ -71,7 +71,7 @@ impl std::fmt::Display for SessionState {
             Self::Disconnecting => write!(f, "Disconnecting"),
             Self::Disconnected => write!(f, "Disconnected"),
             Self::Unidentified => write!(f, "Unidentified"),
-            Self::Offline => write!(f, "Offline")
+            Self::Offline => write!(f, "Offline"),
         }
     }
 }

@@ -1,7 +1,13 @@
-use binary_utils::*;
+/// The protocol that is used when a client is considered "Online".
+/// Sessions in this state are usually: Connected or Connecting
+pub mod online;
 
-use super::online::OnlinePacket;
+/// The protocol that is used when a client is considered "Unidentified".
+/// This module is used for Pong and connection requests.
+pub mod offline;
+
 use super::offline::OfflinePacket;
+use super::online::OnlinePacket;
 
 /// A helper trait to identify packets.
 pub trait PacketId {
@@ -19,7 +25,7 @@ pub struct Packet {
     /// The packet id.
     pub id: u8,
     /// The packet data. (this is the payload)
-    pub payload: Payload
+    pub payload: Payload,
 }
 
 #[derive(Clone, Debug)]
