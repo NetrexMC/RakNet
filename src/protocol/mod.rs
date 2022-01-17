@@ -12,3 +12,6 @@ pub mod online;
 /// The protocol that is used when a client is considered "Unidentified".
 /// This module is used for Pong and connection requests.
 pub mod offline;
+
+/// Protocol utilities (structs)
+pub mod util;

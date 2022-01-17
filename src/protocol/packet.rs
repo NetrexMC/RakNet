@@ -54,19 +54,19 @@ macro_rules! packet_id {
 }
 
 #[macro_export]
-macro_rules! register_online_packets {
-    ($($packet: ident),*) => {
+macro_rules! register_packets {
+    ($name: ident is $kind: ident, $($packet: ident),*) => {
         $(
-            impl From<$packet> for OnlinePacket {
+            impl From<$packet> for $kind {
                 fn from(packet: $packet) -> Self {
-                    OnlinePacket::$packet(packet)
+                    $kind::$packet(packet)
                 }
             }
 
-            impl From<OnlinePacket> for $packet {
-                fn from(packet: OnlinePacket) -> Self {
+            impl From<$kind> for $packet {
+                fn from(packet: $kind) -> Self {
                     match packet {
-                        OnlinePacket::$packet(packet) => packet,
+                        $kind::$packet(packet) => packet,
                         _ => panic!("Invalid packet type")
                     }
                 }
@@ -76,21 +76,21 @@ macro_rules! register_online_packets {
                 fn from(payload: $packet) -> Self {
                     Self {
                         id: payload.get_id(),
-                        payload: Payload::Online(payload.into()),
+                        payload: Payload::$name(payload.into()),
                     }
                 }
             }
 
             impl From<$packet> for Payload {
                 fn from(payload: $packet) -> Self {
-                    Self::Online(payload.into())
+                    Self::$name(payload.into())
                 }
             }
 
             impl From<Payload> for $packet {
                 fn from(payload: Payload) -> Self {
                     match payload {
-                        Payload::Online(v) => v.into(),
+                        Payload::$name(v) => v.into(),
                         _ => panic!("Invalid payload type"),
                     }
                 }

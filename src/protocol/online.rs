@@ -8,7 +8,7 @@ use binary_utils::error::BinaryError;
 use byteorder::BigEndian;
 use byteorder::WriteBytesExt;
 
-use crate::{packet_id, register_online_packets};
+use crate::{packet_id, register_packets};
 use super::PacketId;
 use super::Packet;
 use super::Payload;
@@ -24,7 +24,8 @@ pub enum OnlinePacket {
     Disconnect(Disconnect)
 }
 
-register_online_packets![
+register_packets![
+    Online is OnlinePacket,
     ConnectedPing,
     ConnectedPong,
     ConnectionRequest,
