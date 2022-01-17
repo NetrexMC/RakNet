@@ -1,3 +1,6 @@
 target
+
 # Ignore lock files
 Cargo.lock
+
+*.old/

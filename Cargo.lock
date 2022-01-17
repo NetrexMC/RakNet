@@ -5,7 +5,7 @@ version = 3
 [[package]]
 name = "bin_macro"
 version = "0.1.0"
-source = "git+https://github.com/NetrexMC/BinaryUtil?tag=v0.2.1#0f34ea9d0d8d1529399e9861bf0f41382c1fe180"
+source = "git+https://github.com/NetrexMC/BinaryUtil?branch=master#d53ae194cbf553c63c8f4d901557b3736a2311cf"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -14,8 +14,8 @@ dependencies = [
 
 [[package]]
 name = "binary_utils"
-version = "0.2.1"
-source = "git+https://github.com/NetrexMC/BinaryUtil?tag=v0.2.1#0f34ea9d0d8d1529399e9861bf0f41382c1fe180"
+version = "0.2.2"
+source = "git+https://github.com/NetrexMC/BinaryUtil?branch=master#d53ae194cbf553c63c8f4d901557b3736a2311cf"
 dependencies = [
  "bin_macro",
  "byteorder",
@@ -136,9 +136,9 @@ dependencies = [
 
 [[package]]
 name = "getrandom"
-version = "0.2.3"
+version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7fcd999463524c52659517fe2cea98493cfe485d10565e7b0fb07dbba7ad2753"
+checksum = "418d37c8b1d42553c93648be529cb70f920d3baf8ef469b74b9638df426e0b4c"
 dependencies = [
  "cfg-if",
  "libc",
@@ -218,7 +218,7 @@ dependencies = [
 [[package]]
 name = "netrex_events"
 version = "0.1.0"
-source = "git+https://github.com/NetrexMC/Events?branch=master#baacdb457ce130786424b020dfe0f55bbd456987"
+source = "git+https://github.com/NetrexMC/Events?branch=master#6ec695e4e1ffc4911edb813495639a1d4ef6ef31"
 
 [[package]]
 name = "ntapi"
@@ -308,7 +308,7 @@ dependencies = [
 
 [[package]]
 name = "rakrs"
-version = "0.2.2"
+version = "1.0.0"
 dependencies = [
  "binary_utils",
  "byteorder",
@@ -390,9 +390,9 @@ checksum = "9def91fd1e018fe007022791f865d0ccc9b3a0d5001e01aabb8b40e46000afb5"
 
 [[package]]
 name = "smallvec"
-version = "1.7.0"
+version = "1.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1ecab6c735a6bb4139c0caafd0cc3635748bbb3acf4550e8138122099251f309"
+checksum = "f2dd574626839106c320a323308629dcb1acfc96e32a8cba364ddc61ac23ee83"
 
 [[package]]
 name = "syn"
