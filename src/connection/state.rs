@@ -1,5 +1,6 @@
 /// Connection States
 /// These are all possible states of a raknet session.
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub enum ConnectionState {
     /// The Session is not yet connected, but is actively trying to connect.
     /// This is the initial state of a connection.

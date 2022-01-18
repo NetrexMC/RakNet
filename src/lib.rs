@@ -21,3 +21,7 @@ pub mod protocol;
 /// A session is a "connection" to a player. It serves as the interface for
 /// communicating with a client.
 pub mod connection;
+
+/// The raknet server
+/// This is the main entry point for the server.
+pub mod server;

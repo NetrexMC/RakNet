@@ -1,6 +1,7 @@
 /// A packet queue, this is used to store packets that are waiting to be sent.
 /// This is internal use for Sessions.
 
+#[derive(Debug, Clone)]
 pub struct Queue<T> {
     /// Normal priority packet.
     /// This is the default priority.

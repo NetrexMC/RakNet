@@ -6,6 +6,7 @@ use super::state::ConnectionState;
 
 pub type SendCommand = (String, Vec<u8>);
 
+#[derive(Debug, Clone)]
 pub struct Connection {
     /// The tokenized address of the connection.
     /// This is the identifier rak-rs will use to identify the connection.

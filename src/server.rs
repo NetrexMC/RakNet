@@ -1,11 +1,3 @@
-use crate::conn::Connection;
-use crate::conn::ConnectionState;
-use crate::from_tokenized;
-use crate::offline::log_offline;
-use crate::online::log_online;
-use crate::online::OnlinePackets;
-use crate::tokenize_addr;
-use crate::Motd;
 use futures::Future;
 use netrex_events::Channel;
 use std::collections::HashMap;
@@ -16,6 +8,11 @@ use std::time::Duration;
 use std::time::SystemTime;
 use tokio::net::UdpSocket;
 use tokio::time::sleep;
+
+use crate::connection::Connection;
+use crate::internal::util::from_address_token;
+use crate::internal::util::to_address_token;
+use crate::protocol::mcpe::motd::Motd;
 
 pub enum RakNetVersion {
     MinecraftRecent,
@@ -184,7 +181,7 @@ pub async fn start<'a>(
                 let mut buf = [0; 2048];
                 if let Ok((len, addr)) = socket.recv_from(&mut buf).await {
                     let data = &buf[..len];
-                    let address_token = tokenize_addr(addr);
+                    let address_token = to_address_token(addr);
 
                     // // println!("[RakNet] [{}] Received packet: Packet(ID={:#04x})", addr, &data[0]);
 
@@ -261,7 +258,7 @@ pub async fn start<'a>(
 
                 for pk in client.clone().send_queue.into_iter() {
                     match send_sock
-                        .send_to(&pk[..], &from_tokenized(addr.clone()))
+                        .send_to(&pk[..], &from_address_token(addr.clone()))
                         .await
                     {
                         // Add proper handling!
