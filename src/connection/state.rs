@@ -61,6 +61,17 @@ impl ConnectionState {
             _ => false,
         }
     }
+
+    /// Returns whether or not the Session is in any "connected" state.
+    /// Sessions in this state are:
+    /// - Connected
+    /// - Connecting
+    pub fn is_connected(&self) -> bool {
+        match self {
+            Self::Connected | Self::Connecting => true,
+            _ => false,
+        }
+    }
 }
 
 impl std::fmt::Display for ConnectionState {

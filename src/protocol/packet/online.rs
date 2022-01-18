@@ -132,3 +132,4 @@ packet_id!(Disconnect, 0x15);
 /// This is sent by the client when it loses connection to the server.
 #[derive(Clone, Debug, BinaryStream)]
 pub struct LostConnection {}
+packet_id!(LostConnection, 0x04);

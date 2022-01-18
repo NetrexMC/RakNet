@@ -1,6 +1,7 @@
 use std::{time::SystemTime, sync::Arc};
+use binary_utils::*;
 
-use crate::{protocol::mcpe::motd::Motd, internal::queue::{Queue, QueuePriority}};
+use crate::{protocol::{mcpe::motd::Motd, Packet}, internal::queue::{Queue, SendPriority}};
 
 use super::state::ConnectionState;
 
@@ -62,13 +63,67 @@ impl Connection {
         }
     }
 
+    /// This method should be used externally to send packets to the connection.
+    /// Packets here will be batched together and sent in frames.
+    pub fn send_stream(&mut self, stream: Vec<u8>, priority: SendPriority) {
+        if priority == SendPriority::Immediate {
+            // todo: Create the frame and send it!
+        } else {
+            self.queue.push(stream, priority);
+        }
+    }
+
+    /// This will send a raknet packet to the connection.
+    /// This method will automatically parse the packet and send it by the given priority.
+    pub fn send_packet(&mut self, packet: Packet, priority: SendPriority) {
+        if priority == SendPriority::Immediate {
+            self.send_channel.send((self.address.clone(), packet.parse().unwrap())).unwrap();
+        } else {
+            self.queue.push(packet.parse().unwrap(), SendPriority::Normal);
+        }
+    }
+
+    /// Adds the given stream to the connection's queue by priority.
+    /// If instant is set to "true" the packet will be sent immediately.
     pub fn send(&mut self, stream: Vec<u8>, instant: bool) {
         if instant {
             // We're not going to batch this packet, so send it immediately.
             self.send_channel.send((self.address.clone(), stream)).unwrap();
         } else {
             // We're going to batch this packet, so push it to the queue.
-            self.queue.push(stream, QueuePriority::Normal);
+            self.queue.push(stream, SendPriority::Normal);
         }
+    }
+
+    pub fn recv(&mut self, payload: Vec<u8>) {
+        self.recv_time = SystemTime::now();
+
+        // let's verify our state.
+        if !self.state.is_reliable() {
+            // we got a packet when the client state was un-reliable, we're going to force the client
+            // to un-identified.
+            self.state = ConnectionState::Unidentified;
+        }
+
+        // build the packet
+        if let Ok(packet) = Packet::compose(&payload, &mut 0) {
+            // the packet is internal, let's check if it's an online packet or offline packet
+            // and handle it accordingly.
+            if packet.is_online() {
+                // online packet
+                // handle the connected packet
+            } else {
+                // offline packet
+                // handle the disconnected packet
+            }
+        } else {
+            // this packet could be a Ack or Frame
+        }
+    }
+
+    /// This is called every RakNet tick.
+    /// This is used to update the connection state and send `Priority::Normal` packets.
+    /// as well as other internal stuff like updating flushing Ack and Nack.
+    pub fn tick(&mut self) {
     }
 }

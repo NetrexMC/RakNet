@@ -21,15 +21,32 @@ impl<T> Queue<T> {
 
     /// Pushes a packet to the queue.
     /// Note that packets of high priority will be ignored
-    pub fn push(&mut self, packet: T, priority: QueuePriority) {
+    pub fn push(&mut self, packet: T, priority: SendPriority) {
         match priority {
-            QueuePriority::Normal => self.normal.push(packet),
-            QueuePriority::Low => self.low.push(packet)
+            SendPriority::Normal => self.normal.push(packet),
+            SendPriority::Low => self.low.push(packet),
+            SendPriority::Immediate => return
         }
+    }
+
+    pub fn flush_low(&mut self) -> Vec<T> {
+        let mut low = Vec::new();
+        std::mem::swap(&mut low, &mut self.low);
+        low
+    }
+
+    pub fn flush_normal(&mut self) -> Vec<T> {
+        let mut normal = Vec::new();
+        std::mem::swap(&mut normal, &mut self.normal);
+        normal
     }
 }
 
-pub enum QueuePriority {
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SendPriority {
+    /// The packet needs to be sent as fast as possible.
+    /// Packets with this priority are sent immediately.
+    Immediate,
     /// The packet needs to be sent, but is not as important as High priority.
     /// Packets with this priority will be batched together in frames.
     /// This is the default priority.
