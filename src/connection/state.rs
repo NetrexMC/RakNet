@@ -1,6 +1,6 @@
 /// Connection States
 /// These are all possible states of a raknet session.
-pub enum SessionState {
+pub enum ConnectionState {
     /// The Session is not yet connected, but is actively trying to connect.
     /// This is the initial state of a connection.
     Connecting,
@@ -35,7 +35,7 @@ pub enum SessionState {
     Offline,
 }
 
-impl SessionState {
+impl ConnectionState {
     /// Returns whether or not the Session is reliable.
     /// Reliable sessions are sessions that are not:
     /// - Offline
@@ -62,7 +62,7 @@ impl SessionState {
     }
 }
 
-impl std::fmt::Display for SessionState {
+impl std::fmt::Display for ConnectionState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Connecting => write!(f, "Connecting"),

@@ -18,6 +18,7 @@ use crate::{packet_id, register_packets};
 pub enum OnlinePacket {
     ConnectedPing(ConnectedPing),
     ConnectedPong(ConnectedPong),
+    LostConnection(LostConnection),
     ConnectionRequest(ConnectionRequest),
     ConnectionAccept(ConnectionAccept),
     NewConnection(NewConnection),
@@ -125,3 +126,9 @@ packet_id!(NewConnection, 0x13);
 #[derive(Clone, Debug, BinaryStream)]
 pub struct Disconnect {}
 packet_id!(Disconnect, 0x15);
+
+
+/// A connection lost notification.
+/// This is sent by the client when it loses connection to the server.
+#[derive(Clone, Debug, BinaryStream)]
+pub struct LostConnection {}
