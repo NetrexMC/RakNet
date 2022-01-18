@@ -9,6 +9,7 @@ use std::time::SystemTime;
 use tokio::net::UdpSocket;
 use tokio::time::sleep;
 
+use crate::connection::state::ConnectionState;
 use crate::connection::Connection;
 use crate::internal::util::from_address_token;
 use crate::internal::util::to_address_token;
@@ -137,9 +138,19 @@ pub async fn start<'a>(
     Arc<RakNetServer>,
     tokio::sync::mpsc::Sender<(String, Vec<u8>, bool)>,
 ) {
+    // The actual server reference.
     let server = Arc::new(s);
+    // The reference to the server for the sending thread.
+    // This thread is responsible for ticking the client and
+    // dispatching client events every tick.
     let send_server = server.clone();
+    // The reference to the server for the for sending packets.
+    // This is the task that is used to send packets to the clients
+    // from the api. This mspc channel is return to the user.
     let task_server = send_server.clone();
+    // The reference to the server for returning the raknet server.
+    // While the sender should already have this, the server does become
+    // owned and pushed out of scope after execution.
     let ret_server = send_server.clone();
     let sock = UdpSocket::bind(
         server
@@ -150,13 +161,36 @@ pub async fn start<'a>(
     .await
     .unwrap();
     let port = server.address.parse::<SocketAddr>().unwrap().port();
+    // The socket of the server for sending packets (ticking client thread).
     let send_sock = Arc::new(sock);
+    // The socket for the recieving thread.
     let socket = send_sock.clone();
+    // The socket for the internal server sending thread.
+    let send_sock_internal = send_sock.clone();
+    // The time we're going to say raknet actually started.
     let start_time = server.start_time.clone();
     let server_id = server.server_guid.clone();
+    // The channels being used to send packets to the client (externally).
     let (send, mut recv) = tokio::sync::mpsc::channel::<(String, Vec<u8>, bool)>(2048);
-    // println!("Server GUID: {}", server_id);
+    // The internal channels being used to dispatch packets with `connection.send`.
+    let (im_send, mut im_recv) = tokio::sync::mpsc::channel::<(String, Vec<u8>)>(2048);
+
     let tasks = async move {
+        // This task is solely responsible for internal immediate sending.
+        // Nothing else, this is not used externally, nor should it be.
+        tokio::spawn(async move {
+            loop {
+                if let Some(data) = im_recv.recv().await {
+                    if let Ok(_) = send_sock_internal
+                        .send_to(&data.1, from_address_token(data.0))
+                        .await
+                    {
+                        continue;
+                    }
+                }
+            }
+        });
+
         tokio::spawn(async move {
             loop {
                 if let Some((address, buf, instant)) = recv.recv().await {
@@ -172,7 +206,9 @@ pub async fn start<'a>(
                 }
             }
         });
+
         tokio::spawn(async move {
+            let internal_send = Arc::new(im_send);
             loop {
                 if let Err(_) = socket.readable().await {
                     continue;
@@ -192,8 +228,13 @@ pub async fn start<'a>(
                             // add the client!
                             // we need to add cooldown here eventually.
                             if !clients.contains_key(&address_token) {
-                                let mut c =
-                                    Connection::new(addr, start_time, server_id, port.to_string());
+                                let mut c = Connection::new(
+                                    address_token.clone(),
+                                    internal_send.clone(),
+                                    start_time,
+                                    server_id,
+                                    port.to_string(),
+                                );
                                 c.recv(&data.to_vec());
                                 clients.insert(address_token, c);
                             } else {
@@ -208,6 +249,7 @@ pub async fn start<'a>(
                 }
             }
         });
+
         while !&send_server.stop {
             if let Err(_) = send_sock.writable().await {
                 continue;
@@ -219,7 +261,7 @@ pub async fn start<'a>(
             let mut clients = send_server.connections.write().unwrap();
             for (addr, _) in clients.clone().iter() {
                 let client = clients.get_mut(addr).expect("Could not get connection");
-                client.do_tick();
+                client.tick();
 
                 let dispatch = client.event_dispatch.clone();
                 client.event_dispatch.clear();
@@ -252,11 +294,13 @@ pub async fn start<'a>(
                     continue;
                 }
 
-                if client.send_queue.len() == 0 {
+                if client.queue.clone().len() == 0 {
                     continue;
                 }
 
-                for pk in client.clone().send_queue.into_iter() {
+                let packets = client.queue.flush();
+
+                for pk in packets.into_iter() {
                     match send_sock
                         .send_to(&pk[..], &from_address_token(addr.clone()))
                         .await
@@ -266,25 +310,24 @@ pub async fn start<'a>(
                         Ok(_) => {
                             if client.state.is_connected() {
                                 if cfg!(any(test, feature = "dbg-verbose")) {
-                                    log_online(format!("[{}] Sent packet: {:?}\n", addr, &pk));
+                                    println!("[ONLINE PACKET] [{}] Sent packet: {:?}\n", addr, &pk);
                                 } else {
-                                    log_online(format!(
-                                        "[{}] Sent packet: {}",
+                                    println!(
+                                        "[ONLINE PACKET] [{}] Sent packet: {}",
                                         addr,
-                                        OnlinePackets::from_byte(*pk.get(0).unwrap_or(&0))
-                                    ));
+                                        *pk.get(0).unwrap_or(&0)
+                                    );
                                 }
                             } else {
-                                log_offline(format!(
-                                    "[{}] Sent packet: {}",
+                                println!(
+                                    "[OFFLINE] [{}] Sent packet: {}",
                                     addr,
-                                    OnlinePackets::from_byte(*pk.get(0).unwrap_or(&0))
-                                ));
+                                    *pk.get(0).unwrap_or(&0)
+                                );
                             }
                         }
                     }
                 }
-                client.send_queue.clear();
             }
             drop(clients);
         }

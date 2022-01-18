@@ -25,7 +25,7 @@ impl<T> Queue<T> {
         match priority {
             SendPriority::Normal => self.normal.push(packet),
             SendPriority::Low => self.low.push(packet),
-            SendPriority::Immediate => return
+            SendPriority::Immediate => return,
         }
     }
 
@@ -39,6 +39,17 @@ impl<T> Queue<T> {
         let mut normal = Vec::new();
         std::mem::swap(&mut normal, &mut self.normal);
         normal
+    }
+
+    pub fn flush(&mut self) -> Vec<T> {
+        let mut normal = self.flush_normal();
+        let mut low = self.flush_low();
+        normal.append(&mut low);
+        return normal;
+    }
+
+    pub fn len(self) -> usize {
+        self.normal.len() + self.low.len()
     }
 }
 

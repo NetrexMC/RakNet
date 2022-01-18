@@ -16,3 +16,4 @@ netrex_events = { git = "https://github.com/NetrexMC/Events", branch = "master" 
 tokio = { version = "1.15.0", features = ["full"] }
 byteorder = "1.4.3"
 futures = "0.3.19"
+futures-executor = "0.3.19"

@@ -1,7 +1,11 @@
-use std::{time::SystemTime, sync::Arc};
 use binary_utils::*;
+use std::{collections::VecDeque, sync::Arc, time::SystemTime};
 
-use crate::{protocol::{mcpe::motd::Motd, Packet}, internal::queue::{Queue, SendPriority}};
+use crate::{
+    internal::queue::{Queue, SendPriority},
+    protocol::{mcpe::motd::Motd, Packet},
+    server::RakEvent,
+};
 
 use super::state::ConnectionState;
 
@@ -39,13 +43,17 @@ pub struct Connection {
     pub queue: Queue<Vec<u8>>,
     /// This is an internal channel used on the raknet side to send packets to the user immediately.
     /// DO NOT USE THIS!
-    pub send_channel: Arc<std::sync::mpsc::Sender<SendCommand>>,
+    pub send_channel: Arc<tokio::sync::mpsc::Sender<SendCommand>>,
+    /// This is internal! This is used to dispatch events to the user.
+    /// This will probably change in the near future, however this will stay,
+    /// until that happens.
+    pub event_dispatch: VecDeque<RakEvent>,
 }
 
 impl Connection {
     pub fn new(
         address: String,
-        send_channel: Arc<std::sync::mpsc::Sender<SendCommand>>,
+        send_channel: Arc<tokio::sync::mpsc::Sender<SendCommand>>,
         start_time: SystemTime,
         server_guid: u64,
         port: String,
@@ -59,7 +67,8 @@ impl Connection {
             motd: Motd::new(server_guid, port),
             server_guid,
             queue: Queue::new(),
-            send_channel
+            send_channel,
+            event_dispatch: VecDeque::new(),
         }
     }
 
@@ -77,9 +86,10 @@ impl Connection {
     /// This method will automatically parse the packet and send it by the given priority.
     pub fn send_packet(&mut self, packet: Packet, priority: SendPriority) {
         if priority == SendPriority::Immediate {
-            self.send_channel.send((self.address.clone(), packet.parse().unwrap())).unwrap();
+            self.send_immediate(packet.parse().unwrap());
         } else {
-            self.queue.push(packet.parse().unwrap(), SendPriority::Normal);
+            self.queue
+                .push(packet.parse().unwrap(), SendPriority::Normal);
         }
     }
 
@@ -88,14 +98,24 @@ impl Connection {
     pub fn send(&mut self, stream: Vec<u8>, instant: bool) {
         if instant {
             // We're not going to batch this packet, so send it immediately.
-            self.send_channel.send((self.address.clone(), stream)).unwrap();
+            self.send_immediate(stream);
         } else {
             // We're going to batch this packet, so push it to the queue.
             self.queue.push(stream, SendPriority::Normal);
         }
     }
 
-    pub fn recv(&mut self, payload: Vec<u8>) {
+    /// Immediately send the packet to the connection.
+    /// This will not automatically batch the packet.
+    pub fn send_immediate(&mut self, stream: Vec<u8>) {
+        if let Ok(_) =
+            futures_executor::block_on(self.send_channel.send((self.address.clone(), stream)))
+        {
+            // GREAT!
+        }
+    }
+
+    pub fn recv(&mut self, payload: &Vec<u8>) {
         self.recv_time = SystemTime::now();
 
         // let's verify our state.
@@ -124,6 +144,5 @@ impl Connection {
     /// This is called every RakNet tick.
     /// This is used to update the connection state and send `Priority::Normal` packets.
     /// as well as other internal stuff like updating flushing Ack and Nack.
-    pub fn tick(&mut self) {
-    }
+    pub fn tick(&mut self) {}
 }

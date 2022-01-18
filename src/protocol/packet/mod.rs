@@ -8,8 +8,14 @@ pub mod offline;
 
 use binary_utils::Streamable;
 
-use self::offline::{UnconnectedPing, OpenConnectRequest, UnconnectedPong, OpenConnectReply, SessionInfoRequest, SessionInfoReply, IncompatibleProtocolVersion};
-use self::online::{ConnectionRequest, ConnectionAccept, ConnectedPing, ConnectedPong, LostConnection, NewConnection, Disconnect};
+use self::offline::{
+    IncompatibleProtocolVersion, OpenConnectReply, OpenConnectRequest, SessionInfoReply,
+    SessionInfoRequest, UnconnectedPing, UnconnectedPong,
+};
+use self::online::{
+    ConnectedPing, ConnectedPong, ConnectionAccept, ConnectionRequest, Disconnect, LostConnection,
+    NewConnection,
+};
 
 use super::offline::OfflinePacket;
 use super::online::OnlinePacket;
@@ -55,7 +61,10 @@ impl Packet {
 }
 
 impl Streamable for Packet {
-    fn compose(source: &[u8], position: &mut usize) -> Result<Self, binary_utils::error::BinaryError> {
+    fn compose(
+        source: &[u8],
+        position: &mut usize,
+    ) -> Result<Self, binary_utils::error::BinaryError> {
         let payload = Payload::compose(source, position)?;
         let id = source[0];
         Ok(Packet { id, payload })
@@ -73,68 +82,87 @@ pub enum Payload {
 }
 
 impl Streamable for Payload {
-    fn compose(source: &[u8], position: &mut usize) -> Result<Self, binary_utils::error::BinaryError> {
+    fn compose(
+        source: &[u8],
+        position: &mut usize,
+    ) -> Result<Self, binary_utils::error::BinaryError> {
         // we need the id!
         let id = u8::compose(source, position)?;
 
         match id {
             x if x == UnconnectedPing::id() => {
-                let packet = OfflinePacket::UnconnectedPing(UnconnectedPing::compose(source, position)?);
+                let packet =
+                    OfflinePacket::UnconnectedPing(UnconnectedPing::compose(source, position)?);
                 Ok(Payload::Offline(packet))
-            },
+            }
             x if x == UnconnectedPong::id() => {
-                let packet = OfflinePacket::UnconnectedPong(UnconnectedPong::compose(source, position)?);
+                let packet =
+                    OfflinePacket::UnconnectedPong(UnconnectedPong::compose(source, position)?);
                 Ok(Payload::Offline(packet))
-            },
+            }
             x if x == OpenConnectRequest::id() => {
-                let packet = OfflinePacket::OpenConnectRequest(OpenConnectRequest::compose(source, position)?);
+                let packet = OfflinePacket::OpenConnectRequest(OpenConnectRequest::compose(
+                    source, position,
+                )?);
                 Ok(Payload::Offline(packet))
-            },
+            }
             x if x == OpenConnectReply::id() => {
-                let packet = OfflinePacket::OpenConnectReply(OpenConnectReply::compose(source, position)?);
+                let packet =
+                    OfflinePacket::OpenConnectReply(OpenConnectReply::compose(source, position)?);
                 Ok(Payload::Offline(packet))
-            },
+            }
             x if x == SessionInfoRequest::id() => {
-                let packet = OfflinePacket::SessionInfoRequest(SessionInfoRequest::compose(source, position)?);
+                let packet = OfflinePacket::SessionInfoRequest(SessionInfoRequest::compose(
+                    source, position,
+                )?);
                 Ok(Payload::Offline(packet))
-            },
+            }
             x if x == SessionInfoReply::id() => {
-                let packet = OfflinePacket::SessionInfoReply(SessionInfoReply::compose(source, position)?);
+                let packet =
+                    OfflinePacket::SessionInfoReply(SessionInfoReply::compose(source, position)?);
                 Ok(Payload::Offline(packet))
-            },
+            }
             x if x == IncompatibleProtocolVersion::id() => {
-                let packet = OfflinePacket::IncompatibleProtocolVersion(IncompatibleProtocolVersion::compose(source, position)?);
+                let packet = OfflinePacket::IncompatibleProtocolVersion(
+                    IncompatibleProtocolVersion::compose(source, position)?,
+                );
                 Ok(Payload::Offline(packet))
-            },
+            }
             x if x == ConnectedPing::id() => {
                 let packet = OnlinePacket::ConnectedPing(ConnectedPing::compose(source, position)?);
                 Ok(Payload::Online(packet))
-            },
+            }
             x if x == ConnectedPong::id() => {
                 let packet = OnlinePacket::ConnectedPong(ConnectedPong::compose(source, position)?);
                 Ok(Payload::Online(packet))
-            },
+            }
             x if x == LostConnection::id() => {
-                let packet = OnlinePacket::LostConnection(LostConnection::compose(source, position)?);
+                let packet =
+                    OnlinePacket::LostConnection(LostConnection::compose(source, position)?);
                 Ok(Payload::Online(packet))
-            },
+            }
             x if x == ConnectionRequest::id() => {
-                let packet = OnlinePacket::ConnectionRequest(ConnectionRequest::compose(source, position)?);
+                let packet =
+                    OnlinePacket::ConnectionRequest(ConnectionRequest::compose(source, position)?);
                 Ok(Payload::Online(packet))
-            },
+            }
             x if x == ConnectionAccept::id() => {
-                let packet = OnlinePacket::ConnectionAccept(ConnectionAccept::compose(source, position)?);
+                let packet =
+                    OnlinePacket::ConnectionAccept(ConnectionAccept::compose(source, position)?);
                 Ok(Payload::Online(packet))
-            },
+            }
             x if x == NewConnection::id() => {
                 let packet = OnlinePacket::NewConnection(NewConnection::compose(source, position)?);
                 Ok(Payload::Online(packet))
-            },
+            }
             x if x == Disconnect::id() => {
                 let packet = OnlinePacket::Disconnect(Disconnect::compose(source, position)?);
                 Ok(Payload::Online(packet))
-            },
-            _ => Err(binary_utils::error::BinaryError::RecoverableKnown(format!("Id is not a valid raknet packet: {}", id))),
+            }
+            _ => Err(binary_utils::error::BinaryError::RecoverableKnown(format!(
+                "Id is not a valid raknet packet: {}",
+                id
+            ))),
         }
     }
 

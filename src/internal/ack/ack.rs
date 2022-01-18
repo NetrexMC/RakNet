@@ -1,7 +1,7 @@
 use std::io::Cursor;
 
 use binary_utils::Streamable;
-use byteorder::{BE, WriteBytesExt, ReadBytesExt};
+use byteorder::{ReadBytesExt, WriteBytesExt, BE};
 
 /// An ack record.
 /// A record holds a single or range of acked packets.
@@ -85,7 +85,10 @@ impl Streamable for Ack {
         Ok(stream)
     }
 
-    fn compose(source: &[u8], position: &mut usize) -> Result<Self, binary_utils::error::BinaryError> {
+    fn compose(
+        source: &[u8],
+        position: &mut usize,
+    ) -> Result<Self, binary_utils::error::BinaryError> {
         let mut stream = Cursor::new(source);
         let id = stream.read_u8().unwrap();
         let count = stream.read_u16::<BE>().unwrap();
@@ -109,10 +112,6 @@ impl Streamable for Ack {
 
         *position += stream.position() as usize;
 
-        Ok(Self {
-            count,
-            records,
-            id
-        })
+        Ok(Self { count, records, id })
     }
 }

@@ -1,7 +1,7 @@
 use binary_utils::*;
 
-use crate::{protocol::util::Magic, packet_id};
 use crate::protocol::PacketId;
+use crate::{packet_id, protocol::util::Magic};
 
 use super::motd::Motd;
 

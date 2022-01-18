@@ -127,7 +127,6 @@ packet_id!(NewConnection, 0x13);
 pub struct Disconnect {}
 packet_id!(Disconnect, 0x15);
 
-
 /// A connection lost notification.
 /// This is sent by the client when it loses connection to the server.
 #[derive(Clone, Debug, BinaryStream)]

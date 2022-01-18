@@ -313,6 +313,7 @@ dependencies = [
  "binary_utils",
  "byteorder",
  "futures",
+ "futures-executor",
  "netrex_events",
  "rand",
  "tokio",
