@@ -85,7 +85,9 @@ impl Motd {
             self.server_guid.to_string(),
             "Netrex".to_string(),
             self.gamemode.as_str().to_string(),
-            self.gamemode.to_string(),
+            "1".to_string(),
+            // Todo: Figure out why this is not working
+            // self.gamemode.to_string(),
             self.port.to_string(),
             self.ipv6_port.to_string(),
         ];

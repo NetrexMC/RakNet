@@ -15,16 +15,16 @@ use crate::internal::util::from_address_token;
 use crate::internal::util::to_address_token;
 use crate::protocol::mcpe::motd::Motd;
 
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
+#[repr(u8)]
 pub enum RakNetVersion {
-    MinecraftRecent,
-    V10,
-    V6,
+    V10 = 10,
+    V6 = 6,
 }
 
 impl RakNetVersion {
     pub fn to_u8(&self) -> u8 {
         match self {
-            RakNetVersion::MinecraftRecent => 10,
             RakNetVersion::V10 => 10,
             RakNetVersion::V6 => 6,
         }
@@ -121,7 +121,7 @@ impl RakNetServer {
     pub fn new(address: String) -> Self {
         Self {
             address,
-            version: RakNetVersion::MinecraftRecent,
+            version: RakNetVersion::V10,
             connections: Arc::new(RwLock::new(HashMap::new())),
             start_time: SystemTime::now(),
             server_guid: rand::random::<u64>(),
@@ -169,7 +169,10 @@ pub async fn start<'a>(
     let send_sock_internal = send_sock.clone();
     // The time we're going to say raknet actually started.
     let start_time = server.start_time.clone();
+    // The id of the server
     let server_id = server.server_guid.clone();
+    // The server of the server
+    let version = server.version.clone();
     // The channels being used to send packets to the client (externally).
     let (send, mut recv) = tokio::sync::mpsc::channel::<(String, Vec<u8>, bool)>(2048);
     // The internal channels being used to dispatch packets with `connection.send`.
@@ -186,6 +189,8 @@ pub async fn start<'a>(
                         .await
                     {
                         continue;
+                    } else {
+                        println!("Failed to send immediate packet.");
                     }
                 }
             }
@@ -234,6 +239,7 @@ pub async fn start<'a>(
                                     start_time,
                                     server_id,
                                     port.to_string(),
+                                    version.clone(),
                                 );
                                 c.recv(&data.to_vec());
                                 clients.insert(address_token, c);

@@ -6,8 +6,6 @@ use binary_utils::*;
 use byteorder::WriteBytesExt;
 
 #[cfg(feature = "mcpe")]
-use crate::protocol::mcpe::packet::UnconnectedPong;
-#[cfg(feature = "mcpe")]
 pub use crate::protocol::mcpe::packet::UnconnectedPong;
 
 use super::Packet;
@@ -31,7 +29,6 @@ pub enum OfflinePacket {
     IncompatibleProtocolVersion(IncompatibleProtocolVersion),
 }
 
-#[cfg(not(feature = "mcpe"))]
 register_packets![
     Offline is OfflinePacket,
     UnconnectedPing,
@@ -46,9 +43,9 @@ register_packets![
 /// Unconnected Ping
 #[derive(Debug, Clone, BinaryStream)]
 pub struct UnconnectedPing {
-    timestamp: u64,
-    magic: Magic,
-    client_id: i64,
+    pub timestamp: u64,
+    pub magic: Magic,
+    pub client_id: i64,
 }
 packet_id!(UnconnectedPing, 0x01);
 
@@ -56,9 +53,9 @@ packet_id!(UnconnectedPing, 0x01);
 #[cfg(not(feature = "mcpe"))]
 #[derive(Debug, Clone, BinaryStream)]
 pub struct UnconnectedPong {
-    timestamp: u64,
-    server_id: u64,
-    magic: Magic,
+    pub timestamp: u64,
+    pub server_id: u64,
+    pub magic: Magic,
 }
 #[cfg(not(feature = "mcpe"))]
 packet_id!(UnconnectedPong, 0x1c);
@@ -66,9 +63,9 @@ packet_id!(UnconnectedPong, 0x1c);
 /// This packet is the equivelant of the `OpenConnectRequest` packet in RakNet.
 #[derive(Debug, Clone)]
 pub struct OpenConnectRequest {
-    magic: Magic,
-    protocol: u8,
-    mtu_size: u16,
+    pub magic: Magic,
+    pub protocol: u8,
+    pub mtu_size: u16,
 }
 impl Streamable for OpenConnectRequest {
     fn compose(source: &[u8], position: &mut usize) -> Result<Self, BinaryError> {
@@ -99,38 +96,38 @@ packet_id!(OpenConnectRequest, 0x05);
 /// This packet is the equivalent of the `Open Connect Reply 1` packet.
 #[derive(Debug, Clone, BinaryStream)]
 pub struct OpenConnectReply {
-    magic: Magic,
-    server_id: u64,
-    security: bool,
-    mtu_size: u16,
+    pub magic: Magic,
+    pub server_id: u64,
+    pub security: bool,
+    pub mtu_size: u16,
 }
 packet_id!(OpenConnectReply, 0x06);
 
 /// Session info, also known as Open Connect Request 2
 #[derive(Debug, Clone, BinaryStream)]
 pub struct SessionInfoRequest {
-    magic: Magic,
-    address: SocketAddr,
-    mtu_size: u16,
-    client_id: i64,
+    pub magic: Magic,
+    pub address: SocketAddr,
+    pub mtu_size: u16,
+    pub client_id: i64,
 }
 packet_id!(SessionInfoRequest, 0x07);
 
 /// Session Info Reply, also known as Open Connect Reply 2
 #[derive(Debug, Clone, BinaryStream)]
 pub struct SessionInfoReply {
-    magic: Magic,
-    server_id: u64,
-    client_address: SocketAddr,
-    mtu_size: u16,
-    security: bool,
+    pub magic: Magic,
+    pub server_id: u64,
+    pub client_address: SocketAddr,
+    pub mtu_size: u16,
+    pub security: bool,
 }
 packet_id!(SessionInfoReply, 0x08);
 
 #[derive(Debug, Clone, BinaryStream)]
 pub struct IncompatibleProtocolVersion {
-    protocol: u8,
-    magic: Magic,
-    server_id: u64,
+    pub protocol: u8,
+    pub magic: Magic,
+    pub server_id: u64,
 }
 packet_id!(IncompatibleProtocolVersion, 0x19);

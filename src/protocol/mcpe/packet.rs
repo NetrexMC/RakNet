@@ -7,10 +7,9 @@ use super::motd::Motd;
 
 #[derive(Debug, Clone, BinaryStream)]
 pub struct UnconnectedPong {
-    id: u8,
-    timestamp: u64,
-    server_id: u64,
-    magic: Magic,
-    motd: Motd,
+    pub timestamp: u64,
+    pub server_id: u64,
+    pub magic: Magic,
+    pub motd: Motd,
 }
 packet_id!(UnconnectedPong, 0x1c);

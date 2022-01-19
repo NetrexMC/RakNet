@@ -25,3 +25,6 @@ pub mod connection;
 /// The raknet server
 /// This is the main entry point for the server.
 pub mod server;
+
+// Export the entire server module for ease of use
+pub use self::server::*;

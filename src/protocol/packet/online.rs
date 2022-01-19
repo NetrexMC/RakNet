@@ -67,19 +67,19 @@ packet_id!(ConnectionRequest, 0x09);
 #[derive(Clone, Debug)]
 pub struct ConnectionAccept {
     /// The address of the client connecting (locally?).
-    client_address: SocketAddr,
+    pub client_address: SocketAddr,
     /// The system index is the index of the system that the client is connected to.
     /// This is the index of the server on the client.
     /// (Not sure why this is useful)
-    system_index: i16,
+    pub system_index: i16,
     /// The internal id's of the server or alternative IP's of the server.
     /// These are addresses the client will use if it can't connect to the server.
     /// (Not sure why this is useful)
-    internal_id: SocketAddr,
+    pub internal_id: SocketAddr,
     /// The time of the timestamp the client sent with `ConnectionRequest`.
-    request_time: i64,
+    pub request_time: i64,
     /// The time on the server.
-    timestamp: i64,
+    pub timestamp: i64,
 }
 
 impl Streamable for ConnectionAccept {

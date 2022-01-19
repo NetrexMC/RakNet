@@ -1,3 +1,7 @@
+/// Handlers for both online & offline packets!
+/// This is used by the connection struct to handle packets.
+pub(crate) mod handler;
+
 /// The protocol that is used when a client is considered "Online".
 /// Sessions in this state are usually: Connected or Connecting
 pub mod online;
@@ -6,7 +10,10 @@ pub mod online;
 /// This module is used for Pong and connection requests.
 pub mod offline;
 
+use std::io::Write;
+
 use binary_utils::Streamable;
+use byteorder::WriteBytesExt;
 
 use self::offline::{
     IncompatibleProtocolVersion, OpenConnectReply, OpenConnectRequest, SessionInfoReply,
@@ -71,7 +78,10 @@ impl Streamable for Packet {
     }
 
     fn parse(&self) -> Result<Vec<u8>, binary_utils::error::BinaryError> {
-        todo!()
+        let mut buffer: Vec<u8> = Vec::new();
+        buffer.write_u8(self.id)?;
+        buffer.write_all(&self.payload.parse()?)?;
+        Ok(buffer)
     }
 }
 
@@ -167,7 +177,35 @@ impl Streamable for Payload {
     }
 
     fn parse(&self) -> Result<Vec<u8>, binary_utils::error::BinaryError> {
-        todo!()
+        let mut buffer: Vec<u8> = Vec::new();
+        // we're not concerned about the id here so we're going to only write the payload!
+        let payload = match self {
+            Payload::Online(packet) => match packet {
+                OnlinePacket::ConnectedPing(pk) => pk.parse()?,
+                OnlinePacket::ConnectedPong(pk) => pk.parse()?,
+                OnlinePacket::LostConnection(pk) => pk.parse()?,
+                OnlinePacket::ConnectionRequest(pk) => pk.parse()?,
+                OnlinePacket::ConnectionAccept(pk) => pk.parse()?,
+                OnlinePacket::NewConnection(pk) => pk.parse()?,
+                OnlinePacket::Disconnect(pk) => pk.parse()?,
+            },
+            Payload::Offline(packet) => match packet {
+                OfflinePacket::UnconnectedPing(pk) => pk.parse()?,
+                OfflinePacket::UnconnectedPong(pk) => pk.parse()?,
+                OfflinePacket::OpenConnectRequest(pk) => pk.parse()?,
+                OfflinePacket::OpenConnectReply(pk) => pk.parse()?,
+                OfflinePacket::SessionInfoRequest(pk) => pk.parse()?,
+                OfflinePacket::SessionInfoReply(pk) => pk.parse()?,
+                OfflinePacket::IncompatibleProtocolVersion(pk) => pk.parse()?,
+            },
+        };
+        if let Err(_) = buffer.write_all(&payload) {
+            Err(binary_utils::error::BinaryError::RecoverableKnown(
+                "Failed to write payload to buffer".to_string(),
+            ))
+        } else {
+            Ok(buffer)
+        }
     }
 }
 

@@ -4,8 +4,10 @@ use std::{collections::VecDeque, sync::Arc, time::SystemTime};
 use crate::{
     internal::queue::{Queue, SendPriority},
     protocol::{mcpe::motd::Motd, Packet},
-    server::RakEvent,
+    server::{RakEvent, RakNetVersion},
 };
+
+use crate::protocol::handler::{handle_offline, handle_online};
 
 use super::state::ConnectionState;
 
@@ -34,6 +36,9 @@ pub struct Connection {
     /// The time the server started.
     /// Used in pings
     pub start_time: SystemTime,
+    /// The RakNet Version of the server.
+    /// This is used to determine if the player can reliably join the server.
+    pub raknet_version: RakNetVersion,
     /// Minecraft specific, the message of the day.
     pub motd: Motd,
     /// A reference to the server id.
@@ -57,6 +62,7 @@ impl Connection {
         start_time: SystemTime,
         server_guid: u64,
         port: String,
+        raknet_version: RakNetVersion,
     ) -> Self {
         Self {
             address,
@@ -69,6 +75,7 @@ impl Connection {
             queue: Queue::new(),
             send_channel,
             event_dispatch: VecDeque::new(),
+            raknet_version,
         }
     }
 
@@ -132,12 +139,15 @@ impl Connection {
             if packet.is_online() {
                 // online packet
                 // handle the connected packet
+                handle_online(self, packet);
             } else {
                 // offline packet
                 // handle the disconnected packet
+                handle_offline(self, packet);
             }
         } else {
             // this packet could be a Ack or Frame
+            println!("We got a packet that we couldn't parse! Probably a Nak or Frame!");
         }
     }
 
