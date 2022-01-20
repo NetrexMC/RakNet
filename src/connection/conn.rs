@@ -3,7 +3,7 @@ use std::{collections::VecDeque, sync::Arc, time::SystemTime};
 
 use crate::{
     internal::queue::{Queue, SendPriority},
-    protocol::{mcpe::motd::Motd, Packet, online::Disconnect},
+    protocol::{mcpe::motd::Motd, online::Disconnect, Packet},
     server::{RakEvent, RakNetVersion},
 };
 
@@ -79,7 +79,7 @@ impl Connection {
             send_channel,
             event_dispatch: VecDeque::new(),
             raknet_version,
-            ensure_disconnect: false
+            ensure_disconnect: false,
         }
     }
 
@@ -151,13 +151,17 @@ impl Connection {
             }
         } else {
             // this packet could be a Ack or Frame
-            println!("We got a packet that we couldn't parse! Probably a Nak or Frame! Buffer: {:?}", payload);
+            println!(
+                "We got a packet that we couldn't parse! Probably a Nak or Frame! Buffer: {:?}",
+                payload
+            );
         }
     }
 
     pub fn disconnect<S: Into<String>>(&mut self, reason: S, server_initiated: bool) {
         // disconnect!!!
-        self.event_dispatch.push_back(RakEvent::Disconnect(self.address.clone(), reason.into()));
+        self.event_dispatch
+            .push_back(RakEvent::Disconnect(self.address.clone(), reason.into()));
         // actually handle this internally, cause we can't send packets if we're disconnected.
         self.state = ConnectionState::Offline;
         // the following is a hack to make sure the connection is removed from the server.

@@ -1,4 +1,4 @@
-use std::net::{SocketAddr, IpAddr, Ipv4Addr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::SystemTime;
 
 use crate::connection::state::ConnectionState;
@@ -8,8 +8,8 @@ use crate::protocol::util::Magic;
 use crate::{connection::Connection, server::RakEvent};
 
 use super::offline::{IncompatibleProtocolVersion, OpenConnectReply, SessionInfoReply};
+use super::online::{ConnectedPong, ConnectionAccept, OnlinePacket};
 use super::OfflinePacket;
-use super::online::{ConnectedPong, OnlinePacket, ConnectionAccept};
 use super::{offline::UnconnectedPong, Packet};
 
 /// The offline packet handler, responsible for handling
@@ -106,31 +106,35 @@ pub fn handle_online(connection: &mut Connection, packet: Packet) {
         OnlinePacket::ConnectedPing(pk) => {
             let response = ConnectedPong {
                 ping_time: pk.time,
-                pong_time: SystemTime::now().duration_since(connection.start_time).unwrap().as_millis() as i64,
+                pong_time: SystemTime::now()
+                    .duration_since(connection.start_time)
+                    .unwrap()
+                    .as_millis() as i64,
             };
             connection.send_packet(response.into(), SendPriority::Immediate);
             Ok(())
-        },
+        }
         OnlinePacket::ConnectionRequest(pk) => {
             let response = ConnectionAccept {
                 system_index: 0,
                 client_address: from_address_token(connection.address.clone()),
                 internal_id: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(255, 255, 255, 255)), 19132),
                 request_time: pk.time,
-                timestamp: SystemTime::now().duration_since(connection.start_time).unwrap().as_millis() as i64,
+                timestamp: SystemTime::now()
+                    .duration_since(connection.start_time)
+                    .unwrap()
+                    .as_millis() as i64,
             };
             connection.state = ConnectionState::Connected;
             connection.send_packet(response.into(), SendPriority::Immediate);
             Ok(())
-        },
+        }
         OnlinePacket::Disconnect(_) => {
             // Disconnect the client immediately.
             connection.disconnect("Client disconnected.", false);
             Ok(())
-        },
-        _ => {
-            Err("A client can not send this packet, or the packet is not implemented for online!")
         }
+        _ => Err("A client can not send this packet, or the packet is not implemented for online!"),
     };
 
     if let Err(e) = result {

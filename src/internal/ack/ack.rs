@@ -1,7 +1,7 @@
 use std::io::Cursor;
 
 use binary_utils::Streamable;
-use byteorder::{ReadBytesExt, WriteBytesExt, BE, LittleEndian};
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt, BE};
 
 /// An ack record.
 /// A record holds a single or range of acked packets.

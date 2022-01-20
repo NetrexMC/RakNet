@@ -3,15 +3,17 @@ pub mod reliability;
 
 use std::io::{Cursor, Read, Write};
 
-use binary_utils::*;
+use binary_utils::error::BinaryError;
 use binary_utils::u24;
-use byteorder::{ReadBytesExt, LittleEndian, BigEndian, WriteBytesExt};
+use binary_utils::*;
+use byteorder::{BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
 
 use self::fragment::FragmentMeta;
 use self::reliability::Reliability;
 
 /// Frames are a encapsulation of a packet or packets.
 /// They are used to send packets to the connection in a reliable way.
+#[derive(Debug, Clone)]
 pub struct FramePacket {
     /// The sequence of this frame.
     /// We'll use this to respond with Ack and Nack to.
@@ -22,7 +24,51 @@ pub struct FramePacket {
     pub frames: Vec<Frame>,
 }
 
+impl Streamable for FramePacket {
+    fn compose(source: &[u8], position: &mut usize) -> Result<Self, error::BinaryError> {
+        let mut stream = Cursor::new(source);
+        stream.read_u8()?;
+        let mut frames: Vec<Frame> = Vec::new();
+        let sequence = stream.read_u24::<LittleEndian>()?;
+
+        loop {
+            if stream.position() > source.len() as u64 {
+                return Ok(FramePacket { sequence, frames });
+            }
+
+            let mut offset: u64 = stream.position();
+            if let Ok(frame) = Frame::compose(&source, &mut (offset as usize)) {
+                stream.set_position(stream.position() + offset);
+                frames.push(frame.clone());
+
+                if frame.parse()?.len() + stream.position() as usize > source.len() {
+                    return Ok(FramePacket { sequence, frames });
+                } else {
+                    continue;
+                }
+            } else {
+                return Err(BinaryError::RecoverableKnown(
+                    "Frame composition failed! Failed to read frame.".into(),
+                ));
+            }
+        }
+    }
+
+    fn parse(&self) -> Result<Vec<u8>, BinaryError> {
+        let mut stream = Cursor::new(Vec::new());
+        stream.write_u8(0x80)?;
+        stream.write_u24::<LittleEndian>(self.sequence)?;
+
+        for frame in &self.frames {
+            stream.write_all(&frame.parse()?)?;
+        }
+
+        Ok(stream.into_inner())
+    }
+}
+
 /// An individual data frame, these are constructed from a payload.
+#[derive(Debug, Clone)]
 pub struct Frame {
     /// The sequence number for the frame, this is a triad.
     pub sequence: u64,

@@ -47,8 +47,10 @@ impl Reliability {
     /// Whether or not the packet is ordered.
     pub fn is_ordered(&self) -> bool {
         match self {
-            Self::UnreliableSeq | Self::ReliableOrd | Self::ReliableSeq | Self::ReliableOrdAck => true,
-            _ => false
+            Self::UnreliableSeq | Self::ReliableOrd | Self::ReliableSeq | Self::ReliableOrdAck => {
+                true
+            }
+            _ => false,
         }
     }
 
@@ -56,7 +58,7 @@ impl Reliability {
     pub fn is_reliable(&self) -> bool {
         match self {
             Self::Reliable | Self::ReliableOrd | Self::ReliableSeq | Self::ReliableOrdAck => true,
-            _ => false
+            _ => false,
         }
     }
 
@@ -64,7 +66,7 @@ impl Reliability {
     pub fn is_unreliable(&self) -> bool {
         match self {
             Self::Unreliable | Self::UnreliableSeq | Self::UnreliableAck => true,
-            _ => false
+            _ => false,
         }
     }
 
@@ -72,7 +74,7 @@ impl Reliability {
     pub fn is_sequenced(&self) -> bool {
         match self {
             Self::UnreliableSeq | Self::ReliableSeq => true,
-            _ => false
+            _ => false,
         }
     }
 
@@ -80,7 +82,7 @@ impl Reliability {
     pub fn is_ack(&self) -> bool {
         match self {
             Self::UnreliableAck | Self::ReliableAck | Self::ReliableOrdAck => true,
-            _ => false
+            _ => false,
         }
     }
 }

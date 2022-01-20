@@ -40,7 +40,7 @@ impl<T> Queue<T> {
         Queue {
             normal: Vec::new(),
             low: Vec::new(),
-            frozen: false
+            frozen: false,
         }
     }
 
@@ -97,8 +97,6 @@ pub enum SendPriority {
 
 /// Buffered Queues, this is used internally for ordered channels and fragments.
 pub struct BufferQueue<T> {
-    /// The identifier for this queue.
-    pub id: u16,
     /// The total number of packets in this queue.
     /// By default, we do not allow more than 256 packets in a queue.
     pub size: u32,
@@ -109,17 +107,16 @@ pub struct BufferQueue<T> {
     pub partition_size: u16,
     /// The actual buffers in the queue.
     /// Indexed by: Index => Value
-    buffers: HashMap<u32, T>
+    buffers: HashMap<u32, T>,
 }
 
 impl BufferQueue<Vec<u8>> {
     /// Creates a new buffer queue.
-    pub fn new(id: u16, size: u32, partition_size: u16) -> Self {
+    pub fn new(size: u32, partition_size: u16) -> Self {
         BufferQueue {
-            id,
             size,
             partition_size,
-            buffers: HashMap::new()
+            buffers: HashMap::new(),
         }
     }
 
