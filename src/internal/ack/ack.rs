@@ -1,7 +1,7 @@
 use std::io::Cursor;
 
 use binary_utils::Streamable;
-use byteorder::{ReadBytesExt, WriteBytesExt, BE};
+use byteorder::{ReadBytesExt, WriteBytesExt, BE, LittleEndian};
 
 /// An ack record.
 /// A record holds a single or range of acked packets.
@@ -73,12 +73,12 @@ impl Streamable for Ack {
             match record {
                 Record::Single(rec) => {
                     stream.push(1);
-                    stream.write_u24::<BE>(rec.sequence)?;
+                    stream.write_u24::<LittleEndian>(rec.sequence)?;
                 }
                 Record::Range(rec) => {
                     stream.push(0);
-                    stream.write_u24::<BE>(rec.start)?;
-                    stream.write_u24::<BE>(rec.end)?;
+                    stream.write_u24::<LittleEndian>(rec.start)?;
+                    stream.write_u24::<LittleEndian>(rec.end)?;
                 }
             }
         }
@@ -96,14 +96,14 @@ impl Streamable for Ack {
         for _ in 0..count {
             if stream.read_u8().unwrap() == 1 {
                 let record: SingleRecord = SingleRecord {
-                    sequence: stream.read_u24::<BE>().unwrap(),
+                    sequence: stream.read_u24::<LittleEndian>().unwrap(),
                 };
 
                 records.push(Record::Single(record));
             } else {
                 let record: RangeRecord = RangeRecord {
-                    start: stream.read_u24::<BE>().unwrap(),
-                    end: stream.read_u24::<BE>().unwrap(),
+                    start: stream.read_u24::<LittleEndian>().unwrap(),
+                    end: stream.read_u24::<LittleEndian>().unwrap(),
                 };
 
                 records.push(Record::Range(record));
