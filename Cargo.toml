@@ -11,7 +11,7 @@ dbg-verbose = []
 
 [dependencies]
 rand = "0.8.3"
-binary_utils = { git = "https://github.com/NetrexMC/BinaryUtil", tag = "v0.2.1" }
+binary_utils = { git = "https://github.com/NetrexMC/BinaryUtil", branch = "master" }
 netrex_events = { git = "https://github.com/NetrexMC/Events", branch = "master" }
 tokio = { version = "1.15.0", features = ["full"] }
 byteorder = "1.4.3"

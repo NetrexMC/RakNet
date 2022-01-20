@@ -5,7 +5,7 @@ version = 3
 [[package]]
 name = "bin_macro"
 version = "0.1.0"
-source = "git+https://github.com/NetrexMC/BinaryUtil?tag=v0.2.1#0f34ea9d0d8d1529399e9861bf0f41382c1fe180"
+source = "git+https://github.com/NetrexMC/BinaryUtil?branch=master#d53ae194cbf553c63c8f4d901557b3736a2311cf"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -14,8 +14,8 @@ dependencies = [
 
 [[package]]
 name = "binary_utils"
-version = "0.2.1"
-source = "git+https://github.com/NetrexMC/BinaryUtil?tag=v0.2.1#0f34ea9d0d8d1529399e9861bf0f41382c1fe180"
+version = "0.2.2"
+source = "git+https://github.com/NetrexMC/BinaryUtil?branch=master#d53ae194cbf553c63c8f4d901557b3736a2311cf"
 dependencies = [
  "bin_macro",
  "byteorder",
