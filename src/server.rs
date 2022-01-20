@@ -272,8 +272,6 @@ pub async fn start<'a>(
                 let dispatch = client.event_dispatch.clone();
                 client.event_dispatch.clear();
 
-                let mut force_disconnect = false;
-
                 // emit events if there is a listener for the
                 for event in dispatch.iter() {
                     // // println!("DEBUG => Dispatching: {:?}", &event.get_name());
@@ -288,14 +286,16 @@ pub async fn start<'a>(
                             }
                             RakResult::Disconnect(_) => {
                                 client.state = ConnectionState::Offline; // simple hack
-                                force_disconnect = true;
                                 break;
                             }
                         }
                     }
                 }
 
-                if client.state == ConnectionState::Offline || force_disconnect {
+                // Forcefully remove the client if they are offline.
+                // This is after the packet sending because we may want to send packets if
+                // the disconnect notification is server sided.
+                if client.is_disconnected() {
                     clients.remove(addr);
                     continue;
                 }

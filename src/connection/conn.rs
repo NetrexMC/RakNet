@@ -3,7 +3,7 @@ use std::{collections::VecDeque, sync::Arc, time::SystemTime};
 
 use crate::{
     internal::queue::{Queue, SendPriority},
-    protocol::{mcpe::motd::Motd, Packet},
+    protocol::{mcpe::motd::Motd, Packet, online::Disconnect},
     server::{RakEvent, RakNetVersion},
 };
 
@@ -53,6 +53,9 @@ pub struct Connection {
     /// This will probably change in the near future, however this will stay,
     /// until that happens.
     pub event_dispatch: VecDeque<RakEvent>,
+    /// This is internal! This is used to remove the connection if something goes wrong with connection states.
+    /// (which is likely)
+    ensure_disconnect: bool,
 }
 
 impl Connection {
@@ -76,6 +79,7 @@ impl Connection {
             send_channel,
             event_dispatch: VecDeque::new(),
             raknet_version,
+            ensure_disconnect: false
         }
     }
 
@@ -147,8 +151,31 @@ impl Connection {
             }
         } else {
             // this packet could be a Ack or Frame
-            println!("We got a packet that we couldn't parse! Probably a Nak or Frame!");
+            println!("We got a packet that we couldn't parse! Probably a Nak or Frame! Buffer: {:?}", payload);
         }
+    }
+
+    pub fn disconnect<S: Into<String>>(&mut self, reason: S, server_initiated: bool) {
+        // disconnect!!!
+        self.event_dispatch.push_back(RakEvent::Disconnect(self.address.clone(), reason.into()));
+        // actually handle this internally, cause we can't send packets if we're disconnected.
+        self.state = ConnectionState::Offline;
+        // the following is a hack to make sure the connection is removed from the server.
+        self.ensure_disconnect = true;
+        // Freeze the queue, just in case this is a server sided disconnect.
+        // Otherwise this is useless.
+        self.queue.frozen = true;
+        // We also need to flush the queue so packets aren't sent, because they are now useless.
+        self.queue.flush();
+
+        if server_initiated {
+            self.send_packet(Disconnect {}.into(), SendPriority::Immediate);
+        }
+    }
+
+    /// This reads an internal value! This may not be in relation to the client's CURRENT state!
+    pub fn is_disconnected(&self) -> bool {
+        return self.ensure_disconnect == true;
     }
 
     /// This is called every RakNet tick.

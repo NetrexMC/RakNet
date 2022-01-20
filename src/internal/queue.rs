@@ -9,6 +9,8 @@ pub struct Queue<T> {
     /// Lowest priority packet.
     /// This is the lowest priority.
     low: Vec<T>,
+    /// Whether or not the queue is frozen.
+    pub frozen: bool,
 }
 
 impl<T> Queue<T> {
@@ -16,12 +18,16 @@ impl<T> Queue<T> {
         Queue {
             normal: Vec::new(),
             low: Vec::new(),
+            frozen: false
         }
     }
 
     /// Pushes a packet to the queue.
     /// Note that packets of high priority will be ignored
     pub fn push(&mut self, packet: T, priority: SendPriority) {
+        if self.frozen {
+            return;
+        }
         match priority {
             SendPriority::Normal => self.normal.push(packet),
             SendPriority::Low => self.low.push(packet),
