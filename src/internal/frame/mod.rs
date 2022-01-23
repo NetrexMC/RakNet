@@ -1,10 +1,9 @@
 pub mod fragment;
 pub mod reliability;
 
-use std::io::{Cursor, Read, Write};
+use std::io::{Cursor, Write};
 
 use binary_utils::error::BinaryError;
-use binary_utils::u24;
 use binary_utils::*;
 use byteorder::{BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
 
@@ -22,30 +21,110 @@ pub struct FramePacket {
 
     /// The frames for this frame packet, not to exceed the mtu size.
     pub frames: Vec<Frame>,
+
+    /// This is internal use only.
+    pub(crate) byte_length: usize,
+}
+
+impl FramePacket {
+    /// Creates an empty frame packet.
+    pub fn new() -> Self {
+        Self {
+            sequence: 0,
+            frames: Vec::new(),
+            byte_length: 0,
+        }
+    }
+
+    /// Adds a frame to the frame packet.
+    pub fn add_frame(&mut self, frame: Frame, len: usize) {
+        self.frames.push(frame);
+        self.byte_length += len;
+    }
+
+    /// Paritions a stream into a bunch of fragments and returns a frame packet
+    /// that is partitioned, otherwise known as "fragmented".
+    /// This does not modify reliability. That is up to the caller.
+    pub fn partition(stream: Vec<u8>, id: u16, frag_size: u32) -> Vec<Frame> {
+        let mut meta: FragmentMeta = FragmentMeta {
+            size: 0,
+            id,
+            index: 0,
+        };
+
+        let mut frames: Vec<Frame> = Vec::new();
+        let mut position: usize = 0;
+
+        while position < stream.len() {
+            // check whether or not we can read the rest of of the stream
+            if stream[position..].len() < frag_size as usize {
+                // we can reliably read the rest of the buffer into a single frame.
+                let mut frame = Frame::init();
+                frame.body = stream[position..].to_vec();
+                frame.fragment_meta = Some(meta.clone());
+                frames.push(frame);
+                break;
+            } else {
+                // we can't read the rest of the stream into a single frame
+                // continue to split into multiple frames.
+                let mut frame = Frame::init();
+                let to_pos = position + (frag_size as usize);
+                frame.body = stream[position..to_pos].to_vec();
+                frame.fragment_meta = Some(meta.clone());
+                frames.push(frame);
+                position = to_pos;
+                meta.index += 1;
+            }
+        }
+
+        meta.size = frames.len() as u32;
+
+        // Let's fix up the meta data in each frame.
+        for frame in frames.iter_mut() {
+            if let Some(m) = frame.fragment_meta.as_mut() {
+                m.size = meta.size;
+            }
+        }
+
+        return frames;
+    }
 }
 
 impl Streamable for FramePacket {
     fn compose(source: &[u8], position: &mut usize) -> Result<Self, error::BinaryError> {
         let mut stream = Cursor::new(source);
+        stream.set_position(*position as u64);
         stream.read_u8()?;
         let mut frames: Vec<Frame> = Vec::new();
         let sequence = stream.read_u24::<LittleEndian>()?;
+        let mut offset: usize = stream.position() as usize;
 
         loop {
             if stream.position() > source.len() as u64 {
-                return Ok(FramePacket { sequence, frames });
+                return Ok(FramePacket {
+                    sequence,
+                    frames,
+                    byte_length: 0,
+                });
             }
 
-            let mut offset: u64 = stream.position();
-            if let Ok(frame) = Frame::compose(&source, &mut (offset as usize)) {
-                stream.set_position(stream.position() + offset);
+            if stream.position() == source.len() as u64 {
+                break Ok(FramePacket {
+                    sequence,
+                    frames,
+                    byte_length: 0,
+                });
+            }
+
+            if let Ok(frame) = Frame::compose(&source, &mut offset) {
+                stream.set_position(offset as u64);
                 frames.push(frame.clone());
 
-                if frame.parse()?.len() + stream.position() as usize > source.len() {
-                    return Ok(FramePacket { sequence, frames });
-                } else {
-                    continue;
-                }
+                // if frame.parse()?.len() + stream.position() as usize > source.len() {
+                //     return Ok(FramePacket { sequence, frames, byte_length: 0 });
+                // } else {
+                //     continue;
+                // }
             } else {
                 return Err(BinaryError::RecoverableKnown(
                     "Frame composition failed! Failed to read frame.".into(),
@@ -70,8 +149,6 @@ impl Streamable for FramePacket {
 /// An individual data frame, these are constructed from a payload.
 #[derive(Debug, Clone)]
 pub struct Frame {
-    /// The sequence number for the frame, this is a triad.
-    pub sequence: u64,
     /// The flags for this frame, the first 3 bits are reserved for the reliability while the 4th
     /// bit is used to represent if this is a fragment.
     pub flags: u8,
@@ -106,7 +183,6 @@ impl Frame {
     /// This is usually used to inject data into.
     pub fn init() -> Self {
         Self {
-            sequence: 0,
             flags: 0,
             size: 0,
             reliable_index: None,
@@ -118,11 +194,22 @@ impl Frame {
             body: Vec::new(),
         }
     }
+
+    /// Whether or not the frame is fragmented.
+    pub fn is_fragmented(&self) -> bool {
+        self.fragment_meta.is_some()
+    }
+
+    /// Whether or not the frame is sequenced and reliable.
+    pub fn is_sequenced(&self) -> bool {
+        self.reliability.is_sequenced()
+    }
 }
 
 impl Streamable for Frame {
     fn compose(source: &[u8], position: &mut usize) -> Result<Self, error::BinaryError> {
         let mut stream = Cursor::new(source.to_vec());
+
         // create a dummy frame for us to write to.
         let mut frame: Frame = Frame::init();
 
@@ -157,19 +244,18 @@ impl Streamable for Frame {
         // check whether or not this frame is fragmented, if it is, read the fragment meta
         if (frame.flags & 0x10) > 0 {
             frame.fragment_meta = Some(FragmentMeta {
-                size: stream.read_u24::<BigEndian>()?.try_into().unwrap(),
+                size: stream.read_u32::<BigEndian>()?.try_into().unwrap(),
                 id: stream.read_u16::<BigEndian>()?,
-                index: stream.read_u24::<BigEndian>()?.try_into().unwrap(),
+                index: stream.read_u32::<BigEndian>()?.try_into().unwrap(),
             });
         }
 
-        if source.len() > (frame.size as usize) {
-            // read the body
-            let offset = stream.position() as usize;
-            let inner_buffer = &source[offset..(frame.size as usize) + offset];
-            stream.set_position(stream.position() + (frame.size as u64));
-            frame.body = inner_buffer.to_vec();
-        }
+        // read the body
+        frame.body = (&source
+            [stream.position() as usize..stream.position() as usize + frame.size as usize])
+            .to_vec();
+        // update the position.
+        *position = stream.position() as usize + frame.size as usize;
 
         Ok(frame)
     }
@@ -184,10 +270,12 @@ impl Streamable for Frame {
             flags |= 0x10;
         }
 
+        let size = self.body.len() as u16;
+
         // write the flags
         stream.write_u8(flags)?;
         // write the length of the body in bits
-        stream.write_u16::<BigEndian>(self.size * 8)?;
+        stream.write_u16::<BigEndian>(size * 8)?;
 
         // check whether or not this frame is reliable, if it is, write the reliable index
         if self.reliability.is_reliable() {
@@ -209,9 +297,9 @@ impl Streamable for Frame {
         // check whether or not this frame is fragmented, if it is, write the fragment meta
         if self.fragment_meta.is_some() {
             let fragment_meta = self.fragment_meta.as_ref().unwrap();
-            stream.write_u24::<BigEndian>(fragment_meta.size.try_into().unwrap())?;
+            stream.write_u32::<BigEndian>(fragment_meta.size.try_into().unwrap())?;
             stream.write_u16::<BigEndian>(fragment_meta.id)?;
-            stream.write_u24::<BigEndian>(fragment_meta.index.try_into().unwrap())?;
+            stream.write_u32::<BigEndian>(fragment_meta.index.try_into().unwrap())?;
         }
 
         // write the body

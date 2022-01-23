@@ -3,7 +3,7 @@
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub enum ConnectionState {
     /// The Session is not yet connected, but is actively trying to connect.
-    /// This is the initial state of a connection.
+    /// Clients in this state are considered to be actively trying to connect.
     Connecting,
 
     /// The Session is connected and ready to send and receive packets.

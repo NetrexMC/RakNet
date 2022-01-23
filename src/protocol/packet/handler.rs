@@ -84,6 +84,8 @@ pub fn handle_offline(connection: &mut Connection, packet: Packet) {
                 );
             }
 
+            // the client is actually trying to connect.
+            connection.state = ConnectionState::Connecting;
             connection.send_packet(reply.into(), SendPriority::Immediate);
             Ok(())
         }
@@ -101,8 +103,8 @@ pub fn handle_offline(connection: &mut Connection, packet: Packet) {
     };
 }
 
-pub fn handle_online(connection: &mut Connection, packet: Packet) {
-    let result = match packet.get_online() {
+pub fn handle_online(connection: &mut Connection, packet: Packet) -> Result<(), &str> {
+    match packet.get_online() {
         OnlinePacket::ConnectedPing(pk) => {
             let response = ConnectedPong {
                 ping_time: pk.time,
@@ -125,7 +127,6 @@ pub fn handle_online(connection: &mut Connection, packet: Packet) {
                     .unwrap()
                     .as_millis() as i64,
             };
-            connection.state = ConnectionState::Connected;
             connection.send_packet(response.into(), SendPriority::Immediate);
             Ok(())
         }
@@ -134,14 +135,10 @@ pub fn handle_online(connection: &mut Connection, packet: Packet) {
             connection.disconnect("Client disconnected.", false);
             Ok(())
         }
+        OnlinePacket::NewConnection(_) => {
+            connection.state = ConnectionState::Connected;
+            Ok(())
+        }
         _ => Err("A client can not send this packet, or the packet is not implemented for online!"),
-    };
-
-    if let Err(e) = result {
-        // we're not going to panic because that would be bad in prod, so we'll just log it.
-        println!(
-            "[RakNet] [{}] Received an online packet that is not! {:?}",
-            connection.address, e
-        );
-    };
+    }
 }

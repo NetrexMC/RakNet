@@ -2,7 +2,11 @@ use binary_utils::*;
 use std::{collections::VecDeque, sync::Arc, time::SystemTime};
 
 use crate::{
-    internal::queue::{Queue, SendPriority},
+    internal::{
+        frame::{reliability::Reliability, FramePacket},
+        queue::{Queue, SendPriority},
+        RakConnHandler, RakConnHandlerMeta,
+    },
     protocol::{mcpe::motd::Motd, online::Disconnect, Packet},
     server::{RakEvent, RakNetVersion},
 };
@@ -53,6 +57,8 @@ pub struct Connection {
     /// This will probably change in the near future, however this will stay,
     /// until that happens.
     pub event_dispatch: VecDeque<RakEvent>,
+    /// This is internal! This is used to handle all raknet packets, like frame, ping etc.
+    pub(crate) rakhandler: RakConnHandlerMeta,
     /// This is internal! This is used to remove the connection if something goes wrong with connection states.
     /// (which is likely)
     ensure_disconnect: bool,
@@ -80,27 +86,7 @@ impl Connection {
             event_dispatch: VecDeque::new(),
             raknet_version,
             ensure_disconnect: false,
-        }
-    }
-
-    /// This method should be used externally to send packets to the connection.
-    /// Packets here will be batched together and sent in frames.
-    pub fn send_stream(&mut self, stream: Vec<u8>, priority: SendPriority) {
-        if priority == SendPriority::Immediate {
-            // todo: Create the frame and send it!
-        } else {
-            self.queue.push(stream, priority);
-        }
-    }
-
-    /// This will send a raknet packet to the connection.
-    /// This method will automatically parse the packet and send it by the given priority.
-    pub fn send_packet(&mut self, packet: Packet, priority: SendPriority) {
-        if priority == SendPriority::Immediate {
-            self.send_immediate(packet.parse().unwrap());
-        } else {
-            self.queue
-                .push(packet.parse().unwrap(), SendPriority::Normal);
+            rakhandler: RakConnHandlerMeta::new(),
         }
     }
 
@@ -116,45 +102,128 @@ impl Connection {
         }
     }
 
+    /// This method should be used externally to send packets to the connection.
+    /// Packets here will be batched together and sent in frames.
+    pub fn send_stream(&mut self, stream: Vec<u8>, priority: SendPriority) {
+        if priority == SendPriority::Immediate {
+            // todo: Create the frame and send it!
+        } else {
+            self.queue.push(stream, priority);
+        }
+    }
+
     /// Immediately send the packet to the connection.
     /// This will not automatically batch the packet.
     pub fn send_immediate(&mut self, stream: Vec<u8>) {
+        // check the context
         if let Ok(_) =
             futures_executor::block_on(self.send_channel.send((self.address.clone(), stream)))
         {
             // GREAT!
+        } else {
+            println!("Failed to send packet to {}", self.address);
+        }
+    }
+
+    /// Sends the packet inside a frame and may queue it based on priority.
+    /// All sent packets will be sent in reliably ordered frames.
+    ///
+    /// WARNING: DO NOT USE THIS FOR PACKETS THAT EXCEED MTU SIZE!
+    pub fn send_frame(&mut self, stream: Vec<u8>, priority: SendPriority) {
+        if priority == SendPriority::Immediate {
+            // we need to batch this frame immediately.
+            let frame = RakConnHandler::create_frame(self, stream).unwrap();
+            self.send_immediate(frame.fparse());
+        } else {
+            // we need to batch this frame.
+            self.queue.push(stream, priority);
+        }
+    }
+
+    /// This will send a raknet packet to the connection.
+    /// This method will automatically parse the packet and send it by the given priority.
+    pub fn send_packet(&mut self, packet: Packet, priority: SendPriority) {
+        // we can check the kind, if it's an online packet we need to frame it.
+        if packet.is_online() {
+            self.send_frame(packet.parse().unwrap(), priority);
+            return;
+        }
+
+        if priority == SendPriority::Immediate {
+            self.send_immediate(packet.parse().unwrap());
+        } else {
+            self.queue
+                .push(packet.parse().unwrap(), SendPriority::Normal);
         }
     }
 
     pub fn recv(&mut self, payload: &Vec<u8>) {
         self.recv_time = SystemTime::now();
 
-        // let's verify our state.
-        if !self.state.is_reliable() {
-            // we got a packet when the client state was un-reliable, we're going to force the client
-            // to un-identified.
-            self.state = ConnectionState::Unidentified;
-        }
-
         // build the packet
         if let Ok(packet) = Packet::compose(&payload, &mut 0) {
             // the packet is internal, let's check if it's an online packet or offline packet
             // and handle it accordingly.
             if packet.is_online() {
-                // online packet
-                // handle the connected packet
-                handle_online(self, packet);
+                // we recieved a frame packet out of scope.
+                // return an error.
+                return;
             } else {
                 // offline packet
                 // handle the disconnected packet
                 handle_offline(self, packet);
+
+                // let's verify our state.
+                if !self.state.is_reliable() {
+                    // we got a packet when the client state was un-reliable, we're going to force the client
+                    // to un-identified.
+                    self.state = ConnectionState::Unidentified;
+                }
             }
         } else {
             // this packet could be a Ack or Frame
-            println!(
-                "We got a packet that we couldn't parse! Probably a Nak or Frame! Buffer: {:?}",
-                payload
-            );
+            // lets pass it to the rak handler. The rakhandler will invoke `connection.handle` which is
+            // where we handle the online packets.
+            if let Err(e) = RakConnHandler::handle(self, payload) {
+                println!(
+                    "We got a packet that we couldn't parse! Probably a Nak or Frame! Error: {}",
+                    e
+                );
+            }
+
+            // let's update the client state to connected.
+            if !self.state.is_reliable() {
+                self.state = ConnectionState::Connected;
+            }
+        }
+    }
+
+    /// This is called by the rak handler when each frame is decoded.
+    /// These packets are usually online packets or game packets!
+    pub(crate) fn handle(&mut self, buffer: Vec<u8>) {
+        // check if the payload is a online packet.
+        if let Ok(packet) = Packet::compose(&buffer, &mut 0) {
+            // this is a packet! let's check the variety.
+            if packet.is_online() {
+                // online packet
+                // handle the online packet
+                if let Err(_) = handle_online(self, packet.clone()) {
+                    // unknown packet lol
+                    println!("Unknown packet! {:#?}", packet);
+                }
+            } else {
+                // offline packet,
+                // we can't handle offline packets sent within a frame.
+                // we need to handle them in the `connection.recv` method.
+                // we're going to force the client to be disconnected as this is not a valid packet.
+                self.disconnect("Incorrect protocol usage within raknet.", true);
+            }
+        } else {
+            println!("Dispatching Events!");
+            // this isn't an online packet we know about, so we're going to emit an event here.
+            // this is probably a game packet.
+            self.event_dispatch
+                .push_back(RakEvent::GamePacket(self.address.clone(), buffer));
         }
     }
 
@@ -166,11 +235,11 @@ impl Connection {
         self.state = ConnectionState::Offline;
         // the following is a hack to make sure the connection is removed from the server.
         self.ensure_disconnect = true;
+        // We also need to flush the queue so packets aren't sent, because they are now useless.
+        self.queue.flush();
         // Freeze the queue, just in case this is a server sided disconnect.
         // Otherwise this is useless.
         self.queue.frozen = true;
-        // We also need to flush the queue so packets aren't sent, because they are now useless.
-        self.queue.flush();
 
         if server_initiated {
             self.send_packet(Disconnect {}.into(), SendPriority::Immediate);
@@ -185,5 +254,23 @@ impl Connection {
     /// This is called every RakNet tick.
     /// This is used to update the connection state and send `Priority::Normal` packets.
     /// as well as other internal stuff like updating flushing Ack and Nack.
-    pub fn tick(&mut self) {}
+    pub fn tick(&mut self) {
+        if self.state.is_reliable() {
+            // we need to update the state of the connection.
+            // check whether or not we're becoming un-reliable.
+            if self.recv_time.elapsed().unwrap().as_secs() > 5 {
+                // we're becoming un-reliable.
+                self.state = ConnectionState::TimingOut;
+            }
+            // tick the rakhandler
+            RakConnHandler::tick(self);
+        } else {
+            if self.recv_time.elapsed().unwrap().as_secs() >= 10 {
+                // we're not reliable anymore.
+                self.state = ConnectionState::Disconnected;
+                self.disconnect("Timed Out", true);
+                return;
+            }
+        }
+    }
 }

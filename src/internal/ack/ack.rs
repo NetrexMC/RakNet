@@ -1,4 +1,4 @@
-use std::io::Cursor;
+use std::{io::Cursor, ops::Range};
 
 use binary_utils::Streamable;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt, BE};
@@ -32,14 +32,6 @@ impl RangeRecord {
             self.start = temp;
         }
     }
-
-    /// Returns a currated list of all records within the range.
-    pub fn get_records(self) -> Vec<u32> {
-        let mut surely_fixed = self.clone();
-        surely_fixed.fix();
-        let records: Vec<u32> = (surely_fixed.start..surely_fixed.end).collect();
-        return records;
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -58,8 +50,38 @@ impl Ack {
         }
     }
 
-    pub fn add_record(&mut self, record: Record) {
-        self.records.push(record);
+    pub fn push_record(&mut self, seq: u32) {
+        self.records
+            .push(Record::Single(SingleRecord { sequence: seq }));
+    }
+
+    pub fn from_missing(missing: Vec<u32>) -> Self {
+        let mut records: Vec<Record> = Vec::new();
+        let mut current: Range<u32> = 0..0;
+
+        for m in missing {
+            if current.end + 1 == m {
+                current.end += 1;
+            } else if m > current.end {
+                // This is a new range.
+                records.push(Record::Range(RangeRecord {
+                    start: current.start,
+                    end: current.end,
+                }));
+                current.start = m;
+                current.end = m;
+            } else {
+                // This is a new single.
+                records.push(Record::Single(SingleRecord { sequence: m }));
+                current.start = m + 1;
+                current.end = m + 1;
+            }
+        }
+
+        let mut nack = Self::new(records.len().try_into().unwrap(), true);
+        nack.records = records;
+
+        return nack;
     }
 }
 

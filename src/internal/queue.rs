@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, ops::Range, time::SystemTime};
 
 #[derive(Debug, Clone)]
 pub enum QueueError {
@@ -93,6 +93,106 @@ pub enum SendPriority {
     /// The packet being sent does not need to be reliably sent, packets with this priority are sent
     /// last. (Don't use this for MCPE packets)
     Low,
+}
+
+#[derive(Debug)]
+pub struct OrderedQueue<T> {
+    /// The queue of packets that are in order. Mapped to the time they were received.
+    queue: HashMap<u32, T>,
+    /// The current starting scope for the queue.
+    /// A start scope or "window start" is the range of packets that we are currently allowing.
+    /// Older packets will be ignored simply because they are old.
+    scope: (u32, u32),
+}
+
+impl<T> Clone for OrderedQueue<T>
+where
+    T: Clone,
+{
+    fn clone(&self) -> Self {
+        OrderedQueue {
+            queue: self.queue.clone(),
+            scope: self.scope.clone(),
+        }
+    }
+}
+
+impl<T> OrderedQueue<T>
+where
+    T: Sized + Clone,
+{
+    pub fn new() -> Self {
+        Self {
+            queue: HashMap::new(),
+            scope: (0, 0),
+        }
+    }
+
+    /// Inserts the given packet into the queue.
+    /// This will return `false` if the packet is out of scope.
+    pub fn insert(&mut self, packet: T, id: u32) -> bool {
+        // if the packet id is lower than our scope, ignore it
+        // this packet is way to old for us to handle.
+        if id < self.scope.0 {
+            return false;
+        }
+
+        // If the packet is higher than our current scope, we need to adjust our scope.
+        // This is because we are now allowing packets that are newer than our current scope.
+        if id > self.scope.1 {
+            self.scope.1 = id + 1;
+        }
+
+        self.queue.insert(id, packet);
+        return true;
+    }
+
+    /// Drains the current queue by removing all packets from the queue.
+    /// This will return the packets in order only if they were within the current scope.
+    /// This method will also update the scope and adjust it to the newest window.
+    pub fn flush(&mut self) -> Vec<T> {
+        // clear all packets not within our scope
+        self.clear_out_of_scope();
+
+        // now drain the queue
+        let mut map = HashMap::new();
+        std::mem::swap(&mut map, &mut self.queue);
+
+        let mut clean = map.iter().collect::<Vec<_>>();
+        clean.sort_by_key(|m| m.0);
+
+        return clean.iter().map(|m| m.1.clone()).collect::<Vec<T>>();
+    }
+
+    /// Clears all packets that are out of scope.
+    /// Returning only the ones that have not been recieved.
+    pub fn flush_missing(&mut self) -> Vec<u32> {
+        let mut missing: Vec<u32> = Vec::new();
+        // we need to get the amount of ids that are missing from the queue.
+        for i in self.scope.0..self.scope.1 {
+            if !self.queue.contains_key(&i) {
+                missing.push(i);
+            }
+        }
+
+        // we can safely update the scope
+        self.scope.0 = missing.get(0).unwrap_or(&self.scope.0).clone();
+        return missing;
+    }
+
+    fn clear_out_of_scope(&mut self) {
+        // clear all packets not within our current scope.
+        // this is done by removing all packets that are older than our current scope.
+        for (id, _) in self.queue.clone().iter() {
+            if *id < self.scope.0 {
+                self.queue.remove(id);
+            }
+        }
+    }
+
+    pub fn get_scope(&self) -> u32 {
+        self.scope.1 - self.scope.0
+    }
 }
 
 /// Buffered Queues, this is used internally for ordered channels and fragments.

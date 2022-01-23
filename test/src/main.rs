@@ -21,9 +21,13 @@ pub async fn main() {
                 );
             }
             RakEvent::Motd(address, mut motd) => {
-                println!("[RakNet] [{}] Client requested motd: {:?}", address, motd);
+                // println!("[RakNet] [{}] Client requested motd: {:?}", address, motd);
                 motd.name = String::from("RakRS v2");
                 return Some(RakResult::Motd(motd));
+            }
+            RakEvent::GamePacket(address, packet) => {
+                println!("[RakNet] [{}] Client sent packet: {:?}", address, packet);
+                return None;
             }
             _ => {
                 unknown += 1;

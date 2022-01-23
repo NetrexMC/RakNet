@@ -1,3 +1,3 @@
 # RakNet
 
-A fully functional RakNet implementation in rust, asynchronously driven.f
+A fully functional RakNet implementation in rust, asynchronously driven.
