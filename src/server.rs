@@ -203,7 +203,6 @@ pub async fn start<'a>(
                 if let Some((address, buf, instant)) = recv.recv().await {
                     let mut clients = task_server.connections.write().unwrap();
                     if clients.contains_key(&address) {
-                        println!("{:?}", clients.get(&address).unwrap());
                         let client = clients.get_mut(&address).unwrap();
                         client.send_stream(buf, if instant {
                             SendPriority::Immediate
