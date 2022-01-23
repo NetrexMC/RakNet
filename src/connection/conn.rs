@@ -3,11 +3,11 @@ use std::{collections::VecDeque, sync::Arc, time::SystemTime};
 
 use crate::{
     internal::{
-        frame::{reliability::Reliability, FramePacket},
         queue::{Queue, SendPriority},
         RakConnHandler, RakConnHandlerMeta,
     },
     protocol::{mcpe::motd::Motd, online::Disconnect, Packet},
+    rak_debug,
     server::{RakEvent, RakNetVersion},
 };
 
@@ -106,7 +106,7 @@ impl Connection {
     /// Packets here will be batched together and sent in frames.
     pub fn send_stream(&mut self, stream: Vec<u8>, priority: SendPriority) {
         if priority == SendPriority::Immediate {
-            // todo: Create the frame and send it!
+            RakConnHandler::send_as_framed(self, stream);
         } else {
             self.queue.push(stream, priority);
         }
@@ -121,7 +121,7 @@ impl Connection {
         {
             // GREAT!
         } else {
-            println!("Failed to send packet to {}", self.address);
+            rak_debug!("Failed to send packet to {}", self.address);
         }
     }
 
@@ -185,7 +185,7 @@ impl Connection {
             // lets pass it to the rak handler. The rakhandler will invoke `connection.handle` which is
             // where we handle the online packets.
             if let Err(e) = RakConnHandler::handle(self, payload) {
-                println!(
+                rak_debug!(
                     "We got a packet that we couldn't parse! Probably a Nak or Frame! Error: {}",
                     e
                 );
@@ -209,7 +209,7 @@ impl Connection {
                 // handle the online packet
                 if let Err(_) = handle_online(self, packet.clone()) {
                     // unknown packet lol
-                    println!("Unknown packet! {:#?}", packet);
+                    rak_debug!("Unknown packet! {:#?}", packet);
                 }
             } else {
                 // offline packet,
@@ -219,7 +219,6 @@ impl Connection {
                 self.disconnect("Incorrect protocol usage within raknet.", true);
             }
         } else {
-            println!("Dispatching Events!");
             // this isn't an online packet we know about, so we're going to emit an event here.
             // this is probably a game packet.
             self.event_dispatch

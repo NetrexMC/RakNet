@@ -12,9 +12,3 @@ pub struct FragmentMeta {
     /// This is the arrangement of the fragments in the frame.
     pub(crate) index: u32,
 }
-
-impl FragmentMeta {
-    pub fn new(size: u32, id: u16, index: u32) -> Self {
-        Self { size, id, index }
-    }
-}

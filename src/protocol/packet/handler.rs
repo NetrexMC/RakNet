@@ -5,6 +5,7 @@ use crate::connection::state::ConnectionState;
 use crate::internal::queue::SendPriority;
 use crate::internal::util::from_address_token;
 use crate::protocol::util::Magic;
+use crate::rak_debug;
 use crate::{connection::Connection, server::RakEvent};
 
 use super::offline::{IncompatibleProtocolVersion, OpenConnectReply, SessionInfoReply};
@@ -78,9 +79,10 @@ pub fn handle_offline(connection: &mut Connection, packet: Packet) {
             if pk.mtu_size != connection.mtu {
                 connection.mtu = pk.mtu_size;
                 #[cfg(feature = "dbg")]
-                println!(
+                rak_debug!(
                     "[RakNet] [{}] Recieved two different MTU sizes, setting to {}",
-                    connection.address, connection.mtu
+                    connection.address,
+                    connection.mtu
                 );
             }
 
@@ -96,9 +98,10 @@ pub fn handle_offline(connection: &mut Connection, packet: Packet) {
 
     if let Err(e) = result {
         // we're not going to panic because that would be bad in prod, so we'll just log it.
-        println!(
+        rak_debug!(
             "[RakNet] [{}] Received an offline packet that is not! {:?}",
-            connection.address, e
+            connection.address,
+            e
         );
     };
 }

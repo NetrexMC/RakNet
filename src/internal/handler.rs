@@ -2,9 +2,10 @@ use binary_utils::*;
 use std::{
     collections::{HashMap, HashSet},
     fmt,
+    io::Write,
 };
 
-use crate::{connection::Connection, internal::queue::SendPriority};
+use crate::connection::Connection;
 
 use super::{
     ack::{Ack, Record},
@@ -71,6 +72,8 @@ pub struct RakConnHandlerMeta {
     pub message_index: u32,
     /// The last sent sequence number.
     pub ack_order_index: u32,
+    /// The fragment id to be used next.
+    pub fragment_ids: HashSet<u16>,
 }
 
 impl RakConnHandlerMeta {
@@ -85,6 +88,7 @@ impl RakConnHandlerMeta {
             order_index: 0,
             message_index: 0,
             ack_order_index: 0,
+            fragment_ids: HashSet::new(),
         }
     }
 
@@ -106,6 +110,16 @@ impl RakConnHandlerMeta {
     pub fn next_order_ack_index(&mut self) -> u32 {
         self.ack_order_index += 1;
         self.ack_order_index
+    }
+
+    pub fn next_fragment_id(&mut self) -> u16 {
+        let next = self.fragment_ids.len() as u16;
+        self.fragment_ids.insert(next);
+        next
+    }
+
+    pub fn free_fragment_id(&mut self, id: u16) {
+        self.fragment_ids.remove(&id);
     }
 }
 
@@ -211,10 +225,16 @@ impl RakConnHandler {
     }
 
     fn handle_frame(connection: &mut Connection, payload: &[u8]) -> Result<(), RakHandlerError> {
-        let frame = FramePacket::compose(&payload, &mut 0)?;
+        let frame_packet = FramePacket::compose(&payload, &mut 0)?;
 
         // let's handle each individual frame of the packet
-        for frame in frame.frames {
+        for frame in frame_packet.frames {
+            if frame.reliability.is_reliable() {
+                connection
+                    .rakhandler
+                    .ack_counts
+                    .insert(frame_packet.sequence);
+            }
             if frame.is_fragmented() {
                 // The fragmented frame meta data.
                 let meta = frame.fragment_meta.as_ref().unwrap();
@@ -227,6 +247,11 @@ impl RakConnHandler {
 
                 // We need to check if we have all the parts of the frame.
                 // If we do, we'll reassemble the frame.
+                if parts.len() != meta.size as usize {
+                    // We don't have all the parts, lets add this part to the list.
+                    parts.insert(meta.index, frame.clone());
+                }
+
                 if parts.len() == meta.size as usize {
                     // We have all the fragments, we can reassemble the frame.
                     // Sense we need to order this by their index, we need to sort the parts.
@@ -236,7 +261,7 @@ impl RakConnHandler {
                     // our parts are now sorted, we can now reassemble the frame.
                     let mut buffer = Vec::new();
                     for (_, frm) in parts {
-                        buffer.extend_from_slice(&frm.body);
+                        buffer.write_all(&frm.body).unwrap();
                     }
 
                     // This is now an online packet! we can handle it.
@@ -245,11 +270,7 @@ impl RakConnHandler {
                     fake_frame.body = buffer;
                     fake_frame.fragment_meta = None;
 
-                    Self::handle_entire_frame(connection, frame.clone())?;
-                } else {
-                    // We don't have all the parts, lets add this part to the list.
-                    parts.insert(meta.index, frame.clone());
-                    println!("Adding part {} of {}", meta.index, meta.size);
+                    Self::handle_entire_frame(connection, fake_frame.clone())?;
                 }
             } else {
                 Self::handle_entire_frame(connection, frame.clone())?;
@@ -264,22 +285,27 @@ impl RakConnHandler {
         frame: Frame,
     ) -> Result<(), RakHandlerError> {
         if frame.is_sequenced() || frame.reliability.is_reliable() {
-            // todo the frame is sequenced and reliable, we can handle it.
-            // todo remove this hack and actually handle the sequence!
-            Self::handle_packet(connection, frame.body)?;
-        } else if frame.reliability.is_ordered() {
-            // todo: Actually handle order
-            let id = frame.order_index.unwrap();
-            let success = connection
-                .rakhandler
-                .ordered_channels
-                .insert(frame.body.clone(), id);
-            if success {
-                Self::handle_packet(connection, frame.body)?;
+            if frame.reliability.is_ordered() {
+                // todo: Actually handle order
+                let id = frame.order_index.unwrap();
+                let success = connection
+                    .rakhandler
+                    .ordered_channels
+                    .insert(frame.body.clone(), id);
+                if success {
+                    Self::handle_packet(connection, frame.body)?;
+                } else {
+                    // this is an old or duplicated packet!
+                    #[cfg(feature = "debug")]
+                    rak_debug!("Duplicate packet! {:?}", frame);
+                }
             } else {
-                // this is an old or duplicated packet!
-                println!("Duplicate packet! {:?}", frame);
+                // todo the frame is sequenced and reliable, we can handle it.
+                // todo remove this hack and actually handle the sequence!
+                Self::handle_packet(connection, frame.body)?;
             }
+        } else {
+            Self::handle_packet(connection, frame.body)?;
         }
 
         Ok(())
@@ -326,27 +352,6 @@ impl RakConnHandler {
         Ok(frame_packet)
     }
 
-    pub fn create_ack_frame(
-        connection: &mut Connection,
-        ack: Ack,
-    ) -> Result<FramePacket, RakHandlerError> {
-        // update sequence.
-        let mut frame_packet = FramePacket {
-            sequence: connection.rakhandler.next_seq(),
-            frames: Vec::new(),
-            byte_length: 0,
-        };
-
-        let mut frame = Frame::init();
-        frame.reliability = Reliability::ReliableOrdAck;
-        frame.order_channel = Some(1);
-        frame.order_index = Some(0);
-        frame.body = ack.parse()?;
-
-        frame_packet.frames.push(frame);
-        Ok(frame_packet)
-    }
-
     /// This function will send all the frames given to the client without exceeding the MTU size!
     fn send_frames(connection: &mut Connection, mut frames: Vec<Frame>, ack: bool) {
         // this will send each frame in it's own packet. if it's a fragmented.
@@ -354,6 +359,10 @@ impl RakConnHandler {
         if frames.len() == 0 {
             return;
         }
+
+        // get the frames that are free now.
+        let mut sent: HashMap<u16, (u32, Vec<u32>)> = HashMap::new();
+        let mut free: Vec<u16> = Vec::new();
 
         let mut outbound = FramePacket::new();
         outbound.sequence = connection.rakhandler.next_seq();
@@ -371,6 +380,20 @@ impl RakConnHandler {
                 frame.order_index = Some(connection.rakhandler.next_order_index());
             }
 
+            if frame.is_fragmented() {
+                if let Some(meta) = frame.fragment_meta.clone() {
+                    // we need to free this fragment id if we've sent all the parts.
+                    let parts = sent.entry(meta.id).or_insert((meta.size, Vec::new()));
+                    parts.1.push(meta.index);
+
+                    if parts.1.len() == parts.0 as usize {
+                        // we've sent all the parts, we can free this id.
+                        sent.remove(&meta.id);
+                        free.push(meta.id);
+                    }
+                }
+            }
+
             if frame.fparse().len() + outbound.byte_length > (connection.mtu - 60).into() {
                 // we need to send this packet.
                 connection.send_immediate(outbound.fparse());
@@ -383,6 +406,16 @@ impl RakConnHandler {
 
         // send the last packet.
         connection.send_immediate(outbound.fparse());
+
+        for id in free {
+            connection.rakhandler.free_fragment_id(id);
+        }
+    }
+
+    /// This is an instant send, this will send the packet to the client immediately.
+    pub fn send_as_framed(connection: &mut Connection, payload: Vec<u8>) {
+        let frames = FramePacket::partition(payload, connection.rakhandler.next_fragment_id(), (connection.mtu - 60).into());
+        Self::send_frames(connection, frames, false);
     }
 
     pub fn tick(connection: &mut Connection) {
@@ -413,7 +446,8 @@ impl RakConnHandler {
         if missing.len() != 0 {
             let nack = Ack::from_missing(missing);
 
-            println!("NACK: {:#?}", nack);
+            #[cfg(feature = "debug")]
+            rak_debug!("NACK: {:#?}", nack);
 
             connection.send(nack.fparse(), true);
         }

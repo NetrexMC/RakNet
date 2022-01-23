@@ -1,4 +1,6 @@
 pub mod fragment;
+
+#[allow(dead_code)]
 pub mod reliability;
 
 use std::io::{Cursor, Write};
@@ -34,12 +36,6 @@ impl FramePacket {
             frames: Vec::new(),
             byte_length: 0,
         }
-    }
-
-    /// Adds a frame to the frame packet.
-    pub fn add_frame(&mut self, frame: Frame, len: usize) {
-        self.frames.push(frame);
-        self.byte_length += len;
     }
 
     /// Paritions a stream into a bunch of fragments and returns a frame packet

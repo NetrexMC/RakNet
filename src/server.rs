@@ -11,9 +11,11 @@ use tokio::time::sleep;
 
 use crate::connection::state::ConnectionState;
 use crate::connection::Connection;
+use crate::internal::queue::SendPriority;
 use crate::internal::util::from_address_token;
 use crate::internal::util::to_address_token;
 use crate::protocol::mcpe::motd::Motd;
+use crate::rak_debug;
 
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
 #[repr(u8)]
@@ -190,7 +192,7 @@ pub async fn start<'a>(
                     {
                         continue;
                     } else {
-                        println!("Failed to send immediate packet.");
+                        rak_debug!("Failed to send immediate packet.");
                     }
                 }
             }
@@ -202,7 +204,11 @@ pub async fn start<'a>(
                     let mut clients = task_server.connections.write().unwrap();
                     if clients.contains_key(&address) {
                         let client = clients.get_mut(&address).unwrap();
-                        client.send(buf, instant);
+                        client.send_stream(buf, if instant {
+                            SendPriority::Immediate
+                        } else {
+                            SendPriority::Normal
+                        });
                         drop(client);
                         drop(clients);
                     } else {
@@ -224,7 +230,7 @@ pub async fn start<'a>(
                     let data = &buf[..len];
                     let address_token = to_address_token(addr);
 
-                    // // println!("[RakNet] [{}] Received packet: Packet(ID={:#04x})", addr, &data[0]);
+                    // // rak_debug!("[RakNet] [{}] Received packet: Packet(ID={:#04x})", addr, &data[0]);
 
                     if let Ok(mut clients) = server.connections.write() {
                         if let Some(c) = clients.get_mut(&address_token) {
@@ -250,7 +256,7 @@ pub async fn start<'a>(
                     }
                 } else {
                     // log error in future!
-                    // println!("[RakNet] Unknown error decoding packet!");
+                    // rak_debug!("[RakNet] Unknown error decoding packet!");
                     continue;
                 }
             }
@@ -274,7 +280,7 @@ pub async fn start<'a>(
 
                 // emit events if there is a listener for the
                 for event in dispatch.iter() {
-                    // // println!("DEBUG => Dispatching: {:?}", &event.get_name());
+                    // // rak_debug!("DEBUG => Dispatching: {:?}", &event.get_name());
                     if let Some(result) = send_channel.send(event.clone()) {
                         match result {
                             RakResult::Motd(v) => {
@@ -312,20 +318,24 @@ pub async fn start<'a>(
                         .await
                     {
                         // Add proper handling!
-                        Err(e) => println!("[RakNet] [{}] Error sending packet: {}", addr, e),
+                        Err(e) => rak_debug!("[RakNet] [{}] Error sending packet: {}", addr, e),
                         Ok(_) => {
                             if client.state.is_connected() {
                                 if cfg!(any(test, feature = "dbg-verbose")) {
-                                    println!("[ONLINE PACKET] [{}] Sent packet: {:?}\n", addr, &pk);
+                                    rak_debug!(
+                                        "[ONLINE PACKET] [{}] Sent packet: {:?}\n",
+                                        addr,
+                                        &pk
+                                    );
                                 } else {
-                                    println!(
+                                    rak_debug!(
                                         "[ONLINE PACKET] [{}] Sent packet: {}",
                                         addr,
                                         *pk.get(0).unwrap_or(&0)
                                     );
                                 }
                             } else {
-                                println!(
+                                rak_debug!(
                                     "[OFFLINE] [{}] Sent packet: {}",
                                     addr,
                                     *pk.get(0).unwrap_or(&0)
