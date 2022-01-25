@@ -204,11 +204,14 @@ pub async fn start<'a>(
                     let mut clients = task_server.connections.write().unwrap();
                     if clients.contains_key(&address) {
                         let client = clients.get_mut(&address).unwrap();
-                        client.send_stream(buf, if instant {
-                            SendPriority::Immediate
-                        } else {
-                            SendPriority::Normal
-                        });
+                        client.send_stream(
+                            buf,
+                            if instant {
+                                SendPriority::Immediate
+                            } else {
+                                SendPriority::Normal
+                            },
+                        );
                         drop(client);
                         drop(clients);
                     } else {

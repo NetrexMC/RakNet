@@ -17,7 +17,7 @@ pub enum Reliability {
 
 impl Reliability {
     pub fn from_flags(flags: u8) -> Self {
-        match (flags & 244) >> 5 {
+        match (flags & 224) >> 5 {
             0 => Reliability::Unreliable,
             1 => Reliability::UnreliableSeq,
             2 => Reliability::Reliable,
@@ -33,14 +33,14 @@ impl Reliability {
 
     pub fn to_flags(&self) -> u8 {
         match self {
-            Reliability::Unreliable => 0,
-            Reliability::UnreliableSeq => 1,
-            Reliability::Reliable => 2,
-            Reliability::ReliableOrd => 3,
-            Reliability::ReliableSeq => 4,
-            Reliability::UnreliableAck => 5,
-            Reliability::ReliableAck => 6,
-            Reliability::ReliableOrdAck => 7,
+            Reliability::Unreliable => 0 << 5,
+            Reliability::UnreliableSeq => 1 << 5,
+            Reliability::Reliable => 2 << 5,
+            Reliability::ReliableOrd => 3 << 5,
+            Reliability::ReliableSeq => 4 << 5,
+            Reliability::UnreliableAck => 5 << 5,
+            Reliability::ReliableAck => 6 << 5,
+            Reliability::ReliableOrdAck => 7 << 5,
         }
     }
 

@@ -164,6 +164,7 @@ impl RakConnHandler {
                                     .clone();
                                 connection.send(buffer, true);
                                 connection.rakhandler.ack.remove(&rec.sequence);
+                                connection.rakhandler.ack_counts.remove(&rec.sequence);
                             }
                             // We don't have this record, but there's nothing we can do about it.
                             return Ok(());
@@ -197,7 +198,6 @@ impl RakConnHandler {
                     match record {
                         Record::Single(rec) => {
                             // we're looking for a single record.
-                            connection.rakhandler.ack.remove(&rec.sequence);
                             connection.rakhandler.nack.remove(&rec.sequence);
                             // connection.rakhandler.ack_counts.remove(&rec.sequence);
                         }
@@ -207,7 +207,6 @@ impl RakConnHandler {
                             // we need to check if we have any of the records in the range.
                             // we'll check the ack map for each record in the range.
                             for i in rec.start..rec.end {
-                                connection.rakhandler.ack.remove(&i);
                                 connection.rakhandler.nack.remove(&i);
                                 // connection.rakhandler.ack_counts.remove(&i);
                             }
@@ -414,8 +413,18 @@ impl RakConnHandler {
 
     /// This is an instant send, this will send the packet to the client immediately.
     pub fn send_as_framed(connection: &mut Connection, payload: Vec<u8>) {
-        let frames = FramePacket::partition(payload, connection.rakhandler.next_fragment_id(), (connection.mtu - 60).into());
-        Self::send_frames(connection, frames, false);
+        if payload.len() < 60 || (payload.len() - 60) < connection.mtu.into() {
+            let mut frame = Frame::init();
+            frame.body = payload;
+            Self::send_frames(connection, vec![frame], false);
+        } else {
+            let frames = FramePacket::partition(
+                payload,
+                connection.rakhandler.next_fragment_id(),
+                (connection.mtu - 60).into(),
+            );
+            Self::send_frames(connection, frames, false);
+        }
     }
 
     pub fn tick(connection: &mut Connection) {
@@ -438,24 +447,30 @@ impl RakConnHandler {
             Self::send_frames(connection, frames, false);
         }
 
-        // send the acks to the client that we got some packets
+        if connection.state.is_connected() {
+            // send the acks to the client that we got some packets
 
-        // // get missing packets and request them.
-        let missing = connection.rakhandler.ordered_channels.flush_missing();
+            // // get missing packets and request them.
+            let missing = connection.rakhandler.ordered_channels.flush_missing();
 
-        if missing.len() != 0 {
-            let nack = Ack::from_missing(missing);
+            if missing.len() != 0 {
+                let nack = Ack::from_missing(missing);
 
-            #[cfg(feature = "debug")]
-            rak_debug!("NACK: {:#?}", nack);
+                #[cfg(feature = "debug")]
+                rak_debug!("NACK: {:#?}", nack);
 
-            connection.send(nack.fparse(), true);
+                connection.send(nack.fparse(), true);
+            }
+
+            let mut ack = Ack::new(connection.rakhandler.ack_counts.len() as u16, false);
+            for id in connection.rakhandler.ack_counts.iter() {
+                ack.push_record(*id);
+            }
+
+            if ack.records.len() != 0 {
+                connection.rakhandler.ack_counts.clear();
+                connection.send(ack.fparse(), true);
+            }
         }
-
-        let mut ack = Ack::new(connection.rakhandler.ack_counts.len() as u16, false);
-        for id in connection.rakhandler.ack_counts.iter() {
-            ack.push_record(*id);
-        }
-        connection.send(ack.fparse(), true);
     }
 }
