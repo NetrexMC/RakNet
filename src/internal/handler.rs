@@ -367,16 +367,18 @@ impl RakConnHandler {
         outbound.sequence = connection.rakhandler.next_seq();
 
         for frame in frames.iter_mut() {
+            // todo: FIX ReliableOrdered
+            frame.reliability = Reliability::Unreliable;
             if ack {
-                frame.reliability = Reliability::ReliableOrdAck;
-                frame.reliable_index = Some(connection.rakhandler.next_message_index());
-                frame.order_channel = Some(1);
-                frame.order_index = Some(connection.rakhandler.next_order_ack_index());
+                // frame.reliability = Reliability::ReliableOrdAck;
+                // frame.reliable_index = Some(connection.rakhandler.next_message_index());
+                // frame.order_channel = Some(1);
+                // frame.order_index = Some(connection.rakhandler.next_order_ack_index());
             } else {
-                frame.reliability = Reliability::ReliableOrd;
-                frame.reliable_index = Some(connection.rakhandler.next_message_index());
-                frame.order_channel = Some(0);
-                frame.order_index = Some(connection.rakhandler.next_order_index());
+                // frame.reliability = Reliability::ReliableOrd;
+                // frame.reliable_index = Some(connection.rakhandler.next_message_index());
+                // frame.order_channel = Some(0);
+                // frame.order_index = Some(connection.rakhandler.next_order_index());
             }
 
             if frame.is_fragmented() {
