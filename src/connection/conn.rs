@@ -3,6 +3,7 @@ use std::{collections::VecDeque, sync::Arc, time::SystemTime};
 
 use crate::{
     internal::{
+        frame::reliability::Reliability,
         queue::{Queue, SendPriority},
         RakConnHandler, RakConnHandlerMeta,
     },
@@ -90,6 +91,13 @@ impl Connection {
         }
     }
 
+    /// Get the maximum allowed size of a entire frame packet.
+    /// This is the MTU - the size of all possible raknet headers,
+    /// so: `40 (Datagram Protocol) + 20 (Raknet)`
+    pub fn max_frame_size(&self) -> usize {
+        self.mtu as usize - 60
+    }
+
     /// Adds the given stream to the connection's queue by priority.
     /// If instant is set to "true" the packet will be sent immediately.
     pub fn send(&mut self, stream: Vec<u8>, instant: bool) {
@@ -106,7 +114,7 @@ impl Connection {
     /// Packets here will be batched together and sent in frames.
     pub fn send_stream(&mut self, stream: Vec<u8>, priority: SendPriority) {
         if priority == SendPriority::Immediate {
-            RakConnHandler::send_as_framed(self, stream);
+            RakConnHandler::send_framed(self, stream, Reliability::ReliableOrd);
         } else {
             self.queue.push(stream, priority);
         }
@@ -132,8 +140,7 @@ impl Connection {
     pub fn send_frame(&mut self, stream: Vec<u8>, priority: SendPriority) {
         if priority == SendPriority::Immediate {
             // we need to batch this frame immediately.
-            let frame = RakConnHandler::create_frame(self, stream).unwrap();
-            self.send_immediate(frame.fparse());
+            RakConnHandler::send_framed(self, stream, Reliability::ReliableOrd);
         } else {
             // we need to batch this frame.
             self.queue.push(stream, priority);
@@ -257,14 +264,14 @@ impl Connection {
         if self.state.is_reliable() {
             // we need to update the state of the connection.
             // check whether or not we're becoming un-reliable.
-            if self.recv_time.elapsed().unwrap().as_secs() > 5 {
+            if self.recv_time.elapsed().unwrap().as_secs() > 8 {
                 // we're becoming un-reliable.
                 self.state = ConnectionState::TimingOut;
             }
             // tick the rakhandler
             RakConnHandler::tick(self);
         } else {
-            if self.recv_time.elapsed().unwrap().as_secs() >= 10 {
+            if self.recv_time.elapsed().unwrap().as_secs() >= 15 {
                 // we're not reliable anymore.
                 self.state = ConnectionState::Disconnected;
                 self.disconnect("Timed Out", true);

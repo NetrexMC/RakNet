@@ -1,4 +1,6 @@
-#[derive(Clone, Debug)]
+pub mod cache;
+
+#[derive(Clone, Debug, Copy)]
 #[repr(u8)]
 pub enum Reliability {
     /// Unreliable (with no ack)
@@ -47,9 +49,7 @@ impl Reliability {
     /// Whether or not the packet is ordered.
     pub fn is_ordered(&self) -> bool {
         match self {
-            Self::UnreliableSeq | Self::ReliableOrd | Self::ReliableSeq | Self::ReliableOrdAck => {
-                true
-            }
+            Self::UnreliableSeq | Self::ReliableOrd | Self::ReliableOrdAck => true,
             _ => false,
         }
     }
@@ -74,6 +74,15 @@ impl Reliability {
     pub fn is_sequenced(&self) -> bool {
         match self {
             Self::UnreliableSeq | Self::ReliableSeq => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_sequenced_or_ordered(&self) -> bool {
+        match self {
+            Self::UnreliableSeq | Self::ReliableSeq | Self::ReliableOrd | Self::ReliableOrdAck => {
+                true
+            }
             _ => false,
         }
     }

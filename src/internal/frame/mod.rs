@@ -25,6 +25,9 @@ pub struct FramePacket {
     pub frames: Vec<Frame>,
 
     /// This is internal use only.
+    pub(crate) reliability: Reliability,
+
+    /// This is internal use only.
     pub(crate) byte_length: usize,
 }
 
@@ -34,6 +37,7 @@ impl FramePacket {
         Self {
             sequence: 0,
             frames: Vec::new(),
+            reliability: Reliability::ReliableOrd,
             byte_length: 0,
         }
     }
@@ -98,6 +102,7 @@ impl Streamable for FramePacket {
         loop {
             if stream.position() > source.len() as u64 {
                 return Ok(FramePacket {
+                    reliability: Reliability::ReliableOrd,
                     sequence,
                     frames,
                     byte_length: 0,
@@ -106,6 +111,7 @@ impl Streamable for FramePacket {
 
             if stream.position() == source.len() as u64 {
                 break Ok(FramePacket {
+                    reliability: Reliability::ReliableOrd,
                     sequence,
                     frames,
                     byte_length: 0,
@@ -232,7 +238,7 @@ impl Streamable for Frame {
 
         // check whether or not this frame is ordered, if it is, read the order index
         // and order channel
-        if frame.reliability.is_ordered() {
+        if frame.reliability.is_sequenced_or_ordered() {
             frame.order_index = Some(stream.read_u24::<LittleEndian>()?);
             frame.order_channel = Some(stream.read_u8()?);
         }
@@ -285,7 +291,7 @@ impl Streamable for Frame {
 
         // check whether or not this frame is ordered, if it is, write the order index
         // and order channel
-        if self.reliability.is_ordered() {
+        if self.reliability.is_sequenced_or_ordered() {
             stream.write_u24::<LittleEndian>(self.order_index.unwrap())?;
             stream.write_u8(self.order_channel.unwrap())?;
         }

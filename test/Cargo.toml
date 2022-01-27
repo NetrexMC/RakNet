@@ -6,6 +6,6 @@ edition = "2021"
 private = true
 
 [dependencies]
-rakrs = { path = "../", features = ["mcpe", "dbg"] }
+rakrs = { path = "../", features = ["mcpe", "debug"] }
 tokio = { version = "1.15.0", features = ["full"] }
 netrex_events = { git = "https://github.com/NetrexMC/Events", branch = "master" }
