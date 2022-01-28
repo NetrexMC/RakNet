@@ -1,6 +1,6 @@
 [package]
 name = "rakrs"
-version = "1.0.0"
+version = "0.3.0-rc.1"
 authors = ["Bavfalcon9 <olybear9@gmail.com>"]
 edition = "2021"
 
