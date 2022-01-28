@@ -1,4 +1,4 @@
-use rakrs::{server::start, protocol::mcpe::motd::Motd};
+use rakrs::{protocol::mcpe::motd::Motd, server::start};
 
 #[test]
 fn run_test() {
