@@ -210,7 +210,7 @@ impl Streamable for Payload {
 }
 
 /// This allows implemenation for:
-/// ```rust no_run
+/// ```rust ignore
 /// use raknet::packet::Packet;
 /// use raknet::packet::online::OnlinePacket;
 /// let online: OnlinePacket = Packet::compose(source, position)?;
@@ -225,7 +225,7 @@ impl From<Packet> for OnlinePacket {
 }
 
 /// This allows implemenation for:
-/// ```rust no_run
+/// ```rust ignore
 /// use raknet::packet::Packet;
 /// use raknet::packet::offline::OfflinePacket;
 /// let offline: OfflinePacket = Packet::compose(source, position)?;
@@ -241,7 +241,7 @@ impl From<Packet> for OfflinePacket {
 
 /// This implementation allows for conversion of a OnlinePacket to a payload.
 /// This isn't really used externally, but rather internally within the `Packet` struct.
-/// ```rust no_run
+/// ```rust ignore
 /// use raknet::packet::Packet;
 /// use raknet::packet::online::OnlinePacket;
 /// let payload: Payload = OnlinePacket(_).into();
@@ -254,7 +254,7 @@ impl From<OnlinePacket> for Payload {
 
 /// This implementation allows for conversion of a OfflinePacket to a payload.
 /// This isn't really used externally, but rather internally within the `Packet` struct.
-/// ```rust no_run
+/// ```rust ignore
 /// use raknet::packet::Packet;
 /// use raknet::packet::offline::OfflinePacket;
 /// let payload: Payload = OfflinePacket(_).into();
@@ -284,7 +284,7 @@ macro_rules! packet_id {
 ///
 /// For example, we want unconnected pong to be unwrapped, we can do this without
 /// a match statement like this:
-/// ```rust no_run
+/// ```rust ignore
 /// use raknet::packet::Packet;
 /// use raknet::packet::online::OnlinePacket;
 /// use raknet::packet::online::UnconnectedPing;
@@ -294,7 +294,7 @@ macro_rules! packet_id {
 ///
 /// This macro also allows for converting any `OnlinePacket(Pk)` to a `Packet`, where `Pk` can
 /// be directly converted into a packet. For example:
-/// ```rust no_run
+/// ```rust ignore
 /// use raknet::packet::Packet;
 /// use raknet::packet::online::OnlinePacket;
 /// use raknet::packet::online::UnconnectedPong;
