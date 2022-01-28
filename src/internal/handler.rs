@@ -547,7 +547,3 @@ impl RakConnHandler {
         }
     }
 }
-
-fn count_frame_body_total(frames: Vec<Frame>) -> usize {
-    frames.iter().fold(0, |acc, frame| acc + frame.body.len())
-}
