@@ -1,11 +1,3 @@
-use crate::conn::Connection;
-use crate::conn::ConnectionState;
-use crate::from_tokenized;
-use crate::offline::log_offline;
-use crate::online::log_online;
-use crate::online::OnlinePackets;
-use crate::tokenize_addr;
-use crate::Motd;
 use futures::Future;
 use netrex_events::Channel;
 use std::collections::HashMap;
@@ -17,16 +9,24 @@ use std::time::SystemTime;
 use tokio::net::UdpSocket;
 use tokio::time::sleep;
 
+use crate::connection::state::ConnectionState;
+use crate::connection::Connection;
+use crate::internal::queue::SendPriority;
+use crate::internal::util::from_address_token;
+use crate::internal::util::to_address_token;
+use crate::protocol::mcpe::motd::Motd;
+use crate::rak_debug;
+
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
+#[repr(u8)]
 pub enum RakNetVersion {
-    MinecraftRecent,
-    V10,
-    V6,
+    V10 = 10,
+    V6 = 6,
 }
 
 impl RakNetVersion {
     pub fn to_u8(&self) -> u8 {
         match self {
-            RakNetVersion::MinecraftRecent => 10,
             RakNetVersion::V10 => 10,
             RakNetVersion::V6 => 6,
         }
@@ -123,7 +123,7 @@ impl RakNetServer {
     pub fn new(address: String) -> Self {
         Self {
             address,
-            version: RakNetVersion::MinecraftRecent,
+            version: RakNetVersion::V10,
             connections: Arc::new(RwLock::new(HashMap::new())),
             start_time: SystemTime::now(),
             server_guid: rand::random::<u64>(),
@@ -140,9 +140,19 @@ pub async fn start<'a>(
     Arc<RakNetServer>,
     tokio::sync::mpsc::Sender<(String, Vec<u8>, bool)>,
 ) {
+    // The actual server reference.
     let server = Arc::new(s);
+    // The reference to the server for the sending thread.
+    // This thread is responsible for ticking the client and
+    // dispatching client events every tick.
     let send_server = server.clone();
+    // The reference to the server for the for sending packets.
+    // This is the task that is used to send packets to the clients
+    // from the api. This mspc channel is return to the user.
     let task_server = send_server.clone();
+    // The reference to the server for returning the raknet server.
+    // While the sender should already have this, the server does become
+    // owned and pushed out of scope after execution.
     let ret_server = send_server.clone();
     let sock = UdpSocket::bind(
         server
@@ -153,29 +163,67 @@ pub async fn start<'a>(
     .await
     .unwrap();
     let port = server.address.parse::<SocketAddr>().unwrap().port();
+    // The socket of the server for sending packets (ticking client thread).
     let send_sock = Arc::new(sock);
+    // The socket for the recieving thread.
     let socket = send_sock.clone();
+    // The socket for the internal server sending thread.
+    let send_sock_internal = send_sock.clone();
+    // The time we're going to say raknet actually started.
     let start_time = server.start_time.clone();
+    // The id of the server
     let server_id = server.server_guid.clone();
+    // The server of the server
+    let version = server.version.clone();
+    // The channels being used to send packets to the client (externally).
     let (send, mut recv) = tokio::sync::mpsc::channel::<(String, Vec<u8>, bool)>(2048);
-    // println!("Server GUID: {}", server_id);
+    // The internal channels being used to dispatch packets with `connection.send`.
+    let (im_send, mut im_recv) = tokio::sync::mpsc::channel::<(String, Vec<u8>)>(2048);
+
     let tasks = async move {
+        // This task is solely responsible for internal immediate sending.
+        // Nothing else, this is not used externally, nor should it be.
+        tokio::spawn(async move {
+            loop {
+                if let Some(data) = im_recv.recv().await {
+                    if let Ok(_) = send_sock_internal
+                        .send_to(&data.1, from_address_token(data.0))
+                        .await
+                    {
+                        continue;
+                    } else {
+                        rak_debug!("Failed to send immediate packet.");
+                    }
+                }
+            }
+        });
+
         tokio::spawn(async move {
             loop {
                 if let Some((address, buf, instant)) = recv.recv().await {
                     let mut clients = task_server.connections.write().unwrap();
                     if clients.contains_key(&address) {
                         let client = clients.get_mut(&address).unwrap();
-                        client.send(buf, instant);
+                        client.send_stream(
+                            buf,
+                            if instant {
+                                SendPriority::Immediate
+                            } else {
+                                SendPriority::Normal
+                            },
+                        );
                         drop(client);
                         drop(clients);
                     } else {
+                        println!("ERR: Client not found: {}", address);
                         drop(clients);
                     }
                 }
             }
         });
+
         tokio::spawn(async move {
+            let internal_send = Arc::new(im_send);
             loop {
                 if let Err(_) = socket.readable().await {
                     continue;
@@ -184,9 +232,9 @@ pub async fn start<'a>(
                 let mut buf = [0; 2048];
                 if let Ok((len, addr)) = socket.recv_from(&mut buf).await {
                     let data = &buf[..len];
-                    let address_token = tokenize_addr(addr);
+                    let address_token = to_address_token(addr);
 
-                    // // println!("[RakNet] [{}] Received packet: Packet(ID={:#04x})", addr, &data[0]);
+                    // // rak_debug!("[RakNet] [{}] Received packet: Packet(ID={:#04x})", addr, &data[0]);
 
                     if let Ok(mut clients) = server.connections.write() {
                         if let Some(c) = clients.get_mut(&address_token) {
@@ -195,8 +243,14 @@ pub async fn start<'a>(
                             // add the client!
                             // we need to add cooldown here eventually.
                             if !clients.contains_key(&address_token) {
-                                let mut c =
-                                    Connection::new(addr, start_time, server_id, port.to_string());
+                                let mut c = Connection::new(
+                                    address_token.clone(),
+                                    internal_send.clone(),
+                                    start_time,
+                                    server_id,
+                                    port.to_string(),
+                                    version.clone(),
+                                );
                                 c.recv(&data.to_vec());
                                 clients.insert(address_token, c);
                             } else {
@@ -206,11 +260,12 @@ pub async fn start<'a>(
                     }
                 } else {
                     // log error in future!
-                    // println!("[RakNet] Unknown error decoding packet!");
+                    // rak_debug!("[RakNet] Unknown error decoding packet!");
                     continue;
                 }
             }
         });
+
         while !&send_server.stop {
             if let Err(_) = send_sock.writable().await {
                 continue;
@@ -222,16 +277,14 @@ pub async fn start<'a>(
             let mut clients = send_server.connections.write().unwrap();
             for (addr, _) in clients.clone().iter() {
                 let client = clients.get_mut(addr).expect("Could not get connection");
-                client.do_tick();
+                client.tick();
 
                 let dispatch = client.event_dispatch.clone();
                 client.event_dispatch.clear();
 
-                let mut force_disconnect = false;
-
                 // emit events if there is a listener for the
                 for event in dispatch.iter() {
-                    // // println!("DEBUG => Dispatching: {:?}", &event.get_name());
+                    // // rak_debug!("DEBUG => Dispatching: {:?}", &event.get_name());
                     if let Some(result) = send_channel.send(event.clone()) {
                         match result {
                             RakResult::Motd(v) => {
@@ -243,51 +296,58 @@ pub async fn start<'a>(
                             }
                             RakResult::Disconnect(_) => {
                                 client.state = ConnectionState::Offline; // simple hack
-                                force_disconnect = true;
                                 break;
                             }
                         }
                     }
                 }
 
-                if client.state == ConnectionState::Offline || force_disconnect {
+                // Forcefully remove the client if they are offline.
+                // This is after the packet sending because we may want to send packets if
+                // the disconnect notification is server sided.
+                if client.is_disconnected() {
                     clients.remove(addr);
                     continue;
                 }
 
-                if client.send_queue.len() == 0 {
+                if client.queue.clone().len() == 0 {
                     continue;
                 }
 
-                for pk in client.clone().send_queue.into_iter() {
+                let packets = client.queue.flush();
+
+                for pk in packets.into_iter() {
                     match send_sock
-                        .send_to(&pk[..], &from_tokenized(addr.clone()))
+                        .send_to(&pk[..], &from_address_token(addr.clone()))
                         .await
                     {
                         // Add proper handling!
-                        Err(e) => println!("[RakNet] [{}] Error sending packet: {}", addr, e),
+                        Err(e) => rak_debug!("[RakNet] [{}] Error sending packet: {}", addr, e),
                         Ok(_) => {
                             if client.state.is_connected() {
                                 if cfg!(any(test, feature = "dbg-verbose")) {
-                                    log_online(format!("[{}] Sent packet: {:?}\n", addr, &pk));
-                                } else {
-                                    log_online(format!(
-                                        "[{}] Sent packet: {}",
+                                    rak_debug!(
+                                        "[ONLINE PACKET] [{}] Sent packet: {:?}\n",
                                         addr,
-                                        OnlinePackets::from_byte(*pk.get(0).unwrap_or(&0))
-                                    ));
+                                        &pk
+                                    );
+                                } else {
+                                    rak_debug!(
+                                        "[ONLINE PACKET] [{}] Sent packet: {}",
+                                        addr,
+                                        *pk.get(0).unwrap_or(&0)
+                                    );
                                 }
                             } else {
-                                log_offline(format!(
-                                    "[{}] Sent packet: {}",
+                                rak_debug!(
+                                    "[OFFLINE] [{}] Sent packet: {}",
                                     addr,
-                                    OnlinePackets::from_byte(*pk.get(0).unwrap_or(&0))
-                                ));
+                                    *pk.get(0).unwrap_or(&0)
+                                );
                             }
                         }
                     }
                 }
-                client.send_queue.clear();
             }
             drop(clients);
         }

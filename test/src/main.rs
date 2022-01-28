@@ -4,9 +4,9 @@ use rakrs::RakNetServer;
 use rakrs::RakResult;
 use tokio::runtime::Runtime;
 
-#[test]
-pub fn test_boot() {
-    let server = RakNetServer::new(String::from("0.0.0.0:19136"));
+#[tokio::main]
+pub async fn main() {
+    let server = RakNetServer::new(String::from("0.0.0.0:19132"));
     let channel = netrex_events::Channel::<RakEvent, RakResult>::new();
     let mut unknown = 0;
     let mut listener = |event, _| {
@@ -21,9 +21,13 @@ pub fn test_boot() {
                 );
             }
             RakEvent::Motd(address, mut motd) => {
-                println!("[RakNet] [{}] Client requested motd: {:?}", address, motd);
-                motd.name = String::from("Bob Ross and painting is my life.");
+                // println!("[RakNet] [{}] Client requested motd: {:?}", address, motd);
+                motd.name = String::from("RakRS v2");
                 return Some(RakResult::Motd(motd));
+            }
+            RakEvent::GamePacket(address, packet) => {
+                println!("[RakNet] [{}] Client sent packet: {:?}", address, packet);
+                return None;
             }
             _ => {
                 unknown += 1;
@@ -34,11 +38,6 @@ pub fn test_boot() {
     };
     channel.receive(&mut listener);
 
-    let rt = Runtime::new().unwrap();
-    let handle = rt.handle();
-    handle.block_on(async move {
-        let v = start(server, channel).await;
-        // share your raknet arc here.
-        v.0.await;
-    });
+    let v = start(server, channel).await;
+    v.0.await;
 }
