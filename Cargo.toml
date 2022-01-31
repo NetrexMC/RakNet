@@ -13,7 +13,7 @@ async_tokio = [ "tokio" ]
 
 [dependencies]
 rand = "0.8.3"
-binary_utils = { git = "https://github.com/NetrexMC/BinaryUtil", branch = "master" }
+binary_utils = { git = "https://github.com/NetrexMC/BinaryUtil", tag = "v0.2.2" }
 netrex_events = { git = "https://github.com/NetrexMC/Events", branch = "master" }
 tokio = { version = "1.15.0", features = ["full"], optional = true }
 byteorder = "1.4.3"
