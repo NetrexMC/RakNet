@@ -1,4 +1,4 @@
-use std::{sync::Arc, net::SocketAddr};
+use std::{net::SocketAddr, sync::Arc};
 
 use tokio::net::UdpSocket;
 
@@ -14,7 +14,5 @@ pub struct Listener {
 }
 
 impl Listener {
-    pub async fn bind(address: SocketAddr) {
-        
-    }
+    pub async fn bind(address: SocketAddr) {}
 }

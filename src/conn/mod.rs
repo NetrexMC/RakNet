@@ -1,6 +1,7 @@
 pub mod queue;
+pub mod state;
 
-use std::{net::SocketAddr, sync::Arc};
+use std::{net::SocketAddr, sync::{Arc, Mutex}};
 
 use tokio::sync::RwLock;
 
@@ -17,4 +18,10 @@ pub struct Conn {
 
     /// The queue used to send packets back to the connection.
     pub(crate) send_queue: Arc<RwLock<SendQueue>>,
+
+    /// The queue used to recieve packets, this is read from by the server.
+    /// This is only used internally.
+    pub(crate) recv_queue: Arc<Mutex<RecvQueue>>,
+
+    pub(crate) state: state::ConnState
 }

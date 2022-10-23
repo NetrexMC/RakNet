@@ -4,7 +4,8 @@ use std::collections::HashMap;
 /// within a reliable window time.
 ///
 /// Usage:
-/// ```rust no_run
+/// ```rust
+/// use rakrs::conn::queue::OrderedQueue;
 /// let mut ord_qu: OrderedQueue<Vec<u8>> = OrderedQueue::new();
 /// // Insert a packet with the id of "1"
 /// ord_qu.insert(vec![0, 1], 1);
@@ -12,8 +13,8 @@ use std::collections::HashMap;
 /// ord_qu.insert(vec![2, 0], 3);
 ///
 /// // Get the packets we still need.
-/// let needed: Vec<u32> = ord.qu.flush_missing();
-/// assert_eq!(needed, vec![2, 4]);
+/// let needed: Vec<u32> = ord_qu.flush_missing();
+/// assert_eq!(needed, vec![0, 2, 4]);
 ///
 /// // We would in theory, request these packets, but we're going to insert them
 /// ord_qu.insert(vec![2, 0, 0, 1], 4);
@@ -21,7 +22,7 @@ use std::collections::HashMap;
 ///
 /// // Now let's return our packets in order.
 /// // Will return a vector of these packets in order by their "id".
-/// let ordered: Vec<Vec<u8>> = ord.qu.flush();
+/// let ordered: Vec<Vec<u8>> = ord_qu.flush();
 /// ```
 #[derive(Debug)]
 pub struct OrderedQueue<T> {
@@ -126,7 +127,6 @@ where
 /// This queue is used to prioritize packets being sent out
 /// Packets that are old, are either dropped or requested again,
 /// you can define this behavior with the `timeout` property.
-/// ! This API replaces `CacheStore<u32, T>` for ack channels
 #[derive(Debug, Clone)]
 pub struct SendQueue {
     /// The amount of time that needs to pass for a packet to be
@@ -141,6 +141,4 @@ pub struct SendQueue {
     /// a packet is sent reliably. We can resend these if they are
     /// Acked.
     send_seq: u32,
-
-    
 }
