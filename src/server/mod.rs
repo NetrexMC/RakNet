@@ -1,11 +1,20 @@
-#[cfg(feature = "async_tokio")]
-mod tokio;
+use std::{sync::Arc, net::SocketAddr};
 
-#[cfg(feature = "async_tokio")]
-pub use self::tokio::*;
+use tokio::net::UdpSocket;
 
-#[cfg(feature = "async_std")]
-mod std;
+pub struct Listener {
+    /// The current socket.
+    sock: Option<Arc<UdpSocket>>,
+    /// Whether or not to use minecraft specific protocol.
+    /// This only effects the `Pong` packet where motd is sent.
+    mcpe: bool,
+    /// If mcpe is true, this is the default MOTD, this is
+    /// the default MOTD to send to the client.
+    motd: String,
+}
 
-#[cfg(feature = "async_std")]
-pub use self::std::*;
+impl Listener {
+    pub async fn bind(address: SocketAddr) {
+        
+    }
+}

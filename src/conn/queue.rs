@@ -1,79 +1,28 @@
 use std::collections::HashMap;
-/// A packet queue, this is used to store packets that are waiting to be sent.
-/// This is internal use for Sessions.
 
-#[derive(Debug, Clone)]
-pub struct Queue<T> {
-    /// Normal priority packet.
-    /// This is the default priority.
-    normal: Vec<T>,
-    /// Lowest priority packet.
-    /// This is the lowest priority.
-    low: Vec<T>,
-    /// Whether or not the queue is frozen.
-    pub frozen: bool,
-}
-
-impl<T> Queue<T> {
-    pub fn new() -> Self {
-        Queue {
-            normal: Vec::new(),
-            low: Vec::new(),
-            frozen: false,
-        }
-    }
-
-    /// Pushes a packet to the queue.
-    /// Note that packets of high priority will be ignored
-    pub fn push(&mut self, packet: T, priority: SendPriority) {
-        if self.frozen {
-            return;
-        }
-        match priority {
-            SendPriority::Normal => self.normal.push(packet),
-            SendPriority::Low => self.low.push(packet),
-            SendPriority::Immediate => return,
-        }
-    }
-
-    pub fn flush_low(&mut self) -> Vec<T> {
-        let mut low = Vec::new();
-        std::mem::swap(&mut low, &mut self.low);
-        low
-    }
-
-    pub fn flush_normal(&mut self) -> Vec<T> {
-        let mut normal = Vec::new();
-        std::mem::swap(&mut normal, &mut self.normal);
-        normal
-    }
-
-    pub fn flush(&mut self) -> Vec<T> {
-        let mut normal = self.flush_normal();
-        let mut low = self.flush_low();
-        normal.append(&mut low);
-        return normal;
-    }
-
-    pub fn len(self) -> usize {
-        self.normal.len() + self.low.len()
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum SendPriority {
-    /// The packet needs to be sent as fast as possible.
-    /// Packets with this priority are sent immediately.
-    Immediate,
-    /// The packet needs to be sent, but is not as important as High priority.
-    /// Packets with this priority will be batched together in frames.
-    /// This is the default priority.
-    Normal,
-    /// The packet being sent does not need to be reliably sent, packets with this priority are sent
-    /// last. (Don't use this for MCPE packets)
-    Low,
-}
-
+/// An ordered queue is used to Index incoming packets over a channel
+/// within a reliable window time.
+///
+/// Usage:
+/// ```rust no_run
+/// let mut ord_qu: OrderedQueue<Vec<u8>> = OrderedQueue::new();
+/// // Insert a packet with the id of "1"
+/// ord_qu.insert(vec![0, 1], 1);
+/// ord_qu.insert(vec![1, 0], 5);
+/// ord_qu.insert(vec![2, 0], 3);
+///
+/// // Get the packets we still need.
+/// let needed: Vec<u32> = ord.qu.flush_missing();
+/// assert_eq!(needed, vec![2, 4]);
+///
+/// // We would in theory, request these packets, but we're going to insert them
+/// ord_qu.insert(vec![2, 0, 0, 1], 4);
+/// ord_qu.insert(vec![1, 0, 0, 2], 2);
+///
+/// // Now let's return our packets in order.
+/// // Will return a vector of these packets in order by their "id".
+/// let ordered: Vec<Vec<u8>> = ord.qu.flush();
+/// ```
 #[derive(Debug)]
 pub struct OrderedQueue<T> {
     /// The queue of packets that are in order. Mapped to the time they were received.
@@ -172,4 +121,26 @@ where
     pub fn get_scope(&self) -> u32 {
         self.scope.1 - self.scope.0
     }
+}
+
+/// This queue is used to prioritize packets being sent out
+/// Packets that are old, are either dropped or requested again,
+/// you can define this behavior with the `timeout` property.
+/// ! This API replaces `CacheStore<u32, T>` for ack channels
+#[derive(Debug, Clone)]
+pub struct SendQueue {
+    /// The amount of time that needs to pass for a packet to be
+    /// dropped or requested again.
+    timeout: u16,
+
+    /// The amount of times we should retry sending a packet before
+    /// dropping it from the queue. This is currently set to `5`.
+    max_tries: u16,
+
+    /// The current sequence number. This is incremented every time
+    /// a packet is sent reliably. We can resend these if they are
+    /// Acked.
+    send_seq: u32,
+
+    
 }
