@@ -5,7 +5,7 @@ use std::{net::SocketAddr, sync::{Arc, Mutex}};
 
 use tokio::sync::RwLock;
 
-use self::queue::SendQueue;
+use self::queue::{SendQueue, RecvQueue};
 
 /// This struct is utilized internally and represented
 /// as per each "connection" or "socket" to the server.

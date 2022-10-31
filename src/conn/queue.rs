@@ -125,8 +125,8 @@ where
 }
 
 /// This queue is used to prioritize packets being sent out
-/// Packets that are old, are either dropped or requested again,
-/// you can define this behavior with the `timeout` property.
+/// Packets that are old, are either dropped or requested again.
+/// You can define this behavior with the `timeout` property.
 #[derive(Debug, Clone)]
 pub struct SendQueue {
     /// The amount of time that needs to pass for a packet to be
@@ -141,4 +141,9 @@ pub struct SendQueue {
     /// a packet is sent reliably. We can resend these if they are
     /// Acked.
     send_seq: u32,
+}
+
+#[derive(Debug, Clone)]
+pub struct RecvQueue {
+    
 }
