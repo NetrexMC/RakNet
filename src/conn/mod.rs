@@ -1,11 +1,14 @@
 pub mod queue;
 pub mod state;
 
-use std::{net::SocketAddr, sync::{Arc, Mutex}};
+use std::{
+    net::SocketAddr,
+    sync::{Arc, Mutex},
+};
 
 use tokio::sync::RwLock;
 
-use self::queue::{SendQueue, RecvQueue};
+use self::queue::{RecvQueue, SendQueue};
 
 /// This struct is utilized internally and represented
 /// as per each "connection" or "socket" to the server.
@@ -23,5 +26,5 @@ pub struct Conn {
     /// This is only used internally.
     pub(crate) recv_queue: Arc<Mutex<RecvQueue>>,
 
-    pub(crate) state: state::ConnState
+    pub(crate) state: state::ConnState,
 }

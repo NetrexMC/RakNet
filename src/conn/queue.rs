@@ -144,6 +144,4 @@ pub struct SendQueue {
 }
 
 #[derive(Debug, Clone)]
-pub struct RecvQueue {
-    
-}
+pub struct RecvQueue {}
