@@ -1,4 +1,103 @@
 use std::collections::HashMap;
+use std::collections::BTreeMap;
+use std::collections::VecDeque;
+
+/// A specialized struct that will keep records of `T`
+/// up to a certain capacity specified with
+/// `RecoveryQueue::with_capacity(u32)`
+/// during construction.
+///
+/// By default the recovery queue
+/// will store `255` records of `T`.
+///
+/// The maximum records allowed are `u32::MAX`, however not
+/// advised.
+///
+/// ```rust
+/// use rakrs::conn::queue::RecoveryQueue;
+///
+/// // Create a new recovery queue, of u8
+/// let mut queue = RecoveryQueue::<u8>::new();
+/// let indexes = (
+///     // 0
+///     queue.insert(1),
+///     // 1
+///     queue.insert(4),
+///     // 2
+///     queue.insert(6)
+/// );
+///
+/// queue.recover(1); // Result<0>
+/// queue.recover(2); // Result<6>
+/// queue.get(1); // Result<4>
+///
+/// assert_eq!(queue.recover(1), Ok(4));
+/// assert_eq!(queue.get(1), Ok(4));
+/// assert_eq!(queue.get(4), Err());
+/// ```
+#[derive(Debug, Clone)]
+pub struct RecoveryQueue<Item> {
+    recovery: VecDeque<(u32, Item)>,
+    capacity: u32,
+    index: u32
+}
+
+impl<Item> RecoveryQueue<Item> {
+    pub fn new() -> Self {
+        Self {
+            recovery: VecDeque::with_capacity(255),
+            capacity: 255,
+            index: 0
+        }
+    }
+
+    pub fn with_capacity(capacity: u32) -> Self {
+        Self {
+            recovery: VecDeque::with_capacity(capacity.try_into().unwrap()),
+            capacity,
+            index: 0
+        }
+    }
+
+    /// Add a new item into the recovery queue.
+    /// If the item addition exceeds the current
+    /// capacity of the queue, the queue is shifted.
+    ///
+    /// This method does not validate for duplicates,
+    /// for that, use `new_insert`
+    pub fn insert(&mut self, item: Item) -> u32 {
+        self.validate_capacity();
+
+        let idx = self.index;
+        self.recovery.push_back((idx, item));
+        self.index += 1;
+
+        return idx;
+    }
+
+    /// Validates that adding a new entry will not exceed
+    /// the capacity of the queue itself.
+    fn validate_capacity(&mut self) {
+        if self.recovery.len() == self.capacity as usize {
+            // We have met the capacity of the queue pop the front
+            self.recovery.pop_front();
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+pub enum RecoveryQueueError {
+    /// The index given is not valid, either because it is from the
+    /// future, or overflows.
+    Invalid,
+    /// The index given is not recoverable, but was cached earlier,
+    /// you should not try to retrieve this index again.
+    IndexOld,
+    /// The insertion failed because the Item is already recoverable.
+    ///
+    /// **This is only enforced if used with `insert_new`**
+    Duplicate
+}
 
 /// An ordered queue is used to Index incoming packets over a channel
 /// within a reliable window time.
@@ -27,7 +126,7 @@ use std::collections::HashMap;
 #[derive(Debug)]
 pub struct OrderedQueue<T> {
     /// The queue of packets that are in order. Mapped to the time they were received.
-    queue: HashMap<u32, T>,
+    queue: BTreeMap<u32, T>,
     /// The current starting scope for the queue.
     /// A start scope or "window start" is the range of packets that we are currently allowing.
     /// Older packets will be ignored simply because they are old.
@@ -52,7 +151,7 @@ where
 {
     pub fn new() -> Self {
         Self {
-            queue: HashMap::new(),
+            queue: BTreeMap::new(),
             scope: (0, 0),
         }
     }
@@ -84,7 +183,7 @@ where
         self.clear_out_of_scope();
 
         // now drain the queue
-        let mut map = HashMap::new();
+        let mut map = BTreeMap::new();
         std::mem::swap(&mut map, &mut self.queue);
 
         let mut clean = map.iter().collect::<Vec<_>>();
@@ -141,6 +240,19 @@ pub struct SendQueue {
     /// a packet is sent reliably. We can resend these if they are
     /// Acked.
     send_seq: u32,
+
+    /// The current index to use when sending a "reliable" packet.
+    /// This is incremented every time a packet is reliably sent
+
+    /// This is a special queue nested within the send queue. It will
+    /// automatically clean up packets that "are out of scope" or
+    /// "outside the window"
+    ord_queue: OrderedQueue<Vec<u8>>
+    
+}
+
+impl SendQueue {
+
 }
 
 #[derive(Debug, Clone)]
