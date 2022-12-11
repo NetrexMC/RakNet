@@ -2,7 +2,6 @@
 
 A fully functional RakNet implementation in rust, asynchronously driven.
 
-
 ```rust
 // Create a server
 use raknet::Listener;
@@ -23,7 +22,7 @@ async fn my_handler(conn: RakConnection, mut stream: RakStream) {
 
 async fn main() {
     // Bind to a socket and allow minecraft protocol
-    let mut server = Listener::new("0.0.0.0:19132", true).await;
+    let mut server = Listener::bind("0.0.0.0:19132", true).await;
     server.motd = Motd::new(
         "Rust Bedrock Minecraft server",
         // 100 players, maximum
