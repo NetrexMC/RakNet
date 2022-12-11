@@ -3,15 +3,15 @@ use std::{net::SocketAddr, sync::Arc};
 
 use binary_utils::Streamable;
 use tokio::net::UdpSocket;
+use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::Mutex;
-use tokio::sync::mpsc::{Sender, Receiver, channel};
 
 use crate::conn::Conn;
-use crate::error::{self, server};
 use crate::error::server::ServerError;
+use crate::error::{self, server};
 use crate::protocol::mcpe::motd::Motd;
-use crate::protocol::packet::Packet;
 use crate::protocol::packet::offline::OfflinePacket;
+use crate::protocol::packet::Packet;
 
 pub struct Listener {
     /// If mcpe is true, this is the default MOTD, this is
@@ -26,7 +26,7 @@ pub struct Listener {
     sock: Option<Arc<UdpSocket>>,
 
     recv_comm: Receiver<Conn>,
-    send_comm: Sender<Conn>
+    send_comm: Sender<Conn>,
 }
 
 impl Listener {
@@ -39,9 +39,7 @@ impl Listener {
     pub async fn bind(address: SocketAddr) -> Result<Self, ServerError> {
         let sock = match UdpSocket::bind(address).await {
             Ok(s) => s,
-            Err(_) => {
-                return Err(ServerError::AddrBindErr)
-            }
+            Err(_) => return Err(ServerError::AddrBindErr),
         };
 
         let server_id: u64 = rand::random();
@@ -106,9 +104,7 @@ impl Listener {
 
                 // Do a quick status check to see if it's an offline packet
                 if let Ok(packet) = Packet::compose(&mut buf, &mut 0) {
-                    if packet.is_offline() {
-                        // the packet is offline, we can check if it's a handshake packet by 
-                    }
+                    // get the socket meta_data from
                 } else {
                     // Not a valid raknet packet.
                     // Ignore the payload.

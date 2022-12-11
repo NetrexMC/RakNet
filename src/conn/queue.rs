@@ -8,7 +8,7 @@ pub enum NetQueueError<E> {
     InvalidInsertionKnown(String),
     /// The `Item` failed to be removed from the queue.
     ItemDeletionFail,
-    Other(E)
+    Other(E),
 }
 
 pub trait NetQueue<Item> {
@@ -80,7 +80,7 @@ impl<Item> RecoveryQueue<Item> {
         Self {
             recovery: VecDeque::with_capacity(255),
             capacity: 255,
-            index: 0
+            index: 0,
         }
     }
 
@@ -88,7 +88,7 @@ impl<Item> RecoveryQueue<Item> {
         Self {
             recovery: VecDeque::with_capacity(capacity.try_into().unwrap()),
             capacity,
-            index: 0
+            index: 0,
         }
     }
 
@@ -144,7 +144,7 @@ pub enum RecoveryQueueError {
     /// The insertion failed because the Item is already recoverable.
     ///
     /// **This is only enforced if used with `insert_new`**
-    Duplicate
+    Duplicate,
 }
 
 /// A Record of `Item` where each `Item` may only live for `max_age`.
@@ -160,7 +160,7 @@ pub struct TimedRecoveryQueue<Item> {
     /// A private recovery queue, this will hold our (`Time`, Item)
     /// We will then be able to clear out old packets by "Time", or if
     /// the capacity of the queue is reached.
-    queue: RecoveryQueue<(u32, Item)>
+    queue: RecoveryQueue<(u32, Item)>,
 }
 
 /// An ordered queue is used to Index incoming packets over a channel
@@ -316,13 +316,10 @@ pub struct SendQueue {
     /// This is a special queue nested within the send queue. It will
     /// automatically clean up packets that "are out of scope" or
     /// "outside the window"
-    ord_queue: OrderedQueue<Vec<u8>>
-    
+    ord_queue: OrderedQueue<Vec<u8>>,
 }
 
-impl SendQueue {
-
-}
+impl SendQueue {}
 
 #[derive(Debug, Clone)]
 pub struct RecvQueue {}

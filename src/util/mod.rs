@@ -1,5 +1,5 @@
-use std::{collections::HashMap, time::SystemTime};
 use std::net::{SocketAddr, ToSocketAddrs};
+use std::{collections::HashMap, time::SystemTime};
 
 /// This is a fancy wrapper over a HashMap that serves as
 /// a time oriented cache, where you can optionally clean up
