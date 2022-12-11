@@ -2,7 +2,7 @@
 /// These are all possible states of a raknet session, and while accessible externally
 /// Please note that these are not states relied in the original implementation of
 /// raknet, which preserve both "Unconnected" and "Connected"
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 pub enum ConnState {
     /// The Session is not yet connected, but is actively trying to connect.
     /// Clients in this state are considered to be actively trying to connect.

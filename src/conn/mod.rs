@@ -10,6 +10,15 @@ use tokio::sync::RwLock;
 
 use self::queue::{RecvQueue, SendQueue};
 
+#[derive(Debug, Clone, Copy)]
+pub struct ConnMeta {
+    /// This is important, and is stored within the server itself
+    /// This value is 0 until the connection state is `Connecting`
+    pub mtu_size: u16,
+    /// The state of the connection
+    pub state: state::ConnState
+}
+
 /// This struct is utilized internally and represented
 /// as per each "connection" or "socket" to the server.
 /// Each Connection has it's own Reference pointer to a

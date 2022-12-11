@@ -6,7 +6,7 @@ use binary_utils::*;
 use byteorder::WriteBytesExt;
 
 #[cfg(feature = "mcpe")]
-pub use crate::protocol::mcpe::packet::UnconnectedPong;
+pub use crate::protocol::mcpe::UnconnectedPong;
 
 use super::Packet;
 use super::PacketId;
