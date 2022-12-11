@@ -1,9 +1,12 @@
 use std::{collections::HashMap, time::SystemTime};
+use std::net::{SocketAddr, ToSocketAddrs};
 
 /// This is a fancy wrapper over a HashMap that serves as
 /// a time oriented cache, where you can optionally clean up
 /// old and un-used values. Key serves as a `packet_id` in
 /// rakrs, but this could be used else-where.
+///
+/// ## Deprecated in favor of `RecoveryQueue<T>`
 ///
 /// Usage example:
 /// ```rust
@@ -63,4 +66,18 @@ where
     pub fn has(&self, key: &K) -> bool {
         self.store.contains_key(key)
     }
+}
+
+pub fn to_address_token(remote: SocketAddr) -> String {
+    let mut address = remote.ip().to_string();
+    address.push_str(":");
+    address.push_str(remote.port().to_string().as_str());
+    return address;
+}
+
+pub fn from_address_token(remote: String) -> SocketAddr {
+    let mut parsed = remote
+        .to_socket_addrs()
+        .expect("Could not parse remote address.");
+    SocketAddr::from(parsed.next().unwrap())
 }

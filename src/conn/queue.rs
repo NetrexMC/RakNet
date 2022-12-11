@@ -1,11 +1,43 @@
 use std::collections::HashMap;
-use std::collections::BTreeMap;
 use std::collections::VecDeque;
 
+pub enum NetQueueError<E> {
+    /// The insertion failed for any given reason.
+    InvalidInsertion,
+    /// The insertion failed and the reason is known.
+    InvalidInsertionKnown(String),
+    /// The `Item` failed to be removed from the queue.
+    ItemDeletionFail,
+    Other(E)
+}
+
+pub trait NetQueue<Item> {
+    /// The `Item` of the queue.
+    // type Item = V;
+
+    /// The "key" that each `Item` is stored under
+    /// (used for removal)
+    type KeyId;
+
+    /// A custom error specifier for NetQueueError
+    type Error;
+
+    /// Inserts `Item` into the queue, given the conditions are fulfilled.
+    fn insert(&mut self, item: Item) -> Result<Self::KeyId, NetQueueError<Self::Error>>;
+
+    /// Remove an `Item` from the queue by providing an instance of `Self::KeyId`
+    fn remove(&mut self, key: Self::KeyId) -> Result<Item, NetQueueError<Self::Error>>;
+
+    /// Retrieves an `Item` from the queue, by reference.
+    fn get(&mut self, key: Self::KeyId) -> Result<&Item, NetQueueError<Self::Error>>;
+
+    /// Clears the entire queue.
+    fn flush(&mut self) -> Result<Vec<Item>, NetQueueError<Self::Error>>;
+}
+
 /// A specialized struct that will keep records of `T`
-/// up to a certain capacity specified with
-/// `RecoveryQueue::with_capacity(u32)`
-/// during construction.
+/// up to a certain capacity specified with `RecoveryQueue::with_capacity(u32)`
+/// during construction. This means any records that are hold, are dropped off and forgotten.
 ///
 /// By default the recovery queue
 /// will store `255` records of `T`.
@@ -37,9 +69,10 @@ use std::collections::VecDeque;
 /// ```
 #[derive(Debug, Clone)]
 pub struct RecoveryQueue<Item> {
+    /// (index, resend_attempts, Item)
     recovery: VecDeque<(u32, Item)>,
     capacity: u32,
-    index: u32
+    index: u32,
 }
 
 impl<Item> RecoveryQueue<Item> {
@@ -56,6 +89,22 @@ impl<Item> RecoveryQueue<Item> {
             recovery: VecDeque::with_capacity(capacity.try_into().unwrap()),
             capacity,
             index: 0
+        }
+    }
+
+    /// Set the capacity of the recovery queue.
+    /// This may be called by raknet if a load of clients
+    /// start trying to connect or if the I/O of network
+    /// begins writing more than reading.
+    pub fn set_capacity(&mut self, factor: u32) -> bool {
+        // todo: IF factor is greator than self.capacity, replace
+        // todo: the current capacity with a vector of that capacity.
+        if factor > 0 {
+            self.capacity = factor;
+            self.validate_capacity();
+            true
+        } else {
+            false
         }
     }
 
@@ -78,8 +127,7 @@ impl<Item> RecoveryQueue<Item> {
     /// Validates that adding a new entry will not exceed
     /// the capacity of the queue itself.
     fn validate_capacity(&mut self) {
-        if self.recovery.len() == self.capacity as usize {
-            // We have met the capacity of the queue pop the front
+        while self.recovery.len() >= self.capacity as usize {
             self.recovery.pop_front();
         }
     }
@@ -97,6 +145,22 @@ pub enum RecoveryQueueError {
     ///
     /// **This is only enforced if used with `insert_new`**
     Duplicate
+}
+
+/// A Record of `Item` where each `Item` may only live for `max_age`.
+/// If an `Item` exceeds the duration of `max_age`, it is dropped.
+///
+/// This structure is **NOT** ticked, meaning any records are stale
+/// until the structure is interacted with.
+#[derive(Clone, Debug)]
+pub struct TimedRecoveryQueue<Item> {
+    /// The maximum age a packet is allowed to live in the queue for.
+    /// If the age is exceeded, the item will be dropped.
+    pub max_age: u32,
+    /// A private recovery queue, this will hold our (`Time`, Item)
+    /// We will then be able to clear out old packets by "Time", or if
+    /// the capacity of the queue is reached.
+    queue: RecoveryQueue<(u32, Item)>
 }
 
 /// An ordered queue is used to Index incoming packets over a channel
@@ -126,7 +190,7 @@ pub enum RecoveryQueueError {
 #[derive(Debug)]
 pub struct OrderedQueue<T> {
     /// The queue of packets that are in order. Mapped to the time they were received.
-    queue: BTreeMap<u32, T>,
+    queue: HashMap<u32, T>,
     /// The current starting scope for the queue.
     /// A start scope or "window start" is the range of packets that we are currently allowing.
     /// Older packets will be ignored simply because they are old.
@@ -151,7 +215,7 @@ where
 {
     pub fn new() -> Self {
         Self {
-            queue: BTreeMap::new(),
+            queue: HashMap::new(),
             scope: (0, 0),
         }
     }
@@ -183,7 +247,7 @@ where
         self.clear_out_of_scope();
 
         // now drain the queue
-        let mut map = BTreeMap::new();
+        let mut map = HashMap::new();
         std::mem::swap(&mut map, &mut self.queue);
 
         let mut clean = map.iter().collect::<Vec<_>>();
@@ -241,8 +305,13 @@ pub struct SendQueue {
     /// Acked.
     send_seq: u32,
 
-    /// The current index to use when sending a "reliable" packet.
-    /// This is incremented every time a packet is reliably sent
+    /// The reliable packet recovery queue.
+    /// This represents a "Sequence Index". Any socket can request
+    /// a sequence to resend via ack. These are saved here.
+    reliable_queue: TimedRecoveryQueue<Vec<u8>>,
+
+    /// The unreliable packet sequence count.
+    unreliable_index: u32,
 
     /// This is a special queue nested within the send queue. It will
     /// automatically clean up packets that "are out of scope" or
