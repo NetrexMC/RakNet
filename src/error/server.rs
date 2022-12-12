@@ -4,5 +4,5 @@ pub enum ServerError {
     AlreadyOnline,
     NotListening,
     Killed,
-    Reset
+    Reset,
 }

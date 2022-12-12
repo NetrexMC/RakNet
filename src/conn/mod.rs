@@ -84,5 +84,5 @@ impl Connection {
     }
 
     /// Initializes the client tick.
-    pub async fn tick()
+    pub async fn tick() {}
 }

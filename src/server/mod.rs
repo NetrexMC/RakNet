@@ -7,10 +7,10 @@ use std::{net::SocketAddr, sync::Arc};
 
 use binary_utils::Streamable;
 use tokio::net::UdpSocket;
-use tokio::sync::{Mutex, Semaphore, Notify};
 use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{Mutex, Notify, Semaphore};
 
-use crate::conn::{Connection, ConnMeta};
+use crate::conn::{ConnMeta, Connection};
 use crate::error::server::ServerError;
 use crate::protocol::mcpe::motd::Motd;
 use crate::protocol::packet::offline::{
@@ -51,7 +51,7 @@ pub struct Listener {
     closer: Arc<tokio::sync::Semaphore>,
     /// This is a notifier that acknowledges all connections have been removed from the server successfully.
     /// This is important to prevent memory leaks if the process is continously running.
-    cleanup: Arc<Notify>
+    cleanup: Arc<Notify>,
 }
 
 impl Listener {
@@ -85,7 +85,7 @@ impl Listener {
             serving: false,
             connections: Arc::new(Mutex::new(HashMap::new())),
             closer: Arc::new(Semaphore::new(0)),
-            cleanup: Arc::new(Notify::new())
+            cleanup: Arc::new(Notify::new()),
         };
 
         return Ok(listener);
@@ -295,7 +295,7 @@ impl Listener {
                                     // everything else should be sent to the socket
                                 }
                             }
-                        },
+                        }
                         _ => {}
                     };
                 }

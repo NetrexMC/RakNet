@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 
-use crate::{protocol::mcpe::motd::Motd, conn::state::ConnectionState};
+use crate::{conn::state::ConnectionState, protocol::mcpe::motd::Motd};
 
 #[derive(Debug, Clone)]
 pub enum ServerEvent {
@@ -20,7 +20,7 @@ pub enum ServerEvent {
     DisconnectImmediately,
     /// A request from the listener to update a connection's state.
     /// This is done during handshake or if the connection is timed out.
-    UpdateConnectionState(ConnectionState)
+    UpdateConnectionState(ConnectionState),
 }
 
 #[derive(Debug, Clone)]
