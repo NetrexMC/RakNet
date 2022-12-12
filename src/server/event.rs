@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 
-use crate::protocol::mcpe::motd::Motd;
+use crate::{protocol::mcpe::motd::Motd, conn::state::ConnectionState};
 
 #[derive(Debug, Clone)]
 pub enum ServerEvent {
@@ -13,6 +13,14 @@ pub enum ServerEvent {
     /// This event is dispatched before the client fully connects
     /// allowing you to control the MtuSize.
     SetMtuSize(u16),
+    /// Disconnect the client immediately
+    /// Sent to the client to immediately disconnect the client.
+    /// If you ignore this, the connection will be dropped automatically
+    /// however this event is fired to allow graceful handling of a disconnect
+    DisconnectImmediately,
+    /// A request from the listener to update a connection's state.
+    /// This is done during handshake or if the connection is timed out.
+    UpdateConnectionState(ConnectionState)
 }
 
 #[derive(Debug, Clone)]

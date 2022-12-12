@@ -49,7 +49,7 @@ impl ConnMeta {
 ///
 /// Each Connection has it's own channel for recieving
 /// buffers that come from this address.
-pub struct Conn {
+pub struct Connection {
     /// The address of the connection
     /// This is internally tokenized by rak-rs
     pub address: SocketAddr,
@@ -61,7 +61,7 @@ pub struct Conn {
     /// This is only used internally.
     pub(crate) recv_queue: Arc<Mutex<RecvQueue>>,
 
-    pub(crate) state: state::ConnState,
+    pub(crate) state: state::ConnectionState,
 
     /// The network channel, this is where the connection will be recieving it's packets.
     /// If the channel is dropped, the connection is expected to drop as well, this behavior
@@ -73,7 +73,7 @@ pub struct Conn {
     dispatch: ConnEvtChan,
 }
 
-impl Conn {
+impl Connection {
     /// Initializes a new Connection instance.
     pub fn new(
         address: SocketAddr,
@@ -82,4 +82,7 @@ impl Conn {
         dispatch: ConnDispatcher,
     ) -> Self {
     }
+
+    /// Initializes the client tick.
+    pub async fn tick()
 }

@@ -7,23 +7,23 @@ use std::{net::SocketAddr, sync::Arc};
 
 use binary_utils::Streamable;
 use tokio::net::UdpSocket;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Semaphore, Notify};
 use tokio::sync::{mpsc, oneshot};
 
-use crate::conn::{Conn, ConnMeta};
+use crate::conn::{Connection, ConnMeta};
 use crate::error::server::ServerError;
-use crate::error::{self, server};
 use crate::protocol::mcpe::motd::Motd;
 use crate::protocol::packet::offline::{
     IncompatibleProtocolVersion, OfflinePacket, OpenConnectReply, SessionInfoReply, UnconnectedPong,
 };
+use crate::protocol::packet::online::Disconnect;
 use crate::protocol::packet::{Packet, Payload};
 use crate::protocol::Magic;
 use crate::server::event::ServerEventResponse;
 
 use self::event::ServerEvent;
 
-pub type Connection = (
+pub type Session = (
     ConnMeta,
     mpsc::Sender<Vec<u8>>,
     mpsc::Sender<(ServerEvent, oneshot::Sender<ServerEventResponse>)>,
@@ -41,12 +41,17 @@ pub struct Listener {
     sock: Option<Arc<UdpSocket>>,
     /// A Hashmap off all current connections along with a sending channel
     /// and some meta data like the time of connection, and the requested MTU_Size
-    connections: Arc<Mutex<HashMap<SocketAddr, Connection>>>,
-
+    connections: Arc<Mutex<HashMap<SocketAddr, Session>>>,
     /// The recieve communication channel, This is used to dispatch connections between a handle
     /// It allows you to use the syntax sugar for `Listener::accept()`.
-    recv_comm: mpsc::Receiver<Conn>,
-    send_comm: mpsc::Sender<Conn>,
+    recv_comm: mpsc::Receiver<Connection>,
+    send_comm: mpsc::Sender<Connection>,
+    /// A Notifier (sephamore) that will wait until all notified listeners
+    /// are completed, and finish closing.
+    closer: Arc<tokio::sync::Semaphore>,
+    /// This is a notifier that acknowledges all connections have been removed from the server successfully.
+    /// This is important to prevent memory leaks if the process is continously running.
+    cleanup: Arc<Notify>
 }
 
 impl Listener {
@@ -67,7 +72,7 @@ impl Listener {
 
         // The buffer is 100 here because locking on large servers may cause
         // locking to take longer, and this accounts for that.
-        let (send_comm, recv_comm) = mpsc::channel::<Conn>(100);
+        let (send_comm, recv_comm) = mpsc::channel::<Connection>(100);
         let (send_evnt, recv_evnt) =
             mpsc::channel::<(ServerEvent, oneshot::Sender<ServerEventResponse>)>(10);
 
@@ -79,6 +84,8 @@ impl Listener {
             recv_comm,
             serving: false,
             connections: Arc::new(Mutex::new(HashMap::new())),
+            closer: Arc::new(Semaphore::new(0)),
+            cleanup: Arc::new(Notify::new())
         };
 
         return Ok(listener);
@@ -93,7 +100,7 @@ impl Listener {
     /// ```
     pub async fn start(&mut self) -> Result<(), ServerError> {
         if self.serving {
-            return Err(ServerError::ServerRunning);
+            return Err(ServerError::AlreadyOnline);
         }
 
         let socket = self.sock.as_ref().unwrap().clone();
@@ -101,6 +108,8 @@ impl Listener {
         let server_id = self.id.clone();
         let default_motd = self.motd.clone();
         let connections = self.connections.clone();
+        let closer = self.closer.clone();
+        let cleanup = self.cleanup.clone();
 
         tokio::spawn(async move {
             // We allocate here to prevent constant allocation of this array
@@ -128,6 +137,26 @@ impl Listener {
                             Err(_) => continue
                         }
                     },
+                    _ = closer.acquire() => {
+                        // we got a close notification, disconnect all clients
+                        let mut sessions = connections.lock().await;
+                        for conn in sessions.drain() {
+                            // send a disconnect notification to each connection
+                            let disconnect = Disconnect {};
+                            send_packet_to_socket(&socket, disconnect.into(), conn.0).await;
+
+                            // absolutely ensure disconnection
+                            let (rx, rs) = oneshot::channel::<ServerEventResponse>();
+                            if let Err(_) = conn.1.2.send((ServerEvent::DisconnectImmediately, rx)).await {
+                                // failed to send the connection, we're gonna drop it either way
+                            }
+                            drop(conn);
+                        }
+
+                        cleanup.notify_one();
+
+                        break;
+                    }
                     // todo disconnect notification
                 };
 
@@ -144,7 +173,7 @@ impl Listener {
                             ServerEvent,
                             oneshot::Sender<ServerEventResponse>,
                         )>(10);
-                        let connection = Conn::new(origin, &socket, net_recv, evt_recv);
+                        let connection = Connection::new(origin, &socket, net_recv, evt_recv);
 
                         // Add the connection to the available connections list.
                         // we're using the name "sessions" here to differeniate
@@ -235,6 +264,7 @@ impl Listener {
                                         mtu_size: pk.mtu_size,
                                     };
                                     send_packet_to_socket(&socket, resp.into(), origin).await;
+                                    continue;
                                 }
                                 OfflinePacket::SessionInfoRequest(pk) => {
                                     let mut sessions = connections.lock().await;
@@ -259,24 +289,64 @@ impl Listener {
                                         .send((ServerEvent::SetMtuSize(pk.mtu_size), resp_tx));
 
                                     send_packet_to_socket(&socket, resp.into(), origin);
+                                    continue;
                                 }
                                 _ => {
                                     // everything else should be sent to the socket
                                 }
                             }
-                        }
-                        Payload::Online(pk) => {
-                            // online packets need to be handled, but not yet :o
-                        }
+                        },
+                        _ => {}
+                    };
+                }
+
+                // Packet may be valid, but we'll let the connection decide this
+                let sessions = connections.lock().await;
+                if sessions.contains_key(&origin) {
+                    if let Err(err) = sessions[&origin].1.send(buf[..length].to_vec()).await {
+                        // todo log error!
                     }
-                } else {
-                    // Not a valid raknet packet.
-                    // Ignore the payload.
                 }
             }
         });
 
         return Ok(());
+    }
+
+    /// Must be called in after both `Listener::bind` AND `Listener::start`. This function
+    /// is used to recieve and accept connections. Alternatively, you can refuse a connection
+    /// by dropping it when you accept it.
+    pub async fn accept(&mut self) -> Result<Connection, ServerError> {
+        if !self.serving {
+            Err(ServerError::NotListening)
+        } else {
+            tokio::select! {
+                receiver = self.recv_comm.recv() => {
+                    match receiver {
+                        Some(c) => Ok(c),
+                        None => Err(ServerError::Killed)
+                    }
+                },
+                _ = self.closer.acquire() => {
+                    Err(ServerError::Killed)
+                }
+            }
+        }
+    }
+
+    /// Stops the listener and frees the socket.
+    pub async fn stop(&mut self) -> Result<(), ServerError> {
+        if self.closer.is_closed() {
+            return Ok(());
+        }
+
+        self.closer.close();
+        self.cleanup.notified().await;
+
+        self.sock = None;
+        self.serving = false;
+
+        Ok(())
     }
 }
 

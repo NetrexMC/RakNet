@@ -3,7 +3,7 @@
 /// Please note that these are not states relied in the original implementation of
 /// raknet, which preserve both "Unconnected" and "Connected"
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
-pub enum ConnState {
+pub enum ConnectionState {
     /// The Session is not yet connected, but is actively trying to connect.
     /// Clients in this state are considered to be actively trying to connect.
     Connecting,
@@ -40,7 +40,7 @@ pub enum ConnState {
     Offline,
 }
 
-impl ConnState {
+impl ConnectionState {
     /// Returns whether or not the Session is reliable.
     /// Reliable sessions are sessions that are not:
     /// - Offline
@@ -78,7 +78,7 @@ impl ConnState {
     }
 }
 
-impl std::fmt::Display for ConnState {
+impl std::fmt::Display for ConnectionState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Connecting => write!(f, "Connecting"),

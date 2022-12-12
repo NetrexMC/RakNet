@@ -1,5 +1,8 @@
 #[derive(Debug, Clone)]
 pub enum ServerError {
     AddrBindErr,
-    ServerRunning,
+    AlreadyOnline,
+    NotListening,
+    Killed,
+    Reset
 }
