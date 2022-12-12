@@ -4,9 +4,9 @@ A fully functional RakNet implementation in rust, asynchronously driven.
 
 ```rust
 // Create a server
-use raknet::Listener;
-use raknet::util::handle;
-use raknet::util::mcpe;
+use rakrs::Listener;
+use rakrs::util::handle;
+use rakrs::util::mcpe;
 
 async fn my_handler(conn: RakConnection, mut stream: RakStream) {
     // The `conn.recv()` method constructs a `Packet` from the stream
