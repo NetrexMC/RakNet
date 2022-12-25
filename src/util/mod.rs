@@ -1,6 +1,43 @@
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::{collections::HashMap, time::SystemTime};
 
+pub(crate) mod debug;
+
+#[derive(Debug, Clone)]
+pub struct SafeGenerator<T> {
+    pub(crate) sequence: T,
+}
+
+impl<T> SafeGenerator<T>
+where
+    T: Default {
+    pub fn new() -> Self {
+        Self { sequence: T::default() }
+    }
+}
+
+macro_rules! impl_gen {
+    ($n: ty) => {
+        impl SafeGenerator<$n> {
+            pub fn next(&mut self) -> $n {
+                self.sequence = self.sequence.wrapping_add(1);
+                return self.sequence;
+            }
+
+            pub fn get(&self) -> $n {
+                self.sequence
+            }
+        }
+    };
+}
+
+impl_gen!(u8);
+impl_gen!(u16);
+impl_gen!(u32);
+impl_gen!(u64);
+impl_gen!(u128);
+impl_gen!(usize);
+
 /// This is a fancy wrapper over a HashMap that serves as
 /// a time oriented cache, where you can optionally clean up
 /// old and un-used values. Key serves as a `packet_id` in

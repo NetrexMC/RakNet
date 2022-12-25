@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 use std::collections::VecDeque;
 
+use crate::protocol::frame::FramePacket;
+use crate::util::SafeGenerator;
+
 pub enum NetQueueError<E> {
     /// The insertion failed for any given reason.
     InvalidInsertion,
@@ -163,6 +166,15 @@ pub struct TimedRecoveryQueue<Item> {
     queue: RecoveryQueue<(u32, Item)>,
 }
 
+impl<T> TimedRecoveryQueue<T> {
+    pub fn new(max_age: u32) -> Self {
+        Self {
+            max_age,
+            queue: RecoveryQueue::new(),
+        }
+    }
+}
+
 /// An ordered queue is used to Index incoming packets over a channel
 /// within a reliable window time.
 ///
@@ -302,8 +314,12 @@ pub struct SendQueue {
 
     /// The current sequence number. This is incremented every time
     /// a packet is sent reliably. We can resend these if they are
-    /// Acked.
+    /// NAcked.
     send_seq: u32,
+
+    /// The current fragment sequence number. This is incremented every time
+    /// a packet is sent reliably an sequenced.
+    fragment_seq: SafeGenerator<u16>,
 
     /// The reliable packet recovery queue.
     /// This represents a "Sequence Index". Any socket can request
@@ -319,7 +335,32 @@ pub struct SendQueue {
     ord_queue: OrderedQueue<Vec<u8>>,
 }
 
-impl SendQueue {}
+impl SendQueue {
+    pub fn new() -> Self {
+        Self {
+            timeout: 5000,
+            max_tries: 5,
+            send_seq: 0,
+            fragment_seq: SafeGenerator::new(),
+            reliable_queue: TimedRecoveryQueue::new(10000),
+            unreliable_index: 0,
+            ord_queue: OrderedQueue::new(),
+        }
+    }
+
+    pub fn insert(&mut self, packet: Vec<u8>, reliable: bool) -> u32 {
+        let next_id = self.fragment_seq.next();
+        todo!()
+    }
+
+    pub fn next_seq(&mut self) -> u32 {
+        let seq = self.send_seq;
+        self.send_seq = self.send_seq.wrapping_add(1);
+        return seq;
+    }
+}
 
 #[derive(Debug, Clone)]
-pub struct RecvQueue {}
+pub struct RecvQueue {
+    
+}

@@ -19,7 +19,9 @@ use crate::protocol::packet::offline::{
 use crate::protocol::packet::online::Disconnect;
 use crate::protocol::packet::{Packet, Payload};
 use crate::protocol::Magic;
+use crate::rakrs_debug;
 use crate::server::event::ServerEventResponse;
+use crate::util::to_address_token;
 
 use self::event::ServerEvent;
 
@@ -28,6 +30,52 @@ pub type Session = (
     mpsc::Sender<Vec<u8>>,
     mpsc::Sender<(ServerEvent, oneshot::Sender<ServerEventResponse>)>,
 );
+
+// stupid hack for easier syntax :)
+pub enum PossiblySocketAddr<'a> {
+    SocketAddr(SocketAddr),
+    Str(&'a str),
+    String(String),
+    ActuallyNot
+}
+
+impl PossiblySocketAddr<'_> {
+    pub fn to_socket_addr(self) -> Option<SocketAddr> {
+        match self {
+            PossiblySocketAddr::SocketAddr(addr) => {
+                Some(addr)
+            },
+            PossiblySocketAddr::Str(addr) => {
+                // we need to parse it
+                Some(addr.parse::<SocketAddr>().unwrap())
+            },
+            PossiblySocketAddr::String(addr) => {
+                // same as above, except less elegant >_<
+                Some(addr.clone().as_str().parse::<SocketAddr>().unwrap())
+            },
+            _ => None
+        }
+    }
+}
+
+impl From<&str> for PossiblySocketAddr<'_> {
+    fn from(s: &str) -> Self {
+        PossiblySocketAddr::String(s.to_string())
+    }
+}
+
+impl From<String> for PossiblySocketAddr<'_> {
+    fn from(s: String) -> Self {
+        PossiblySocketAddr::String(s)
+    }
+}
+
+impl From<SocketAddr> for PossiblySocketAddr<'_> {
+    fn from(s: SocketAddr) -> Self {
+        PossiblySocketAddr::SocketAddr(s)
+    }
+}
+
 pub struct Listener {
     /// If mcpe is true, this is the default MOTD, this is
     /// the default MOTD to send to the client. You can change this later by setting
@@ -56,12 +104,16 @@ pub struct Listener {
 
 impl Listener {
     /// Binds a socket to the specified addres and starts listening.
-    /// EG:
-    /// ```rust
-    /// let mut server = Listener::bind("0.0.0.0:19132").await;
-    /// let (conn, stream) = server.accept().await?.unwrap();
-    /// ```
-    pub async fn bind(address: SocketAddr) -> Result<Self, ServerError> {
+    pub async fn bind<I: for<'a> Into<PossiblySocketAddr<'a>>>(address: I) -> Result<Self, ServerError> {
+        let a: PossiblySocketAddr = address.into();
+        let address_r: Option<SocketAddr> = a.to_socket_addr();
+        if address_r.is_none() {
+            rakrs_debug!("Invalid binding value");
+            return Err(ServerError::AddrBindErr);
+        }
+
+        let address = address_r.unwrap();
+
         let sock = match UdpSocket::bind(address).await {
             Ok(s) => s,
             Err(_) => return Err(ServerError::AddrBindErr),
@@ -93,10 +145,13 @@ impl Listener {
 
     /// Starts the listener!
     /// ```rust
-    /// let mut server = Listener::bind("0.0.0.0:19132", true).await;
+    /// use rakrs::server::Listener;
+    /// async fn start() {
+    ///     let mut server = Listener::bind("0.0.0.0:19132").await.unwrap();
     ///
-    /// // let's begin to listen to connections
-    /// server.start().await;
+    ///     // let's begin to listen to connections
+    ///     server.start().await;
+    /// }
     /// ```
     pub async fn start(&mut self) -> Result<(), ServerError> {
         if self.serving {
@@ -146,7 +201,7 @@ impl Listener {
                             send_packet_to_socket(&socket, disconnect.into(), conn.0).await;
 
                             // absolutely ensure disconnection
-                            let (rx, rs) = oneshot::channel::<ServerEventResponse>();
+                            let (rx, _) = oneshot::channel::<ServerEventResponse>();
                             if let Err(_) = conn.1.2.send((ServerEvent::DisconnectImmediately, rx)).await {
                                 // failed to send the connection, we're gonna drop it either way
                             }
@@ -181,7 +236,9 @@ impl Listener {
 
                         // notify the connection communicator
                         if let Err(err) = send_comm.send(connection).await {
+                            let connection = err.0;
                             // there was an error, and we should terminate this connection immediately.
+                            rakrs_debug!("[{}] Error while communicating with internal connection channel! Connection withdrawn.", to_address_token(connection.address));
                             sessions.remove(&origin);
                             continue;
                         }
@@ -204,7 +261,7 @@ impl Listener {
                                     let mut motd: Motd = motd_default.clone();
                                     let sessions = connections.lock().await;
 
-                                    if let Err(err) = sessions[&origin]
+                                    if let Err(_) = sessions[&origin]
                                         .2
                                         .send((
                                             ServerEvent::RefreshMotdRequest(origin, motd.clone()),
@@ -214,6 +271,7 @@ impl Listener {
                                     {
                                         // todo event error,
                                         // we're gonna ignore it and continue by sending default motd.
+                                        rakrs_debug!(true, "[{}] Encountered an error when fetching the updated Motd.", to_address_token(*&origin))
                                     }
 
                                     if let Ok(res) = resp_rx.await {
@@ -248,19 +306,24 @@ impl Listener {
                                             server_id,
                                         };
 
+                                        rakrs_debug!("[{}] Sent invalid RakNet protocol. Version is incompatible with server.", to_address_token(*&origin));
+
                                         send_packet_to_socket(&socket, resp.into(), origin).await;
                                         continue;
                                     }
 
+                                    rakrs_debug!(true, "[{}] Client requested Mtu Size: {}", to_address_token(*&origin), pk.mtu_size);
+
                                     let resp = OpenConnectReply {
                                         server_id,
-                                        // todo allow encryption, find out if this is MCPE specific
+                                        // todo allow encryption
                                         security: false,
                                         magic: Magic::new(),
                                         // todo make this configurable, this is sent to the client to change
                                         // it's mtu size, right now we're using what the client prefers.
                                         // however in some cases this may not be the preferred use case, for instance
-                                        // on servers with larger worlds, you may want a larger mtu size
+                                        // on servers with larger worlds, you may want a larger mtu size, or if
+                                        // your limited on network bandwith
                                         mtu_size: pk.mtu_size,
                                     };
                                     send_packet_to_socket(&socket, resp.into(), origin).await;
@@ -286,9 +349,9 @@ impl Listener {
                                         oneshot::channel::<ServerEventResponse>();
                                     sessions[&origin]
                                         .2
-                                        .send((ServerEvent::SetMtuSize(pk.mtu_size), resp_tx));
+                                        .send((ServerEvent::SetMtuSize(pk.mtu_size), resp_tx)).await.unwrap();
 
-                                    send_packet_to_socket(&socket, resp.into(), origin);
+                                    send_packet_to_socket(&socket, resp.into(), origin).await;
                                     continue;
                                 }
                                 _ => {
@@ -303,8 +366,8 @@ impl Listener {
                 // Packet may be valid, but we'll let the connection decide this
                 let sessions = connections.lock().await;
                 if sessions.contains_key(&origin) {
-                    if let Err(err) = sessions[&origin].1.send(buf[..length].to_vec()).await {
-                        // todo log error!
+                    if let Err(_) = sessions[&origin].1.send(buf[..length].to_vec()).await {
+                        rakrs_debug!(true, "[{}] Failed when handling recieved packet! Could not pass over to internal connection!", to_address_token(*&origin));
                     }
                 }
             }
@@ -355,7 +418,7 @@ async fn send_packet_to_socket(socket: &Arc<UdpSocket>, packet: Packet, origin: 
         .send_to(&mut packet.parse().unwrap()[..], origin)
         .await
     {
-        // todo debug
+        rakrs_debug!("[{}] Failed sending payload to socket! {}", to_address_token(origin), e);
     }
 }
 

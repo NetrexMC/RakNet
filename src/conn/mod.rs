@@ -23,6 +23,7 @@ pub(crate) type ConnDispatcher =
     mpsc::Receiver<(ServerEvent, oneshot::Sender<ServerEventResponse>)>;
 pub(crate) type ConnEvtChan = Arc<Mutex<ConnDispatcher>>;
 pub(crate) type ConnNetChan = Arc<Mutex<mpsc::Receiver<Vec<u8>>>>;
+
 #[derive(Debug, Clone, Copy)]
 pub struct ConnMeta {
     /// This is important, and is stored within the server itself
@@ -81,8 +82,12 @@ impl Connection {
         net: mpsc::Receiver<Vec<u8>>,
         dispatch: ConnDispatcher,
     ) -> Self {
+        todo!()
     }
 
     /// Initializes the client tick.
-    pub async fn tick() {}
+    pub async fn tick(&mut self) {
+        let sendq = self.send_queue.write().await;
+        // sendq.tick().await;
+    }
 }
