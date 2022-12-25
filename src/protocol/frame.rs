@@ -1,4 +1,7 @@
-use std::{io::{Cursor, Write}, collections::HashMap};
+use std::{
+    collections::HashMap,
+    io::{Cursor, Write},
+};
 
 use binary_utils::error::BinaryError;
 use binary_utils::*;
@@ -332,7 +335,7 @@ impl Streamable for Frame {
 //     /// The maximum number of fragments that can be stored in the pool.
 //     /// This is used to prevent the pool from growing too large.
 //     max_fragments: u16,
-//     /// The current 
+//     /// The current
 // }
 
 // impl FramePool {

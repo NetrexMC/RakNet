@@ -361,6 +361,4 @@ impl SendQueue {
 }
 
 #[derive(Debug, Clone)]
-pub struct RecvQueue {
-    
-}
+pub struct RecvQueue {}

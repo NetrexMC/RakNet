@@ -36,24 +36,22 @@ pub enum PossiblySocketAddr<'a> {
     SocketAddr(SocketAddr),
     Str(&'a str),
     String(String),
-    ActuallyNot
+    ActuallyNot,
 }
 
 impl PossiblySocketAddr<'_> {
     pub fn to_socket_addr(self) -> Option<SocketAddr> {
         match self {
-            PossiblySocketAddr::SocketAddr(addr) => {
-                Some(addr)
-            },
+            PossiblySocketAddr::SocketAddr(addr) => Some(addr),
             PossiblySocketAddr::Str(addr) => {
                 // we need to parse it
                 Some(addr.parse::<SocketAddr>().unwrap())
-            },
+            }
             PossiblySocketAddr::String(addr) => {
                 // same as above, except less elegant >_<
                 Some(addr.clone().as_str().parse::<SocketAddr>().unwrap())
-            },
-            _ => None
+            }
+            _ => None,
         }
     }
 }
@@ -104,7 +102,9 @@ pub struct Listener {
 
 impl Listener {
     /// Binds a socket to the specified addres and starts listening.
-    pub async fn bind<I: for<'a> Into<PossiblySocketAddr<'a>>>(address: I) -> Result<Self, ServerError> {
+    pub async fn bind<I: for<'a> Into<PossiblySocketAddr<'a>>>(
+        address: I,
+    ) -> Result<Self, ServerError> {
         let a: PossiblySocketAddr = address.into();
         let address_r: Option<SocketAddr> = a.to_socket_addr();
         if address_r.is_none() {
@@ -312,7 +312,12 @@ impl Listener {
                                         continue;
                                     }
 
-                                    rakrs_debug!(true, "[{}] Client requested Mtu Size: {}", to_address_token(*&origin), pk.mtu_size);
+                                    rakrs_debug!(
+                                        true,
+                                        "[{}] Client requested Mtu Size: {}",
+                                        to_address_token(*&origin),
+                                        pk.mtu_size
+                                    );
 
                                     let resp = OpenConnectReply {
                                         server_id,
@@ -349,7 +354,9 @@ impl Listener {
                                         oneshot::channel::<ServerEventResponse>();
                                     sessions[&origin]
                                         .2
-                                        .send((ServerEvent::SetMtuSize(pk.mtu_size), resp_tx)).await.unwrap();
+                                        .send((ServerEvent::SetMtuSize(pk.mtu_size), resp_tx))
+                                        .await
+                                        .unwrap();
 
                                     send_packet_to_socket(&socket, resp.into(), origin).await;
                                     continue;
@@ -418,7 +425,11 @@ async fn send_packet_to_socket(socket: &Arc<UdpSocket>, packet: Packet, origin: 
         .send_to(&mut packet.parse().unwrap()[..], origin)
         .await
     {
-        rakrs_debug!("[{}] Failed sending payload to socket! {}", to_address_token(origin), e);
+        rakrs_debug!(
+            "[{}] Failed sending payload to socket! {}",
+            to_address_token(origin),
+            e
+        );
     }
 }
 

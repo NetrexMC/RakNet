@@ -10,9 +10,12 @@ pub struct SafeGenerator<T> {
 
 impl<T> SafeGenerator<T>
 where
-    T: Default {
+    T: Default,
+{
     pub fn new() -> Self {
-        Self { sequence: T::default() }
+        Self {
+            sequence: T::default(),
+        }
     }
 }
 
