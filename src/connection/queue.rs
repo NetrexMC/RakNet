@@ -362,3 +362,9 @@ impl SendQueue {
 
 #[derive(Debug, Clone)]
 pub struct RecvQueue {}
+
+impl RecvQueue {
+    pub fn new() -> Self {
+        Self {}
+    }
+}

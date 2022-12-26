@@ -3,7 +3,7 @@
 #[macro_export]
 macro_rules! rakrs_debug {
     ($heavy: ident, $($t: tt)*) => {
-        if cfg!(feature="debug") && cfg!(feature="debug-all") {
+        if cfg!(feature="debug") && cfg!(feature="debug_all") {
             println!("[rakrs] DBG! {}", format!($($t)*));
         }
     };

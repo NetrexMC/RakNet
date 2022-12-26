@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 
-use crate::{conn::state::ConnectionState, protocol::mcpe::motd::Motd};
+use crate::{connection::state::ConnectionState, protocol::mcpe::motd::Motd};
 
 #[derive(Debug, Clone)]
 pub enum ServerEvent {
@@ -27,4 +27,9 @@ pub enum ServerEvent {
 pub enum ServerEventResponse {
     /// The response to a `RefreshMotdRequest`.
     RefreshMotd(Motd),
+    /// A generic response that acknowledges the event was recieved, but
+    /// no actions were taken.
+    ///
+    /// VALID FOR ALL EVENTS
+    Acknowledged,
 }

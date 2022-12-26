@@ -6,3 +6,5 @@ Cargo.lock
 
 *.old/
 *.profraw
+
+raknet-test/

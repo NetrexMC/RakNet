@@ -322,31 +322,3 @@ impl Streamable for Frame {
         Ok(stream.get_ref().clone())
     }
 }
-
-// /// A smart struct that holds fragment ids bound by a packet id.
-// /// This is useful for keeping track of fragment ids and reassembling them.
-// ///
-// /// This can be used in conjunction with an `OrderedQueue` to keep track of fragments.
-// #[derive(Debug, Clone)]
-// pub struct FramePool {
-//     /// This is a map of sequence ids to a pool of frames.
-//     /// The key is the sequence, and the inner vec are the frames.
-//     pool: HashMap<u16, Vec<Frame>>,
-//     /// The maximum number of fragments that can be stored in the pool.
-//     /// This is used to prevent the pool from growing too large.
-//     max_fragments: u16,
-//     /// The current
-// }
-
-// impl FramePool {
-//     pub fn new(max_fragments: u16) -> Self {
-//         Self {
-//             pool: HashMap::new(),
-//             max_fragments,
-//         }
-//     }
-
-//     pub fn next(&mut self) -> u16 {
-//         // gets the id that should be used next.
-//     }
-// }

@@ -10,7 +10,7 @@ use tokio::net::UdpSocket;
 use tokio::sync::{mpsc, oneshot};
 use tokio::sync::{Mutex, Notify, Semaphore};
 
-use crate::conn::{ConnMeta, Connection};
+use crate::connection::{ConnMeta, Connection};
 use crate::error::server::ServerError;
 use crate::protocol::mcpe::motd::Motd;
 use crate::protocol::packet::offline::{
@@ -122,9 +122,10 @@ impl Listener {
         let server_id: u64 = rand::random();
         let motd = Motd::new(server_id, format!("{}", address.port()));
 
-        // The buffer is 100 here because locking on large servers may cause
-        // locking to take longer, and this accounts for that.
-        let (send_comm, recv_comm) = mpsc::channel::<Connection>(100);
+        // This channel is a Communication channel for when `Connection` structs are initialized.
+        let (send_comm, recv_comm) = mpsc::channel::<Connection>(10);
+        // This channel is responsible for handling and dispatching events between clients.
+        // Oneshot will garauntee this event is intended for the client whom requested the event.
         let (send_evnt, recv_evnt) =
             mpsc::channel::<(ServerEvent, oneshot::Sender<ServerEventResponse>)>(10);
 
@@ -165,6 +166,8 @@ impl Listener {
         let connections = self.connections.clone();
         let closer = self.closer.clone();
         let cleanup = self.cleanup.clone();
+
+        self.serving = true;
 
         tokio::spawn(async move {
             // We allocate here to prevent constant allocation of this array
@@ -212,7 +215,6 @@ impl Listener {
 
                         break;
                     }
-                    // todo disconnect notification
                 };
 
                 // Do a quick check to see if this a valid raknet packet, otherwise we're going to handle it normally
@@ -228,7 +230,7 @@ impl Listener {
                             ServerEvent,
                             oneshot::Sender<ServerEventResponse>,
                         )>(10);
-                        let connection = Connection::new(origin, &socket, net_recv, evt_recv);
+                        let connection = Connection::new(origin, &socket, net_recv, evt_recv).await;
 
                         // Add the connection to the available connections list.
                         // we're using the name "sessions" here to differeniate
@@ -271,17 +273,19 @@ impl Listener {
                                     {
                                         // todo event error,
                                         // we're gonna ignore it and continue by sending default motd.
-                                        rakrs_debug!(true, "[{}] Encountered an error when fetching the updated Motd.", to_address_token(*&origin))
+                                        rakrs_debug!("[{}] Encountered an error when dispatching ServerEvent::RefreshMotdRequest.", to_address_token(*&origin))
                                     }
 
                                     if let Ok(res) = resp_rx.await {
-                                        // this was a motd event,
-                                        // lets send the pong!
-
                                         // get the motd from the server event otherwise use defaults.
                                         match res {
-                                            ServerEventResponse::RefreshMotd(m) => motd = m,
-                                            _ => {}
+                                            ServerEventResponse::RefreshMotd(m) => {
+                                                rakrs_debug!(true, "[{}] Motd set by ServerEventResponse::RefreshMotd.", to_address_token(origin));
+                                                motd = m;
+                                            }
+                                            _ => {
+                                                rakrs_debug!(true, "[{}] Response to ServerEvent::RefreshMotdRequest is invalid!", to_address_token(origin));
+                                            }
                                         };
                                     }
 
@@ -350,13 +354,17 @@ impl Listener {
                                         sessions.get_mut(&origin).unwrap().0.mtu_size = pk.mtu_size,
                                     );
 
-                                    let (resp_tx, resp_rx) =
-                                        oneshot::channel::<ServerEventResponse>();
-                                    sessions[&origin]
+                                    let (resp_tx, _) = oneshot::channel::<ServerEventResponse>();
+                                    if let Err(_) = sessions[&origin]
                                         .2
                                         .send((ServerEvent::SetMtuSize(pk.mtu_size), resp_tx))
                                         .await
-                                        .unwrap();
+                                    {
+                                        rakrs_debug!(
+                                            "[{}] Failed to update mtu size with the client!",
+                                            to_address_token(origin)
+                                        );
+                                    }
 
                                     send_packet_to_socket(&socket, resp.into(), origin).await;
                                     continue;
@@ -374,7 +382,7 @@ impl Listener {
                 let sessions = connections.lock().await;
                 if sessions.contains_key(&origin) {
                     if let Err(_) = sessions[&origin].1.send(buf[..length].to_vec()).await {
-                        rakrs_debug!(true, "[{}] Failed when handling recieved packet! Could not pass over to internal connection!", to_address_token(*&origin));
+                        rakrs_debug!(true, "[{}] Failed when handling recieved packet! Could not pass over to internal connection, the channel might be closed!", to_address_token(*&origin));
                     }
                 }
             }
