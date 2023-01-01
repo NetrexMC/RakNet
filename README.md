@@ -47,13 +47,3 @@ async fn main() {
     }
 }
 ```
-
-#### Thanks to:
-
-- [@b24r0/rust-raknet](https://github.com/b23r0/rust-raknet)! I used this as a reference for `v3` which gave me a deeper understanding of async design patterns in rust! More specifically:
-  
-  - `Sephamore`. These are used throughout to help notify server of various signals, mainly `Close`. Sephamore's help by waiting for vairious tasks to shutdown before fully closing the listener.
-  
-  - `Notify`. These are simple by design, but they are used to synchronize actions across various threads or tasks and "wake" them up. For instance, if I want to close the server, I could notify the server to close, and the server will begin closing.
-  
-  Looking through this library also made me explore more about async rust which I probably wouldn't have done on the contrary, so a big thanks!
