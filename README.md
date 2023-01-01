@@ -23,15 +23,10 @@ async fn my_handler(conn: RakConnection, mut stream: RakStream) {
 async fn main() {
     // Bind to a socket and allow minecraft protocol
     let mut server = Listener::bind("0.0.0.0:19132", true).await;
-    server.motd = Motd::new(
-        "Rust Bedrock Minecraft server",
-        // 100 players, maximum
-        100,
-        // The minecraft version to display
-        "1.18.0",
-        // The Gamemode to display
-        mcpe::Gamemode::Creative
-    );
+    server.motd.name = "Rust Bedrock Minecraft server";
+    server.motd.player_count = 100;
+    server.motd.player_max = 200;
+    server.motd.gamemode = mcpe::Gamemode::Survival;
 
     // Begin listening to incoming connections
     server.start().await;
