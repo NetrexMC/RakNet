@@ -1,7 +1,23 @@
+pub const ACK: u8 = 0xc0;
+pub const NACK: u8 = 0xa0;
+
 use std::{io::Cursor, ops::Range};
 
 use binary_utils::Streamable;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt, BE};
+
+pub(crate) trait Ackable {
+    /// When an ack packet is recieved.
+    /// We should ack the queue
+    fn ack(&mut self, index: Ack) {}
+
+    /// When an NACK packet is recieved.
+    /// We should nack the queue
+    /// This should return the packets that need to be resent.
+    fn nack(&mut self, packet: Ack) -> Vec<Vec<u8>> {
+        todo!()
+    }
+}
 
 /// An ack record.
 /// A record holds a single or range of acked packets.
@@ -48,6 +64,10 @@ impl Ack {
             count,
             records: Vec::new(),
         }
+    }
+
+    pub fn is_nack(&self) -> bool {
+        self.id == 0xa0
     }
 
     pub fn push_record(&mut self, seq: u32) {

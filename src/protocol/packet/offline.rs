@@ -64,8 +64,8 @@ packet_id!(UnconnectedPong, 0x1c);
 #[derive(Debug, Clone)]
 pub struct OpenConnectRequest {
     pub magic: Magic,
-    pub protocol: u8,
-    pub mtu_size: u16,
+    pub protocol: u8,  // 9
+    pub mtu_size: u16, // 500
 }
 impl Streamable for OpenConnectRequest {
     fn compose(source: &[u8], position: &mut usize) -> Result<Self, BinaryError> {

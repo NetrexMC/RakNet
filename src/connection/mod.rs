@@ -1,3 +1,5 @@
+pub mod controller;
+/// Necessary queues for the connection.
 pub mod queue;
 pub mod state;
 
@@ -6,21 +8,32 @@ use std::{net::SocketAddr, sync::Arc, time::SystemTime};
 use binary_utils::Streamable;
 use tokio::{
     net::UdpSocket,
-    sync::{mpsc, oneshot, Mutex, Notify, RwLock, Semaphore},
+    sync::{
+        mpsc::{self, Sender},
+        oneshot, Mutex, Notify, RwLock, Semaphore,
+    },
 };
 
 use crate::{
     error::connection::ConnectionError,
-    protocol::packet::Packet,
+    protocol::{
+        ack::{Ack, Ackable, ACK, NACK},
+        frame::FramePacket,
+        packet::{online::OnlinePacket, Packet},
+    },
     rakrs_debug,
     server::{
+        current_epoch,
         event::{ServerEvent, ServerEventResponse},
-        raknet_start,
     },
     util::to_address_token,
 };
 
-use self::queue::{RecvQueue, SendQueue};
+use self::{
+    controller::window::ReliableWindow,
+    queue::{RecvQueue, SendQueue},
+    state::ConnectionState,
+};
 
 pub(crate) type ConnDispatcher =
     mpsc::Receiver<(ServerEvent, oneshot::Sender<ServerEventResponse>)>;
@@ -40,7 +53,7 @@ impl ConnMeta {
     pub fn new(mtu_size: u16) -> Self {
         Self {
             mtu_size,
-            recv_time: raknet_start(),
+            recv_time: current_epoch(),
         }
     }
 }
@@ -57,12 +70,12 @@ pub struct Connection {
     /// The address of the connection
     /// This is internally tokenized by rak-rs
     pub address: SocketAddr,
+    pub(crate) state: Arc<Mutex<ConnectionState>>,
     /// The queue used to send packets back to the connection.
-    pub(crate) send_queue: Arc<RwLock<SendQueue>>,
+    send_queue: Arc<RwLock<SendQueue>>,
     /// The queue used to recieve packets, this is read from by the server.
     /// This is only used internally.
-    pub(crate) recv_queue: Arc<Mutex<RecvQueue>>,
-    pub(crate) state: state::ConnectionState,
+    recv_queue: Arc<Mutex<RecvQueue>>,
     /// The network channel, this is where the connection will be recieving it's packets.
     /// This is interfaced to provide the api for `Connection::recv()`
     internal_net_recv: ConnNetChan,
@@ -93,13 +106,17 @@ impl Connection {
             recv_queue: Arc::new(Mutex::new(RecvQueue::new())),
             internal_net_recv: Arc::new(Mutex::new(net_receiver)),
             dispatch: Arc::new(Mutex::new(dispatch)),
-            state: state::ConnectionState::Unidentified,
+            state: Arc::new(Mutex::new(ConnectionState::Unidentified)),
             disconnect: Arc::new(Semaphore::new(0)),
             recv_time: Arc::new(Mutex::new(SystemTime::now())),
         };
 
         c.init_tick(socket).await;
         c.init_net_recv(socket, net, net_sender).await;
+
+        // todo finish the send queue
+        // todo finish the ticking function
+        // todo add function for user to accept and send packets!
 
         return c;
     }
@@ -123,14 +140,15 @@ impl Connection {
         let recv_q = self.recv_queue.clone();
         let send_q = self.send_queue.clone();
         let disconnect = self.disconnect.clone();
-        let state = self.state;
+        let state = self.state.clone();
         let address = self.address;
 
         tokio::spawn(async move {
             loop {
                 if disconnect.is_closed() {
                     rakrs_debug!(
-                        "[{}] Network reciever task disbanding!",
+                        true,
+                        "[{}] Recv task has been closed!",
                         to_address_token(address)
                     );
                     break;
@@ -147,14 +165,144 @@ impl Connection {
                     // 2. Determine how the packet should be processed
                     // 3. If the packet is assembled and should be sent to the client
                     //    send it to the communication channel using `sender`
-                    rakrs_debug!(
-                        true,
-                        "[{}] Unknown RakNet packet recieved.",
-                        to_address_token(address)
-                    );
+
+                    let id = payload[0];
+                    match id {
+                        // This is a frame packet.
+                        // This packet will be handled by the recv_queue
+                        0x80..=0x8d => {
+                            if let Ok(pk) = FramePacket::compose(&payload[..], &mut 0) {
+                                let mut rq = recv_q.lock().await;
+
+                                if let Ok(_) = rq.insert(pk) {};
+
+                                let buffers = rq.flush();
+
+                                for buffer in buffers {
+                                    let res = Connection::process_packet(
+                                        &buffer, &address, &sender, &send_q, &state,
+                                    )
+                                    .await;
+                                    if let Ok(v) = res {
+                                        if v == true {
+                                            // DISCONNECT
+                                            disconnect.close();
+                                            break;
+                                        }
+                                    }
+                                    if let Err(_) = res {
+                                        rakrs_debug!(
+                                            true,
+                                            "[{}] Failed to process packet!",
+                                            to_address_token(address)
+                                        );
+                                    };
+                                }
+
+                                drop(rq);
+                            }
+                        }
+                        NACK => {
+                            // Validate this is a nack packet
+                            if let Ok(nack) = Ack::compose(&payload[..], &mut 0) {
+                                // The client acknowledges it did not recieve these packets
+                                // We should resend them.
+                                let mut sq = send_q.write().await;
+                                let resend = sq.nack(nack);
+                                for packet in resend {
+                                    if let Err(_) = sender.send(packet).await {
+                                        rakrs_debug!(
+                                            true,
+                                            "[{}] Failed to send packet to client!",
+                                            to_address_token(address)
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                        ACK => {
+                            // first lets validate this is an ack packet
+                            if let Ok(ack) = Ack::compose(&payload[..], &mut 0) {
+                                // The client acknowledges it recieved these packets
+                                // We should remove them from the queue.
+                                let mut sq = send_q.write().await;
+                                sq.ack(ack);
+                            }
+                        }
+                        _ => {
+                            rakrs_debug!(
+                                true,
+                                "[{}] Unknown RakNet packet recieved (Or packet is sent out of scope).",
+                                to_address_token(address)
+                            );
+                        }
+                    };
                 }
             }
         });
+    }
+
+    pub async fn process_packet(
+        buffer: &Vec<u8>,
+        address: &SocketAddr,
+        sender: &Sender<Vec<u8>>,
+        send_q: &Arc<RwLock<SendQueue>>,
+        state: &Arc<Mutex<ConnectionState>>,
+    ) -> Result<bool, ()> {
+        if let Ok(packet) = Packet::compose(buffer, &mut 0) {
+            if packet.is_online() {
+                return match packet.get_online() {
+                    OnlinePacket::ConnectedPing(pk) => {
+                        let response = ConnectedPong {
+                            ping_time: pk.time,
+                            pong_time: SystemTime::now()
+                                .duration_since(connection.start_time)
+                                .unwrap()
+                                .as_millis() as i64,
+                        };
+                        Ok(true)
+                    }
+                    OnlinePacket::ConnectionRequest(pk) => {
+                        let response = ConnectionAccept {
+                            system_index: 0,
+                            client_address: from_address_token(connection.address.clone()),
+                            internal_id: SocketAddr::new(
+                                IpAddr::V4(Ipv4Addr::new(255, 255, 255, 255)),
+                                19132,
+                            ),
+                            request_time: pk.time,
+                            timestamp: SystemTime::now()
+                                .duration_since(connection.start_time)
+                                .unwrap()
+                                .as_millis() as i64,
+                        };
+                        Ok(true)
+                    }
+                    OnlinePacket::Disconnect(_) => {
+                        // Disconnect the client immediately.
+                        connection.disconnect("Client disconnected.", false);
+                        Ok(false)
+                    }
+                    OnlinePacket::NewConnection(_) => {
+                        connection.state = ConnectionState::Connected;
+                        Ok(true)
+                    }
+                    _ => {
+                        sender.send(buffer.clone()).await.unwrap();
+                        Ok(true)
+                    }
+                };
+            } else {
+                *state.lock().await = ConnectionState::Disconnecting;
+                rakrs_debug!(
+                    true,
+                    "[{}] Invalid protocol! Disconnecting client!",
+                    to_address_token(*address)
+                );
+                return Err(());
+            }
+        }
+        Err(())
     }
 
     /// Handle a RakNet Event. These are sent as they happen.

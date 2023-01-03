@@ -81,6 +81,8 @@ pub struct Listener {
     pub motd: Motd,
     /// A server Id, passed in unconnected pong.
     pub id: u64,
+    /// Supported versions
+    pub versions: &'static [u8],
     /// Whether or not the server is being served.
     serving: bool,
     /// The current socket.
@@ -132,6 +134,7 @@ impl Listener {
         let listener = Self {
             sock: Some(Arc::new(sock)),
             id: server_id,
+            versions: &[10, 11],
             motd,
             send_comm,
             recv_comm,
@@ -166,6 +169,7 @@ impl Listener {
         let connections = self.connections.clone();
         let closer = self.closer.clone();
         let cleanup = self.cleanup.clone();
+        let versions = self.versions.clone();
 
         self.serving = true;
 
@@ -280,7 +284,6 @@ impl Listener {
                                         // get the motd from the server event otherwise use defaults.
                                         match res {
                                             ServerEventResponse::RefreshMotd(m) => {
-                                                rakrs_debug!(true, "[{}] Motd set by ServerEventResponse::RefreshMotd.", to_address_token(origin));
                                                 motd = m;
                                             }
                                             _ => {
@@ -291,7 +294,7 @@ impl Listener {
 
                                     // unconnected pong signature is different if MCPE is specified.
                                     let resp = UnconnectedPong {
-                                        timestamp: raknet_start(),
+                                        timestamp: current_epoch(),
                                         server_id,
                                         magic: Magic::new(),
                                         #[cfg(feature = "mcpe")]
@@ -303,14 +306,14 @@ impl Listener {
                                 }
                                 OfflinePacket::OpenConnectRequest(pk) => {
                                     // todo make a constant for this
-                                    if pk.protocol != 10_u8 {
+                                    if !versions.contains(&pk.protocol) {
                                         let resp = IncompatibleProtocolVersion {
                                             protocol: pk.protocol,
                                             magic: Magic::new(),
                                             server_id,
                                         };
 
-                                        rakrs_debug!("[{}] Sent invalid RakNet protocol. Version is incompatible with server.", to_address_token(*&origin));
+                                        rakrs_debug!("[{}] Sent ({}) which is invalid RakNet protocol. Version is incompatible with server.", pk.protocol, to_address_token(*&origin));
 
                                         send_packet_to_socket(&socket, resp.into(), origin).await;
                                         continue;
@@ -441,7 +444,7 @@ async fn send_packet_to_socket(socket: &Arc<UdpSocket>, packet: Packet, origin: 
     }
 }
 
-pub(crate) fn raknet_start() -> u64 {
+pub(crate) fn current_epoch() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()

@@ -10,8 +10,11 @@ pub enum Reliability {
     ReliableOrd,
     /// Reliably sequenced **AND** ordered
     ReliableSeq,
+    /// never used over the wire
     UnreliableAck,
+    /// never used over the wire
     ReliableAck,
+    /// never used over the wire
     ReliableOrdAck,
 }
 

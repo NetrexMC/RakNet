@@ -43,9 +43,9 @@ pub struct Motd {
     /// The version of the server
     pub version: String,
     /// The number of players online
-    pub player_count: u16,
+    pub player_count: u32,
     /// The maximum number of players
-    pub player_max: u16,
+    pub player_max: u32,
     /// The gamemode of the server
     pub gamemode: Gamemode,
     /// The server's GUID
@@ -172,11 +172,11 @@ impl Streamable for Motd {
             version: version.clone(),
             player_count: player_count
                 .as_str()
-                .parse::<u16>()
+                .parse::<u32>()
                 .expect("Player count is not a number"),
             player_max: player_max
                 .as_str()
-                .parse::<u16>()
+                .parse::<u32>()
                 .expect("Player Maximum is not a number"),
             server_guid: server_guid
                 .as_str()
