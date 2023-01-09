@@ -2,10 +2,10 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-#[cfg(feature = "async-std")]
+#[cfg(feature = "async_std")]
 use async_std::net::UdpSocket;
 use binary_utils::Streamable;
-#[cfg(feature = "tokio")]
+#[cfg(feature = "async_tokio")]
 use tokio::net::UdpSocket;
 
 use crate::protocol::ack::{Ack, Ackable, Record, SingleRecord};

@@ -12,7 +12,7 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-#[cfg(feature = "async-std")]
+#[cfg(feature = "async_std")]
 use async_std::{
     channel::{bounded, Receiver, Sender},
     net::UdpSocket,
@@ -20,7 +20,7 @@ use async_std::{
     task::{self, sleep, JoinHandle},
 };
 use binary_utils::Streamable;
-#[cfg(feature = "tokio")]
+#[cfg(feature = "async_tokio")]
 use tokio::{
     net::UdpSocket,
     sync::{
@@ -294,11 +294,11 @@ impl Connection {
                 }
 
                 match net.recv().await {
-                    #[cfg(feature = "async-std")]
+                    #[cfg(feature = "async_std")]
                     Ok(payload) => {
                         handle_payload!(payload);
                     }
-                    #[cfg(feature = "tokio")]
+                    #[cfg(feature = "async_tokio")]
                     Some(payload) => {
                         handle_payload!(payload);
                     }
@@ -427,9 +427,9 @@ impl Connection {
         let tasks = self.tasks.clone();
 
         for task in tasks.lock().await.drain(..) {
-            #[cfg(feature = "async-std")]
+            #[cfg(feature = "async_std")]
             task.cancel().await;
-            #[cfg(feature = "tokio")]
+            #[cfg(feature = "async_tokio")]
             task.abort();
         }
     }

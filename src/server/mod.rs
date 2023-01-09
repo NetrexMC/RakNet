@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::{net::SocketAddr, sync::Arc};
 
-#[cfg(feature = "async-std")]
+#[cfg(feature = "async_std")]
 use async_std::{
     channel::unbounded,
     channel::TrySendError,
@@ -17,10 +17,10 @@ use async_std::{
     task::{self},
 };
 use binary_utils::Streamable;
-#[cfg(feature = "async-std")]
+#[cfg(feature = "async_std")]
 use futures::select;
 
-#[cfg(feature = "tokio")]
+#[cfg(feature = "async_tokio")]
 use tokio::{
     net::UdpSocket,
     sync::mpsc::channel as bounded,
@@ -435,13 +435,13 @@ impl Listener {
             } else {
                 let receiver = self.recv_comm.recv().await;
                 return match receiver {
-                    #[cfg(feature = "async-std")]
+                    #[cfg(feature = "async_std")]
                     Ok(c) => Ok(c),
-                    #[cfg(feature = "async-std")]
+                    #[cfg(feature = "async_std")]
                     Err(_) => Err(ServerError::Killed),
-                    #[cfg(not(feature = "async-std"))]
+                    #[cfg(feature = "async_tokio")]
                     Some(c) => Ok(c),
-                    #[cfg(not(feature = "async-std"))]
+                    #[cfg(feature = "async_tokio")]
                     None => Err(ServerError::Killed),
                 };
             }
