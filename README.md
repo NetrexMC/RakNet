@@ -2,6 +2,8 @@
 
 A fully functional RakNet implementation in rust, asynchronously driven.
 
+To use `tokio` you must enable the `tokio` feature, and use `disable-default-features` to disable the default `async-std` feature.
+
 ```rust
 // Create a server
 use rakrs::Listener;
