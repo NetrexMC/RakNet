@@ -4,7 +4,6 @@ pub mod event;
 
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
-use std::time::Duration;
 use std::{net::SocketAddr, sync::Arc};
 
 #[cfg(feature = "async-std")]
@@ -28,7 +27,6 @@ use tokio::{
     sync::mpsc::{Receiver, Sender},
     sync::Mutex,
     task::{self},
-    time::timeout,
 };
 
 use crate::connection::{ConnMeta, Connection};
@@ -441,9 +439,9 @@ impl Listener {
                     Ok(c) => Ok(c),
                     #[cfg(feature = "async-std")]
                     Err(_) => Err(ServerError::Killed),
-                    #[cfg(feature = "tokio")]
+                    #[cfg(not(feature = "async-std"))]
                     Some(c) => Ok(c),
-                    #[cfg(feature = "tokio")]
+                    #[cfg(not(feature = "async-std"))]
                     None => Err(ServerError::Killed),
                 };
             }
