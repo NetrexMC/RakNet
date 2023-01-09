@@ -27,10 +27,7 @@ use tokio::{
         mpsc::{channel as bounded, Receiver, Sender},
         Mutex, RwLock,
     },
-    task::{
-        self,
-        JoinHandle
-    },
+    task::{self, JoinHandle},
     time::sleep,
 };
 
@@ -298,9 +295,13 @@ impl Connection {
 
                 match net.recv().await {
                     #[cfg(feature = "async-std")]
-                    Ok(payload) => {handle_payload!(payload);},
+                    Ok(payload) => {
+                        handle_payload!(payload);
+                    }
                     #[cfg(feature = "tokio")]
-                    Some(payload) => {handle_payload!(payload);},
+                    Some(payload) => {
+                        handle_payload!(payload);
+                    }
                     _ => continue,
                 }
             }

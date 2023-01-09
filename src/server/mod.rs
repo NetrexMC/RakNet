@@ -12,12 +12,10 @@ use async_std::{
     channel::unbounded,
     channel::TrySendError,
     channel::{bounded, Receiver, Sender},
-    task::{
-        self,
-    },
     io::timeout,
     net::UdpSocket,
     sync::{Condvar, Mutex},
+    task::{self},
 };
 use binary_utils::Streamable;
 #[cfg(feature = "async-std")]
@@ -25,16 +23,13 @@ use futures::select;
 
 #[cfg(feature = "tokio")]
 use tokio::{
+    net::UdpSocket,
     sync::mpsc::channel as bounded,
     sync::mpsc::{Receiver, Sender},
-    task::{
-        self,
-    },
-    net::UdpSocket,
+    sync::Mutex,
+    task::{self},
     time::timeout,
-    sync::{Mutex},
 };
-
 
 use crate::connection::{ConnMeta, Connection};
 use crate::error::server::ServerError;
