@@ -209,6 +209,25 @@ impl Frame {
         }
     }
 
+    /// Initializes a new frame with the given reliability.
+    pub fn new(reliability: Reliability, body: Option<Vec<u8>>) -> Self {
+        Self {
+            flags: 0,
+            size: if let Some(b) = body.as_ref() {
+                b.len() as u16
+            } else {
+                0
+            },
+            reliable_index: None,
+            sequence_index: None,
+            order_index: None,
+            order_channel: None,
+            fragment_meta: None,
+            reliability,
+            body: body.unwrap_or(Vec::new()),
+        }
+    }
+
     /// Whether or not the frame is fragmented.
     pub fn is_fragmented(&self) -> bool {
         self.fragment_meta.is_some()

@@ -6,8 +6,10 @@ pub use self::send::*;
 
 use std::collections::HashMap;
 
+use crate::protocol::RAKNET_HEADER_FRAME_OVERHEAD;
 use crate::protocol::frame::FragmentMeta;
 use crate::protocol::frame::Frame;
+use crate::protocol::reliability::Reliability;
 use crate::server::current_epoch;
 
 pub enum NetQueueError<E> {
@@ -59,11 +61,24 @@ pub struct RecoveryQueue<Item> {
     queue: HashMap<u32, (u64, Item)>,
 }
 
-impl<Item> RecoveryQueue<Item> {
+impl<Item> RecoveryQueue<Item>
+where
+    Item: Clone
+{
     pub fn new() -> Self {
         Self {
             queue: HashMap::new(),
         }
+    }
+
+    pub fn insert_id(&mut self, seq: u32, item: Item) {
+        self.queue.insert(seq, (current_epoch(), item));
+    }
+
+    pub fn flush_old(&mut self, threshold: u64) -> Vec<Item> {
+        let old = self.queue.iter().filter(|(_, (time, _))| (*time + threshold) < current_epoch()).map(|(_, (_, item))| item.clone()).collect::<Vec<_>>();
+        self.queue.retain(|_, (time, _)| (*time + threshold) > current_epoch());
+        old
     }
 }
 
@@ -368,46 +383,50 @@ impl FragmentQueue {
 
     /// This will split a given frame into a bunch of smaller frames within the specified
     /// restriction.
-    pub fn split_insert(&mut self, frame: Frame, mtu: u16) -> Result<u16, FragmentQueueError> {
-        let max_mtu = mtu - 60;
+    pub fn split_insert(&mut self, buffer: &[u8], mtu: u16) -> Result<u16, FragmentQueueError> {
+        let max_mtu = mtu - RAKNET_HEADER_FRAME_OVERHEAD;
 
-        if frame.body.len() > max_mtu.into() {
-            let splits = frame
-                .body
+        self.fragment_id += self.fragment_id.wrapping_add(1);
+
+        let id = self.fragment_id;
+
+        if self.fragments.contains_key(&id) {
+            self.fragments.remove(&id);
+        }
+
+        if let Ok(frames) = Self::split(buffer, id, mtu) {
+            self.fragments.insert(id, (frames.len() as u32, frames));
+            return Ok(id);
+        }
+
+        return Err(FragmentQueueError::DoesNotNeedSplit);
+    }
+
+    pub fn split(buffer: &[u8], id: u16, mtu: u16) -> Result<Vec<Frame>, FragmentQueueError> {
+        let max_mtu = mtu - RAKNET_HEADER_FRAME_OVERHEAD;
+
+        if buffer.len() > max_mtu.into() {
+            let splits = buffer
                 .chunks(max_mtu.into())
                 .map(|c| c.to_vec())
                 .collect::<Vec<Vec<u8>>>();
-            let id = self.fragment_id.wrapping_add(1);
-            let mut index = 0;
             let mut frames: Vec<Frame> = Vec::new();
+            let mut index: u32 = 0;
 
             for buf in splits.iter() {
-                let mut f = Frame::init();
+                let mut f = Frame::new(Reliability::ReliableOrd, Some(buf.clone()));
                 f.fragment_meta = Some(FragmentMeta {
                     index,
                     size: splits.len() as u32,
                     id,
                 });
 
-                f.reliability = frame.reliability;
-                f.flags = frame.flags;
-                f.size = buf.len() as u16;
-                f.body = buf.clone();
-                f.order_index = frame.order_index;
-                f.order_channel = frame.order_channel;
-                f.reliable_index = frame.reliable_index;
-
                 index += 1;
 
                 frames.push(f);
             }
 
-            if self.fragments.contains_key(&id) {
-                self.fragments.remove(&id);
-            }
-
-            self.fragments.insert(id, (splits.len() as u32, frames));
-            return Ok(id);
+            return Ok(frames);
         }
 
         return Err(FragmentQueueError::DoesNotNeedSplit);

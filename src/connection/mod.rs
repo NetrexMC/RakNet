@@ -3,15 +3,27 @@ pub mod controller;
 pub mod queue;
 pub mod state;
 
-use std::{net::SocketAddr, sync::Arc, time::SystemTime};
+use std::{net::SocketAddr, sync::{Arc, atomic::{AtomicU64, AtomicBool}}, time::{SystemTime, Duration}};
 
+use async_std::{channel::{self, bounded}, task::JoinHandle};
 use binary_utils::Streamable;
+#[cfg(feature = "async-std")]
+use async_std::{
+    net::UdpSocket,
+    channel::{
+        Sender, Receiver
+    },
+    sync::{
+        Condvar, Mutex, RwLock,
+    }, task::sleep,
+};
+#[cfg(feature = "tokio")]
 use tokio::{
     net::UdpSocket,
     sync::{
         mpsc::{self, Sender},
         oneshot, Mutex, Notify, RwLock, Semaphore,
-    },
+    }, time::{timeout, sleep},
 };
 
 use crate::{
@@ -19,7 +31,7 @@ use crate::{
     protocol::{
         ack::{Ack, Ackable, ACK, NACK},
         frame::FramePacket,
-        packet::{online::OnlinePacket, Packet},
+        packet::{online::{OnlinePacket, ConnectedPong}, Packet},
     },
     rakrs_debug,
     server::{
@@ -34,11 +46,7 @@ use self::{
     queue::{RecvQueue, SendQueue},
     state::ConnectionState,
 };
-
-pub(crate) type ConnDispatcher =
-    mpsc::Receiver<(ServerEvent, oneshot::Sender<ServerEventResponse>)>;
-pub(crate) type ConnEvtChan = Arc<Mutex<ConnDispatcher>>;
-pub(crate) type ConnNetChan = Arc<Mutex<mpsc::Receiver<Vec<u8>>>>;
+pub(crate) type ConnNetChan = Arc<Mutex<channel::Receiver<Vec<u8>>>>;
 
 #[derive(Debug, Clone, Copy)]
 pub struct ConnMeta {
@@ -79,16 +87,17 @@ pub struct Connection {
     /// The network channel, this is where the connection will be recieving it's packets.
     /// This is interfaced to provide the api for `Connection::recv()`
     internal_net_recv: ConnNetChan,
-    /// The event IO to communicate with the listener.
-    /// This is responsible for refreshing the Motd and any other overhead like,
-    /// raknet voice channels or plugins, however these have not been implemented yet.
-    dispatch: ConnEvtChan,
     /// A notifier for when the connection should close.
     /// This is used for absolute cleanup withtin the connection
-    disconnect: Arc<Semaphore>,
+    disconnect: Arc<AtomicBool>,
+    /// The event dispatcher for the connection.
+    // evt_sender: Sender<(ServerEvent, oneshot::Sender<ServerEventResponse>)>,
+    /// The event receiver for the connection.
+    // evt_receiver: mpsc::Receiver<(ServerEvent, oneshot::Sender<ServerEventResponse>)>,
     /// The last time a packet was recieved. This is used to keep the connection from
     /// being in memory longer than it should be.
-    recv_time: Arc<Mutex<SystemTime>>,
+    recv_time: Arc<AtomicU64>,
+    tasks: Arc<Mutex<Vec<JoinHandle<()>>>>,
 }
 
 impl Connection {
@@ -96,23 +105,29 @@ impl Connection {
     pub async fn new(
         address: SocketAddr,
         socket: &Arc<UdpSocket>,
-        net: mpsc::Receiver<Vec<u8>>,
-        dispatch: ConnDispatcher,
+        net: channel::Receiver<Vec<u8>>,
+        mtu: u16,
     ) -> Self {
-        let (net_sender, net_receiver) = mpsc::channel::<Vec<u8>>(100);
+        let (net_sender, net_receiver) = bounded::<Vec<u8>>(100);
+        // let (evt_sender, evt_receiver) = mpsc::channel::<(ServerEvent, oneshot::Sender<ServerEventResponse>)>(10);
         let c = Self {
             address,
-            send_queue: Arc::new(RwLock::new(SendQueue::new())),
+            send_queue: Arc::new(RwLock::new(SendQueue::new(mtu, 12000, 5, socket.clone(), address))),
             recv_queue: Arc::new(Mutex::new(RecvQueue::new())),
             internal_net_recv: Arc::new(Mutex::new(net_receiver)),
-            dispatch: Arc::new(Mutex::new(dispatch)),
+            // evt_sender,
+            // evt_receiver,
             state: Arc::new(Mutex::new(ConnectionState::Unidentified)),
-            disconnect: Arc::new(Semaphore::new(0)),
-            recv_time: Arc::new(Mutex::new(SystemTime::now())),
+            // disconnect: Arc::new(Condvar::new()),
+            disconnect: Arc::new(AtomicBool::new(false)),
+            recv_time: Arc::new(AtomicU64::new(current_epoch())),
+            tasks: Arc::new(Mutex::new(Vec::new())),
         };
 
-        c.init_tick(socket).await;
-        c.init_net_recv(socket, net, net_sender).await;
+        let tk = c.tasks.clone();
+        let mut tasks = tk.lock().await;
+        tasks.push(c.init_tick(socket));
+        tasks.push(c.init_net_recv(socket, net, net_sender).await);
 
         // todo finish the send queue
         // todo finish the ticking function
@@ -122,10 +137,30 @@ impl Connection {
     }
 
     /// Initializes the client ticking process!
-    pub async fn init_tick(&self, socket: &Arc<UdpSocket>) {
+    pub fn init_tick(&self, socket: &Arc<UdpSocket>) -> async_std::task::JoinHandle<()>{
+        let address = self.address;
+        let closer = self.disconnect.clone();
+        let last_recv = self.recv_time.clone();
+
         // initialize the event io
         // we initialize the ticking function here, it's purpose is to update the state of the current connection
         // while handling throttle
+        return async_std::task::spawn(async move {
+            loop {
+                sleep(Duration::from_millis(50)).await;
+
+                if last_recv.load(std::sync::atomic::Ordering::Relaxed) + 20 >= current_epoch() {
+                    rakrs_debug!(
+                        true,
+                        "[{}] Connection has been closed due to inactivity!",
+                        to_address_token(address)
+                    );
+                    // closer.notify_all();
+                    closer.store(true, std::sync::atomic::Ordering::Relaxed);
+                    break;
+                }
+            }
+        });
     }
 
     /// This function initializes the raw internal packet handling task!
@@ -133,9 +168,9 @@ impl Connection {
     pub async fn init_net_recv(
         &self,
         socket: &Arc<UdpSocket>,
-        mut net: mpsc::Receiver<Vec<u8>>,
-        sender: mpsc::Sender<Vec<u8>>,
-    ) {
+        mut net: Receiver<Vec<u8>>,
+        sender: Sender<Vec<u8>>,
+    ) -> async_std::task::JoinHandle<()> {
         let recv_time = self.recv_time.clone();
         let recv_q = self.recv_queue.clone();
         let send_q = self.send_queue.clone();
@@ -143,9 +178,9 @@ impl Connection {
         let state = self.state.clone();
         let address = self.address;
 
-        tokio::spawn(async move {
+        return async_std::task::spawn(async move {
             loop {
-                if disconnect.is_closed() {
+                if disconnect.load(std::sync::atomic::Ordering::Relaxed) {
                     rakrs_debug!(
                         true,
                         "[{}] Recv task has been closed!",
@@ -154,17 +189,9 @@ impl Connection {
                     break;
                 }
 
-                if let Some(payload) = net.recv().await {
+                if let Ok(payload) = net.recv().await {
                     // We've recieved a payload!
-                    drop(*recv_time.lock().await = SystemTime::now());
-
-                    // Validate this packet
-                    // this is a raw buffer!
-                    // There's a few things that need to be done here.
-                    // 1. Validate the type of packet
-                    // 2. Determine how the packet should be processed
-                    // 3. If the packet is assembled and should be sent to the client
-                    //    send it to the communication channel using `sender`
+                    recv_time.store(current_epoch(), std::sync::atomic::Ordering::Relaxed);
 
                     let id = payload[0];
                     match id {
@@ -186,7 +213,8 @@ impl Connection {
                                     if let Ok(v) = res {
                                         if v == true {
                                             // DISCONNECT
-                                            disconnect.close();
+                                            // disconnect.close();
+                                            disconnect.store(true, std::sync::atomic::Ordering::Relaxed);
                                             break;
                                         }
                                     }
@@ -210,10 +238,18 @@ impl Connection {
                                 let mut sq = send_q.write().await;
                                 let resend = sq.nack(nack);
                                 for packet in resend {
-                                    if let Err(_) = sender.send(packet).await {
+                                    if let Ok(buffer) = packet.parse() {
+                                        if let Err(_) = sender.send(buffer).await {
+                                            rakrs_debug!(
+                                                true,
+                                                "[{}] Failed to send packet to client!",
+                                                to_address_token(address)
+                                            );
+                                        }
+                                    } else {
                                         rakrs_debug!(
                                             true,
-                                            "[{}] Failed to send packet to client!",
+                                            "[{}] Failed to send packet to client (parsing failed)!",
                                             to_address_token(address)
                                         );
                                     }
@@ -251,40 +287,40 @@ impl Connection {
     ) -> Result<bool, ()> {
         if let Ok(packet) = Packet::compose(buffer, &mut 0) {
             if packet.is_online() {
+                println!("Recieved packet: {:?}", packet);
                 return match packet.get_online() {
                     OnlinePacket::ConnectedPing(pk) => {
                         let response = ConnectedPong {
                             ping_time: pk.time,
-                            pong_time: SystemTime::now()
-                                .duration_since(connection.start_time)
-                                .unwrap()
-                                .as_millis() as i64,
+                            pong_time: current_epoch() as i64
                         };
-                        Ok(true)
+                        let q = send_q.write().await;
+                        // q.insert_immediate(response);
+                        Ok(false)
                     }
                     OnlinePacket::ConnectionRequest(pk) => {
-                        let response = ConnectionAccept {
-                            system_index: 0,
-                            client_address: from_address_token(connection.address.clone()),
-                            internal_id: SocketAddr::new(
-                                IpAddr::V4(Ipv4Addr::new(255, 255, 255, 255)),
-                                19132,
-                            ),
-                            request_time: pk.time,
-                            timestamp: SystemTime::now()
-                                .duration_since(connection.start_time)
-                                .unwrap()
-                                .as_millis() as i64,
-                        };
+                        // let response = ConnectionAccept {
+                        //     system_index: 0,
+                        //     client_address: from_address_token(connection.address.clone()),
+                        //     internal_id: SocketAddr::new(
+                        //         IpAddr::V4(Ipv4Addr::new(255, 255, 255, 255)),
+                        //         19132,
+                        //     ),
+                        //     request_time: pk.time,
+                        //     timestamp: SystemTime::now()
+                        //         .duration_since(connection.start_time)
+                        //         .unwrap()
+                        //         .as_millis() as i64,
+                        // };
                         Ok(true)
                     }
                     OnlinePacket::Disconnect(_) => {
                         // Disconnect the client immediately.
-                        connection.disconnect("Client disconnected.", false);
+                        // connection.disconnect("Client disconnected.", false);
                         Ok(false)
                     }
                     OnlinePacket::NewConnection(_) => {
-                        connection.state = ConnectionState::Connected;
+                        // connection.state = ConnectionState::Connected;
                         Ok(true)
                     }
                     _ => {
@@ -305,40 +341,49 @@ impl Connection {
         Err(())
     }
 
-    /// Handle a RakNet Event. These are sent as they happen.
-    ///
-    /// EG:
-    /// ```ignore
-    /// let conn: Connection = Connection::new();
-    ///
-    /// while let Some((event, responder)) = conn.recv_ev {
-    ///     match event {
-    ///         ServerEvent::SetMtuSize(mtu) => {
-    ///             println!("client updated mtu!");
-    ///             responder.send(ServerEventResponse::Acknowledge);
-    ///         }
-    ///     }
-    /// }
-    /// ```
-    pub async fn recv_ev(
-        &self,
-    ) -> Result<(ServerEvent, oneshot::Sender<ServerEventResponse>), ConnectionError> {
-        match self.dispatch.lock().await.recv().await {
-            Some((server_event, event_responder)) => {
-                return Ok((server_event, event_responder));
-            }
-            None => {
-                if self.disconnect.is_closed() {
-                    return Err(ConnectionError::Closed);
-                }
-                return Err(ConnectionError::EventDispatchError);
-            }
-        }
-    }
+    // /// Handle a RakNet Event. These are sent as they happen.
+    // ///
+    // /// EG:
+    // /// ```ignore
+    // /// let conn: Connection = Connection::new();
+    // ///
+    // /// while let Some((event, responder)) = conn.recv_ev {
+    // ///     match event {
+    // ///         ServerEvent::SetMtuSize(mtu) => {
+    // ///             println!("client updated mtu!");
+    // ///             responder.send(ServerEventResponse::Acknowledge);
+    // ///         }
+    // ///     }
+    // /// }
+    // /// ```
+    // pub async fn recv_ev(
+    //     &mut self,
+    // ) -> Result<(ServerEvent, oneshot::Sender<ServerEventResponse>), ConnectionError> {
+    //     match self.evt_receiver.recv().await {
+    //         Some((server_event, event_responder)) => {
+    //             return Ok((server_event, event_responder));
+    //         }
+    //         None => {
+    //             if self.disconnect.is_closed() {
+    //                 return Err(ConnectionError::Closed);
+    //             }
+    //             return Err(ConnectionError::EventDispatchError);
+    //         }
+    //     }
+    // }
 
     /// Initializes the client tick.
     pub async fn tick(&mut self) {
         let sendq = self.send_queue.write().await;
         // sendq.tick().await;
+    }
+
+    pub async fn close(&mut self) {
+        rakrs_debug!(true, "[{}] Dropping connection!", to_address_token(self.address));
+        let tasks = self.tasks.clone();
+
+        for task in tasks.lock().await.drain(..) {
+            task.cancel().await;
+        }
     }
 }
