@@ -7,15 +7,34 @@ use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 use std::{net::SocketAddr, sync::Arc};
 
-use async_std::io::timeout;
+#[cfg(feature = "async-std")]
+use async_std::{
+    channel::unbounded,
+    channel::TrySendError,
+    channel::{bounded, Receiver, Sender},
+    task::{
+        self,
+    },
+    io::timeout,
+    net::UdpSocket,
+    sync::{Condvar, Mutex},
+};
 use binary_utils::Streamable;
 #[cfg(feature = "async-std")]
-use async_std::net::UdpSocket;
-use async_std::channel::{Sender, Receiver, bounded};
-use async_std::channel::TrySendError;
-use async_std::channel::unbounded;
-use async_std::sync::{Mutex, Condvar};
 use futures::select;
+
+#[cfg(feature = "tokio")]
+use tokio::{
+    sync::mpsc::channel as bounded,
+    sync::mpsc::{Receiver, Sender},
+    task::{
+        self,
+    },
+    net::UdpSocket,
+    time::timeout,
+    sync::{Mutex},
+};
+
 
 use crate::connection::{ConnMeta, Connection};
 use crate::error::server::ServerError;
@@ -32,10 +51,7 @@ use crate::util::to_address_token;
 
 use self::event::ServerEvent;
 
-pub type Session = (
-    ConnMeta,
-    Sender<Vec<u8>>
-);
+pub type Session = (ConnMeta, Sender<Vec<u8>>);
 
 // stupid hack for easier syntax :)
 pub enum PossiblySocketAddr<'a> {
@@ -107,9 +123,9 @@ pub struct Listener {
     /// A Notifier (sephamore) that will wait until all notified listeners
     /// are completed, and finish closing.
     closed: Arc<AtomicBool>,
-    /// This is a notifier that acknowledges all connections have been removed from the server successfully.
-    /// This is important to prevent memory leaks if the process is continously running.
-    cleanup: Arc<Condvar>,
+    // This is a notifier that acknowledges all connections have been removed from the server successfully.
+    // This is important to prevent memory leaks if the process is continously running.
+    // cleanup: Arc<Condvar>,
 }
 
 impl Listener {
@@ -156,7 +172,7 @@ impl Listener {
             // closer: Arc::new(Semaphore::new(0)),
             closed: Arc::new(AtomicBool::new(false)),
             // cleanup: Arc::new(Notify::new()),
-            cleanup: Arc::new(Condvar::new()),
+            // cleanup: Arc::new(Condvar::new()),
         };
 
         return Ok(listener);
@@ -184,12 +200,12 @@ impl Listener {
         let default_motd = self.motd.clone();
         let connections = self.connections.clone();
         let closer = self.closed.clone();
-        let cleanup = self.cleanup.clone();
+        // let cleanup = self.cleanup.clone();
         let versions = self.versions.clone();
 
         self.serving = true;
 
-        async_std::task::spawn(async move {
+        task::spawn(async move {
             // We allocate here to prevent constant allocation of this array
             let mut buf: [u8; 2048] = [0; 2048];
             let motd_default = default_motd.clone();
@@ -200,17 +216,17 @@ impl Listener {
 
                 // We need to wait for either the socket to stop recieving,
                 // or a server close notification.
-                    let recv = socket.recv_from(&mut buf).await;
-                    match recv {
-                        Ok((l, o)) => {
-                            length = l;
-                            origin = o;
-                        },
-                        Err(e) => {
-                            rakrs_debug!(true, "Error: {:?}", e);
-                            continue;
-                        }
+                let recv = socket.recv_from(&mut buf).await;
+                match recv {
+                    Ok((l, o)) => {
+                        length = l;
+                        origin = o;
                     }
+                    Err(e) => {
+                        rakrs_debug!(true, "Error: {:?}", e);
+                        continue;
+                    }
+                }
 
                 // Do a quick check to see if this a valid raknet packet, otherwise we're going to handle it normally
                 if let Ok(packet) = Packet::compose(&mut buf, &mut 0) {
@@ -321,7 +337,9 @@ impl Listener {
                                         rakrs_debug!(true, "Creating new session for {}", origin);
                                         let meta = ConnMeta::new(0);
                                         let (net_send, net_recv) = bounded::<Vec<u8>>(10);
-                                        let connection = Connection::new(origin, &socket, net_recv, pk.mtu_size).await;
+                                        let connection =
+                                            Connection::new(origin, &socket, net_recv, pk.mtu_size)
+                                                .await;
                                         rakrs_debug!(true, "Created Session for {}", origin);
 
                                         // Add the connection to the available connections list.
@@ -376,7 +394,6 @@ impl Listener {
                         }
                         _ => {}
                     };
-
                 }
 
                 // Packet may be valid, but we'll let the connection decide this
@@ -425,9 +442,15 @@ impl Listener {
             } else {
                 let receiver = self.recv_comm.recv().await;
                 return match receiver {
+                    #[cfg(feature = "async-std")]
                     Ok(c) => Ok(c),
-                    Err(_) => Err(ServerError::Killed)
-                }
+                    #[cfg(feature = "async-std")]
+                    Err(_) => Err(ServerError::Killed),
+                    #[cfg(feature = "tokio")]
+                    Some(c) => Ok(c),
+                    #[cfg(feature = "tokio")]
+                    None => Err(ServerError::Killed),
+                };
             }
         }
     }
@@ -438,7 +461,8 @@ impl Listener {
             return Ok(());
         }
 
-        self.closed.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.closed
+            .store(true, std::sync::atomic::Ordering::Relaxed);
         // self.cleanup.notified().await;
 
         self.sock = None;

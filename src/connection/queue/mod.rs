@@ -6,10 +6,10 @@ pub use self::send::*;
 
 use std::collections::HashMap;
 
-use crate::protocol::RAKNET_HEADER_FRAME_OVERHEAD;
 use crate::protocol::frame::FragmentMeta;
 use crate::protocol::frame::Frame;
 use crate::protocol::reliability::Reliability;
+use crate::protocol::RAKNET_HEADER_FRAME_OVERHEAD;
 use crate::server::current_epoch;
 
 pub enum NetQueueError<E> {
@@ -63,7 +63,7 @@ pub struct RecoveryQueue<Item> {
 
 impl<Item> RecoveryQueue<Item>
 where
-    Item: Clone
+    Item: Clone,
 {
     pub fn new() -> Self {
         Self {
@@ -76,8 +76,14 @@ where
     }
 
     pub fn flush_old(&mut self, threshold: u64) -> Vec<Item> {
-        let old = self.queue.iter().filter(|(_, (time, _))| (*time + threshold) < current_epoch()).map(|(_, (_, item))| item.clone()).collect::<Vec<_>>();
-        self.queue.retain(|_, (time, _)| (*time + threshold) > current_epoch());
+        let old = self
+            .queue
+            .iter()
+            .filter(|(_, (time, _))| (*time + threshold) < current_epoch())
+            .map(|(_, (_, item))| item.clone())
+            .collect::<Vec<_>>();
+        self.queue
+            .retain(|_, (time, _)| (*time + threshold) > current_epoch());
         old
     }
 }

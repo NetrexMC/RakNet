@@ -3,50 +3,56 @@ pub mod controller;
 pub mod queue;
 pub mod state;
 
-use std::{net::SocketAddr, sync::{Arc, atomic::{AtomicU64, AtomicBool}}, time::{SystemTime, Duration}};
+use std::{
+    net::SocketAddr,
+    sync::{
+        atomic::{AtomicBool, AtomicU64},
+        Arc,
+    },
+    time::{Duration, SystemTime},
+};
 
-use async_std::{channel::{self, bounded}, task::JoinHandle};
-use binary_utils::Streamable;
 #[cfg(feature = "async-std")]
 use async_std::{
+    channel::{bounded, Receiver, Sender},
     net::UdpSocket,
-    channel::{
-        Sender, Receiver
-    },
-    sync::{
-        Condvar, Mutex, RwLock,
-    }, task::sleep,
+    sync::{Mutex, RwLock},
+    task::{self, sleep, JoinHandle},
 };
+use binary_utils::Streamable;
 #[cfg(feature = "tokio")]
 use tokio::{
     net::UdpSocket,
     sync::{
-        mpsc::{self, Sender},
-        oneshot, Mutex, Notify, RwLock, Semaphore,
-    }, time::{timeout, sleep},
+        mpsc::{channel as bounded, Receiver, Sender},
+        Mutex, RwLock,
+    },
+    task::{
+        self,
+        JoinHandle
+    },
+    time::sleep,
 };
 
 use crate::{
-    error::connection::ConnectionError,
     protocol::{
         ack::{Ack, Ackable, ACK, NACK},
         frame::FramePacket,
-        packet::{online::{OnlinePacket, ConnectedPong}, Packet},
+        packet::{
+            online::{ConnectedPong, OnlinePacket},
+            Packet,
+        },
     },
     rakrs_debug,
-    server::{
-        current_epoch,
-        event::{ServerEvent, ServerEventResponse},
-    },
+    server::current_epoch,
     util::to_address_token,
 };
 
 use self::{
-    controller::window::ReliableWindow,
     queue::{RecvQueue, SendQueue},
     state::ConnectionState,
 };
-pub(crate) type ConnNetChan = Arc<Mutex<channel::Receiver<Vec<u8>>>>;
+pub(crate) type ConnNetChan = Arc<Mutex<Receiver<Vec<u8>>>>;
 
 #[derive(Debug, Clone, Copy)]
 pub struct ConnMeta {
@@ -105,14 +111,20 @@ impl Connection {
     pub async fn new(
         address: SocketAddr,
         socket: &Arc<UdpSocket>,
-        net: channel::Receiver<Vec<u8>>,
+        net: Receiver<Vec<u8>>,
         mtu: u16,
     ) -> Self {
         let (net_sender, net_receiver) = bounded::<Vec<u8>>(100);
         // let (evt_sender, evt_receiver) = mpsc::channel::<(ServerEvent, oneshot::Sender<ServerEventResponse>)>(10);
         let c = Self {
             address,
-            send_queue: Arc::new(RwLock::new(SendQueue::new(mtu, 12000, 5, socket.clone(), address))),
+            send_queue: Arc::new(RwLock::new(SendQueue::new(
+                mtu,
+                12000,
+                5,
+                socket.clone(),
+                address,
+            ))),
             recv_queue: Arc::new(Mutex::new(RecvQueue::new())),
             internal_net_recv: Arc::new(Mutex::new(net_receiver)),
             // evt_sender,
@@ -137,7 +149,7 @@ impl Connection {
     }
 
     /// Initializes the client ticking process!
-    pub fn init_tick(&self, socket: &Arc<UdpSocket>) -> async_std::task::JoinHandle<()>{
+    pub fn init_tick(&self, socket: &Arc<UdpSocket>) -> task::JoinHandle<()> {
         let address = self.address;
         let closer = self.disconnect.clone();
         let last_recv = self.recv_time.clone();
@@ -145,7 +157,7 @@ impl Connection {
         // initialize the event io
         // we initialize the ticking function here, it's purpose is to update the state of the current connection
         // while handling throttle
-        return async_std::task::spawn(async move {
+        return task::spawn(async move {
             loop {
                 sleep(Duration::from_millis(50)).await;
 
@@ -170,7 +182,7 @@ impl Connection {
         socket: &Arc<UdpSocket>,
         mut net: Receiver<Vec<u8>>,
         sender: Sender<Vec<u8>>,
-    ) -> async_std::task::JoinHandle<()> {
+    ) -> task::JoinHandle<()> {
         let recv_time = self.recv_time.clone();
         let recv_q = self.recv_queue.clone();
         let send_q = self.send_queue.clone();
@@ -178,7 +190,7 @@ impl Connection {
         let state = self.state.clone();
         let address = self.address;
 
-        return async_std::task::spawn(async move {
+        return task::spawn(async move {
             loop {
                 if disconnect.load(std::sync::atomic::Ordering::Relaxed) {
                     rakrs_debug!(
@@ -189,93 +201,107 @@ impl Connection {
                     break;
                 }
 
-                rakrs_debug!(true, "[{}] Waiting for packet...", to_address_token(address));
+                rakrs_debug!(
+                    true,
+                    "[{}] Waiting for packet...",
+                    to_address_token(address)
+                );
 
-                if let Ok(payload) = net.recv().await {
-                    // We've recieved a payload!
-                    recv_time.store(current_epoch(), std::sync::atomic::Ordering::Relaxed);
+                macro_rules! handle_payload {
+                    ($payload: ident) => {
+                        // We've recieved a payload!
+                        recv_time.store(current_epoch(), std::sync::atomic::Ordering::Relaxed);
 
-                    let id = payload[0];
-                    match id {
-                        // This is a frame packet.
-                        // This packet will be handled by the recv_queue
-                        0x80..=0x8d => {
-                            if let Ok(pk) = FramePacket::compose(&payload[..], &mut 0) {
-                                let mut rq = recv_q.lock().await;
+                        let id = $payload[0];
+                        match id {
+                            // This is a frame packet.
+                            // This packet will be handled by the recv_queue
+                            0x80..=0x8d => {
+                                if let Ok(pk) = FramePacket::compose(&$payload[..], &mut 0) {
+                                    let mut rq = recv_q.lock().await;
 
-                                if let Ok(_) = rq.insert(pk) {};
+                                    if let Ok(_) = rq.insert(pk) {};
 
-                                let buffers = rq.flush();
+                                    let buffers = rq.flush();
 
-                                for buffer in buffers {
-                                    let res = Connection::process_packet(
-                                        &buffer, &address, &sender, &send_q, &state,
-                                    )
-                                    .await;
-                                    if let Ok(v) = res {
-                                        if v == true {
-                                            // DISCONNECT
-                                            // disconnect.close();
-                                            rakrs_debug!(true, "[{}] Connection::process_packet returned true!", to_address_token(address));
-                                            disconnect.store(true, std::sync::atomic::Ordering::Relaxed);
-                                            break;
+                                    for buffer in buffers {
+                                        let res = Connection::process_packet(
+                                            &buffer, &address, &sender, &send_q, &state,
+                                        )
+                                        .await;
+                                        if let Ok(v) = res {
+                                            if v == true {
+                                                // DISCONNECT
+                                                // disconnect.close();
+                                                rakrs_debug!(true, "[{}] Connection::process_packet returned true!", to_address_token(address));
+                                                disconnect.store(true, std::sync::atomic::Ordering::Relaxed);
+                                                break;
+                                            }
                                         }
-                                    }
-                                    if let Err(_) = res {
-                                        rakrs_debug!(
-                                            true,
-                                            "[{}] Failed to process packet!",
-                                            to_address_token(address)
-                                        );
-                                    };
-                                }
-
-                                drop(rq);
-                            }
-                        }
-                        NACK => {
-                            // Validate this is a nack packet
-                            if let Ok(nack) = Ack::compose(&payload[..], &mut 0) {
-                                // The client acknowledges it did not recieve these packets
-                                // We should resend them.
-                                let mut sq = send_q.write().await;
-                                let resend = sq.nack(nack);
-                                for packet in resend {
-                                    if let Ok(buffer) = packet.parse() {
-                                        if let Err(_) = sender.send(buffer).await {
+                                        if let Err(_) = res {
                                             rakrs_debug!(
                                                 true,
-                                                "[{}] Failed to send packet to client!",
+                                                "[{}] Failed to process packet!",
+                                                to_address_token(address)
+                                            );
+                                        };
+                                    }
+
+                                    drop(rq);
+                                }
+                            }
+                            NACK => {
+                                // Validate this is a nack packet
+                                if let Ok(nack) = Ack::compose(&$payload[..], &mut 0) {
+                                    // The client acknowledges it did not recieve these packets
+                                    // We should resend them.
+                                    let mut sq = send_q.write().await;
+                                    let resend = sq.nack(nack);
+                                    for packet in resend {
+                                        if let Ok(buffer) = packet.parse() {
+                                            if let Err(_) = sender.send(buffer).await {
+                                                rakrs_debug!(
+                                                    true,
+                                                    "[{}] Failed to send packet to client!",
+                                                    to_address_token(address)
+                                                );
+                                            }
+                                        } else {
+                                            rakrs_debug!(
+                                                true,
+                                                "[{}] Failed to send packet to client (parsing failed)!",
                                                 to_address_token(address)
                                             );
                                         }
-                                    } else {
-                                        rakrs_debug!(
-                                            true,
-                                            "[{}] Failed to send packet to client (parsing failed)!",
-                                            to_address_token(address)
-                                        );
                                     }
                                 }
                             }
-                        }
-                        ACK => {
-                            // first lets validate this is an ack packet
-                            if let Ok(ack) = Ack::compose(&payload[..], &mut 0) {
-                                // The client acknowledges it recieved these packets
-                                // We should remove them from the queue.
-                                let mut sq = send_q.write().await;
-                                sq.ack(ack);
+                            ACK => {
+                                // first lets validate this is an ack packet
+                                if let Ok(ack) = Ack::compose(&$payload[..], &mut 0) {
+                                    // The client acknowledges it recieved these packets
+                                    // We should remove them from the queue.
+                                    let mut sq = send_q.write().await;
+                                    sq.ack(ack);
+                                }
                             }
-                        }
-                        _ => {
-                            rakrs_debug!(
-                                true,
-                                "[{}] Unknown RakNet packet recieved (Or packet is sent out of scope).",
-                                to_address_token(address)
-                            );
-                        }
+                            _ => {
+                                rakrs_debug!(
+                                    true,
+                                    "[{}] Unknown RakNet packet recieved (Or packet is sent out of scope).",
+                                    to_address_token(address)
+                                );
+                            }
+                        };
                     };
+                }
+
+                match net.recv().await {
+                    #[cfg(feature = "async-std")]
+                    Ok(payload) => {handle_payload!(payload);},
+                    #[cfg(feature = "tokio")]
+                    Some(payload) => {handle_payload!(payload);},
+                    _ => continue,
                 }
             }
         });
@@ -290,12 +316,17 @@ impl Connection {
     ) -> Result<bool, ()> {
         if let Ok(packet) = Packet::compose(buffer, &mut 0) {
             if packet.is_online() {
-                rakrs_debug!(true, "[{}] Recieved packet: {:?}", to_address_token(*address), packet);
+                rakrs_debug!(
+                    true,
+                    "[{}] Recieved packet: {:?}",
+                    to_address_token(*address),
+                    packet
+                );
                 return match packet.get_online() {
                     OnlinePacket::ConnectedPing(pk) => {
                         let response = ConnectedPong {
                             ping_time: pk.time,
-                            pong_time: current_epoch() as i64
+                            pong_time: current_epoch() as i64,
                         };
                         let q = send_q.write().await;
                         // q.insert_immediate(response);
@@ -315,7 +346,11 @@ impl Connection {
                         //         .unwrap()
                         //         .as_millis() as i64,
                         // };
-                        rakrs_debug!(true, "[{}] ConnectionRequest not implemented, disconnecting!", to_address_token(*address));
+                        rakrs_debug!(
+                            true,
+                            "[{}] ConnectionRequest not implemented, disconnecting!",
+                            to_address_token(*address)
+                        );
                         Ok(true)
                     }
                     OnlinePacket::Disconnect(_) => {
@@ -383,11 +418,18 @@ impl Connection {
     }
 
     pub async fn close(&mut self) {
-        rakrs_debug!(true, "[{}] Dropping connection!", to_address_token(self.address));
+        rakrs_debug!(
+            true,
+            "[{}] Dropping connection!",
+            to_address_token(self.address)
+        );
         let tasks = self.tasks.clone();
 
         for task in tasks.lock().await.drain(..) {
+            #[cfg(feature = "async-std")]
             task.cancel().await;
+            #[cfg(feature = "tokio")]
+            task.abort();
         }
     }
 }

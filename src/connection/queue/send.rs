@@ -2,17 +2,20 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use binary_utils::Streamable;
+#[cfg(feature = "async-std")]
 use async_std::net::UdpSocket;
+use binary_utils::Streamable;
+#[cfg(feature = "tokio")]
+use tokio::net::UdpSocket;
 
-use crate::protocol::{RAKNET_HEADER_FRAME_OVERHEAD, RAKNET_HEADER_OVERHEAD};
 use crate::protocol::ack::{Ack, Ackable, Record, SingleRecord};
-use crate::protocol::frame::{FramePacket, Frame};
+use crate::protocol::frame::{Frame, FramePacket};
 use crate::protocol::packet::Packet;
 use crate::protocol::reliability::Reliability;
+use crate::protocol::{RAKNET_HEADER_FRAME_OVERHEAD, RAKNET_HEADER_OVERHEAD};
 use crate::util::SafeGenerator;
 
-use super::{NetQueue, RecoveryQueue, FragmentQueue, OrderedQueue};
+use super::{FragmentQueue, NetQueue, OrderedQueue, RecoveryQueue};
 
 /// This queue is used to prioritize packets being sent out
 /// Packets that are old, are either dropped or requested again.
@@ -54,7 +57,13 @@ pub struct SendQueue {
 }
 
 impl SendQueue {
-    pub fn new(mtu_size: u16, timeout: u16, max_tries: u16, socket: Arc<UdpSocket>, address: SocketAddr) -> Self {
+    pub fn new(
+        mtu_size: u16,
+        timeout: u16,
+        max_tries: u16,
+        socket: Arc<UdpSocket>,
+        address: SocketAddr,
+    ) -> Self {
         Self {
             mtu_size,
             timeout,
@@ -73,7 +82,13 @@ impl SendQueue {
     /// Send a packet based on its reliability.
     /// Note, reliability will be set to `Reliability::ReliableOrd` if
     /// the buffer is larger than max MTU.
-    pub async fn insert(&mut self, packet: Vec<u8>, reliability: Reliability, channel: u8, immediate: bool) {
+    pub async fn insert(
+        &mut self,
+        packet: Vec<u8>,
+        reliability: Reliability,
+        channel: u8,
+        immediate: bool,
+    ) {
         let reliable = if packet.len() > (self.mtu_size + RAKNET_HEADER_FRAME_OVERHEAD) as usize {
             Reliability::ReliableOrd
         } else {
