@@ -305,7 +305,6 @@ impl Listener {
                                     continue;
                                 }
                                 OfflinePacket::SessionInfoRequest(pk) => {
-                                    let mut sessions = connections.lock().await;
                                     let resp = SessionInfoReply {
                                         server_id,
                                         client_address: origin,
@@ -314,7 +313,7 @@ impl Listener {
                                         security: false,
                                     };
 
-                // This is a valid packet, let's check if a session exists, if not, we should create it.
+                                    // This is a valid packet, let's check if a session exists, if not, we should create it.
                                     // Event if the connection is only in offline mode.
                                     let mut sessions = connections.lock().await;
 
@@ -381,10 +380,11 @@ impl Listener {
                 }
 
                 // Packet may be valid, but we'll let the connection decide this
-                let sessions = connections.lock().await;
+                let mut sessions = connections.lock().await;
                 if sessions.contains_key(&origin) {
                     if let Err(_) = sessions[&origin].1.send(buf[..length].to_vec()).await {
-                        rakrs_debug!(true, "[{}] Failed when handling recieved packet! Could not pass over to internal connection, the channel might be closed!", to_address_token(*&origin));
+                        rakrs_debug!(true, "[{}] Failed when handling recieved packet! Could not pass over to internal connection, the channel might be closed! (Removed the connection)", to_address_token(*&origin));
+                        sessions.remove(&origin);
                     }
                 }
                 drop(sessions);

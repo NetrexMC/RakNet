@@ -189,6 +189,8 @@ impl Connection {
                     break;
                 }
 
+                rakrs_debug!(true, "[{}] Waiting for packet...", to_address_token(address));
+
                 if let Ok(payload) = net.recv().await {
                     // We've recieved a payload!
                     recv_time.store(current_epoch(), std::sync::atomic::Ordering::Relaxed);
@@ -214,6 +216,7 @@ impl Connection {
                                         if v == true {
                                             // DISCONNECT
                                             // disconnect.close();
+                                            rakrs_debug!(true, "[{}] Connection::process_packet returned true!", to_address_token(address));
                                             disconnect.store(true, std::sync::atomic::Ordering::Relaxed);
                                             break;
                                         }
@@ -287,7 +290,7 @@ impl Connection {
     ) -> Result<bool, ()> {
         if let Ok(packet) = Packet::compose(buffer, &mut 0) {
             if packet.is_online() {
-                println!("Recieved packet: {:?}", packet);
+                rakrs_debug!(true, "[{}] Recieved packet: {:?}", to_address_token(*address), packet);
                 return match packet.get_online() {
                     OnlinePacket::ConnectedPing(pk) => {
                         let response = ConnectedPong {
@@ -312,6 +315,7 @@ impl Connection {
                         //         .unwrap()
                         //         .as_millis() as i64,
                         // };
+                        rakrs_debug!(true, "[{}] ConnectionRequest not implemented, disconnecting!", to_address_token(*address));
                         Ok(true)
                     }
                     OnlinePacket::Disconnect(_) => {
