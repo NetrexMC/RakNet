@@ -7,6 +7,8 @@ use binary_utils::Streamable;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt, BE};
 
 pub(crate) trait Ackable {
+    type NackItem;
+
     /// When an ack packet is recieved.
     /// We should ack the queue
     fn ack(&mut self, index: Ack) {}
@@ -14,7 +16,7 @@ pub(crate) trait Ackable {
     /// When an NACK packet is recieved.
     /// We should nack the queue
     /// This should return the packets that need to be resent.
-    fn nack(&mut self, packet: Ack) -> Vec<Vec<u8>> {
+    fn nack(&mut self, packet: Ack) -> Vec<Self::NackItem> {
         todo!()
     }
 }

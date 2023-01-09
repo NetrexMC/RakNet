@@ -1,5 +1,9 @@
+#[cfg(feature = "async-std")]
+use async_std::task::sleep as async_sleep;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::{collections::HashMap, time::SystemTime};
+#[cfg(feature = "tokio")]
+use tokio::time::sleep as async_sleep;
 
 pub(crate) mod debug;
 
@@ -120,4 +124,8 @@ pub fn from_address_token(remote: String) -> SocketAddr {
         .to_socket_addrs()
         .expect("Could not parse remote address.");
     SocketAddr::from(parsed.next().unwrap())
+}
+
+pub async fn sleep(duration: std::time::Duration) {
+    async_sleep(duration).await;
 }
