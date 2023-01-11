@@ -77,6 +77,35 @@ impl Ack {
             .push(Record::Single(SingleRecord { sequence: seq }));
     }
 
+    pub fn from_records(missing: Vec<u32>, nack: bool) -> Self {
+        let mut records: Vec<Record> = Vec::new();
+        let mut current: Range<u32> = 0..0;
+
+        for m in missing {
+            if current.end + 1 == m {
+                current.end += 1;
+            } else if m > current.end {
+                // This is a new range.
+                records.push(Record::Range(RangeRecord {
+                    start: current.start,
+                    end: current.end,
+                }));
+                current.start = m;
+                current.end = m;
+            } else {
+                // This is a new single.
+                records.push(Record::Single(SingleRecord { sequence: m }));
+                current.start = m + 1;
+                current.end = m + 1;
+            }
+        }
+
+        let mut nack = Self::new(records.len().try_into().unwrap(), nack);
+        nack.records = records;
+
+        return nack;
+    }
+
     pub fn from_missing(missing: Vec<u32>) -> Self {
         let mut records: Vec<Record> = Vec::new();
         let mut current: Range<u32> = 0..0;

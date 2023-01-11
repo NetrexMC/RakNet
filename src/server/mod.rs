@@ -276,7 +276,7 @@ impl Listener {
                                     send_packet_to_socket(&socket, resp.into(), origin).await;
                                     continue;
                                 }
-                                OfflinePacket::OpenConnectRequest(pk) => {
+                                OfflinePacket::OpenConnectRequest(mut pk) => {
                                     // todo make a constant for this
                                     if !versions.contains(&pk.protocol) {
                                         let resp = IncompatibleProtocolVersion {
@@ -297,6 +297,16 @@ impl Listener {
                                         to_address_token(*&origin),
                                         pk.mtu_size
                                     );
+
+                                    if pk.mtu_size > 2048 {
+                                        rakrs_debug!(
+                                            true,
+                                            "[{}] Client requested Mtu Size: {} which is larger than the maximum allowed size of 2048",
+                                            to_address_token(*&origin),
+                                            pk.mtu_size
+                                        );
+                                        pk.mtu_size = 2048;
+                                    }
 
                                     let resp = OpenConnectReply {
                                         server_id,

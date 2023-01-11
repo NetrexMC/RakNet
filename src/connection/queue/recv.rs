@@ -19,8 +19,8 @@ pub enum RecvQueueError {
 #[derive(Debug, Clone)]
 pub struct RecvQueue {
     frag_queue: FragmentQueue,
-    window: ReliableWindow,
-    reliable_window: ReliableWindow,
+    pub(crate) window: ReliableWindow,
+    pub(crate) reliable_window: ReliableWindow,
     order_channels: HashMap<u8, OrderedQueue<Vec<u8>>>,
     /// Set of sequences that we've acknowledged.
     /// (seq, time)
@@ -56,6 +56,10 @@ impl RecvQueue {
 
     pub fn flush(&mut self) -> Vec<Vec<u8>> {
         self.ready.drain(..).collect::<Vec<Vec<u8>>>()
+    }
+
+    pub fn ack_flush(&mut self) -> Vec<u32> {
+        self.ack.drain().map(|(seq, _)| seq).collect()
     }
 
     fn handle_frame(&mut self, frame: &Frame) {

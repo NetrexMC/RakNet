@@ -4,17 +4,17 @@ pub mod queue;
 pub mod state;
 
 use std::{
-    net::SocketAddr,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
     sync::{
         atomic::{AtomicBool, AtomicU64},
         Arc,
     },
-    time::{Duration, SystemTime},
+    time::Duration,
 };
 
 #[cfg(feature = "async_std")]
 use async_std::{
-    channel::{bounded, Receiver, Sender},
+    channel::{bounded, Receiver, RecvError, Sender},
     net::UdpSocket,
     sync::{Mutex, RwLock},
     task::{self, sleep, JoinHandle},
@@ -32,13 +32,15 @@ use tokio::{
 };
 
 use crate::{
+    error::connection::ConnectionError,
     protocol::{
         ack::{Ack, Ackable, ACK, NACK},
         frame::FramePacket,
         packet::{
-            online::{ConnectedPong, OnlinePacket},
+            online::{ConnectedPing, ConnectedPong, ConnectionAccept, OnlinePacket},
             Packet,
         },
+        reliability::Reliability,
     },
     rakrs_debug,
     server::current_epoch,
@@ -135,7 +137,7 @@ impl Connection {
 
         let tk = c.tasks.clone();
         let mut tasks = tk.lock().await;
-        tasks.push(c.init_tick(socket));
+        tasks.push(c.init_tick());
         tasks.push(c.init_net_recv(socket, net, net_sender).await);
 
         // todo finish the send queue
@@ -146,10 +148,14 @@ impl Connection {
     }
 
     /// Initializes the client ticking process!
-    pub fn init_tick(&self, socket: &Arc<UdpSocket>) -> task::JoinHandle<()> {
+    pub fn init_tick(&self) -> task::JoinHandle<()> {
         let address = self.address;
         let closer = self.disconnect.clone();
         let last_recv = self.recv_time.clone();
+        let send_queue = self.send_queue.clone();
+        let recv_queue = self.recv_queue.clone();
+        let state = self.state.clone();
+        let mut last_ping: u16 = 0;
 
         // initialize the event io
         // we initialize the ticking function here, it's purpose is to update the state of the current connection
@@ -157,8 +163,10 @@ impl Connection {
         return task::spawn(async move {
             loop {
                 sleep(Duration::from_millis(50)).await;
+                let recv = last_recv.load(std::sync::atomic::Ordering::Relaxed);
+                let mut cstate = state.lock().await;
 
-                if last_recv.load(std::sync::atomic::Ordering::Relaxed) + 20 >= current_epoch() {
+                if recv + 20000 <= current_epoch() {
                     rakrs_debug!(
                         true,
                         "[{}] Connection has been closed due to inactivity!",
@@ -167,6 +175,39 @@ impl Connection {
                     // closer.notify_all();
                     closer.store(true, std::sync::atomic::Ordering::Relaxed);
                     break;
+                }
+
+                if recv + 15000 <= current_epoch() && cstate.is_reliable() {
+                    *cstate = ConnectionState::TimingOut;
+                    rakrs_debug!(
+                        true,
+                        "[{}] Connection is timing out, sending a ping!",
+                        to_address_token(address)
+                    );
+                }
+
+                let mut sendq = send_queue.write().await;
+                let mut recv_q = recv_queue.lock().await;
+
+                if last_ping >= 3000 {
+                    let ping = ConnectedPing {
+                        time: current_epoch() as i64,
+                    };
+                    if let Ok(_) = sendq
+                        .send_packet(ping.into(), Reliability::Reliable, true)
+                        .await
+                    {};
+                    last_ping = 0;
+                } else {
+                    last_ping += 50;
+                }
+
+                sendq.update().await;
+
+                // Flush the queue of acks and nacks, and respond to them
+                let ack = Ack::from_records(recv_q.ack_flush(), false);
+                if let Ok(p) = ack.parse() {
+                    sendq.send_stream(&p).await;
                 }
             }
         });
@@ -177,7 +218,7 @@ impl Connection {
     pub async fn init_net_recv(
         &self,
         socket: &Arc<UdpSocket>,
-        mut net: Receiver<Vec<u8>>,
+        net: Receiver<Vec<u8>>,
         sender: Sender<Vec<u8>>,
     ) -> task::JoinHandle<()> {
         let recv_time = self.recv_time.clone();
@@ -197,17 +238,22 @@ impl Connection {
                     );
                     break;
                 }
-
-                rakrs_debug!(
-                    true,
-                    "[{}] Waiting for packet...",
-                    to_address_token(address)
-                );
-
                 macro_rules! handle_payload {
                     ($payload: ident) => {
                         // We've recieved a payload!
                         recv_time.store(current_epoch(), std::sync::atomic::Ordering::Relaxed);
+                        let mut cstate = state.lock().await;
+
+                        if *cstate == ConnectionState::TimingOut {
+                            rakrs_debug!(
+                                true,
+                                "[{}] Connection is no longer timing out!",
+                                to_address_token(address)
+                            );
+                            *cstate = ConnectionState::Connected;
+                        }
+
+                        drop(cstate);
 
                         let id = $payload[0];
                         match id {
@@ -235,11 +281,12 @@ impl Connection {
                                                 break;
                                             }
                                         }
-                                        if let Err(_) = res {
+                                        if let Err(e) = res {
                                             rakrs_debug!(
                                                 true,
-                                                "[{}] Failed to process packet!",
-                                                to_address_token(address)
+                                                "[{}] Failed to process packet: {:?}!",
+                                                to_address_token(address),
+                                                e
                                             );
                                         };
                                     }
@@ -323,51 +370,77 @@ impl Connection {
                     to_address_token(*address),
                     packet
                 );
-                return match packet.get_online() {
+                match packet.get_online() {
                     OnlinePacket::ConnectedPing(pk) => {
                         let response = ConnectedPong {
                             ping_time: pk.time,
                             pong_time: current_epoch() as i64,
                         };
-                        let q = send_q.write().await;
-                        // q.insert_immediate(response);
-                        Ok(false)
+                        let mut q = send_q.write().await;
+                        if let Ok(_) = q
+                            .send_packet(response.into(), Reliability::Reliable, true)
+                            .await
+                        {
+                            return Ok(false);
+                        } else {
+                            rakrs_debug!(
+                                true,
+                                "[{}] Failed to send ConnectedPong packet!",
+                                to_address_token(*address)
+                            );
+                            return Err(());
+                        }
+                    }
+                    OnlinePacket::ConnectedPong(pk) => {
+                        // do nothing rn
+                        return Ok(false);
                     }
                     OnlinePacket::ConnectionRequest(pk) => {
-                        // let response = ConnectionAccept {
-                        //     system_index: 0,
-                        //     client_address: from_address_token(connection.address.clone()),
-                        //     internal_id: SocketAddr::new(
-                        //         IpAddr::V4(Ipv4Addr::new(255, 255, 255, 255)),
-                        //         19132,
-                        //     ),
-                        //     request_time: pk.time,
-                        //     timestamp: SystemTime::now()
-                        //         .duration_since(connection.start_time)
-                        //         .unwrap()
-                        //         .as_millis() as i64,
-                        // };
-                        rakrs_debug!(
-                            true,
-                            "[{}] ConnectionRequest not implemented, disconnecting!",
-                            to_address_token(*address)
-                        );
-                        Ok(true)
+                        let response = ConnectionAccept {
+                            system_index: 0,
+                            client_address: *address,
+                            internal_id: SocketAddr::new(
+                                IpAddr::V4(Ipv4Addr::new(255, 255, 255, 255)),
+                                19132,
+                            ),
+                            request_time: pk.time,
+                            timestamp: current_epoch() as i64,
+                        };
+                        let mut q = send_q.write().await;
+                        *state.lock().await = ConnectionState::Connecting;
+                        if let Ok(_) = q
+                            .send_packet(response.into(), Reliability::Reliable, true)
+                            .await
+                        {
+                            return Ok(false);
+                        } else {
+                            rakrs_debug!(
+                                true,
+                                "[{}] Failed to send ConnectionAccept packet!",
+                                to_address_token(*address)
+                            );
+                            return Err(());
+                        }
                     }
                     OnlinePacket::Disconnect(_) => {
                         // Disconnect the client immediately.
                         // connection.disconnect("Client disconnected.", false);
-                        Ok(false)
+                        return Ok(true);
+                    }
+                    OnlinePacket::LostConnection(_) => {
+                        // Disconnect the client immediately.
+                        // connection.disconnect("Client disconnected.", false);
+                        return Ok(true);
                     }
                     OnlinePacket::NewConnection(_) => {
-                        // connection.state = ConnectionState::Connected;
-                        Ok(true)
+                        *state.lock().await = ConnectionState::Connected;
+                        return Ok(false);
                     }
-                    _ => {
-                        sender.send(buffer.clone()).await.unwrap();
-                        Ok(true)
-                    }
+                    _ => {}
                 };
+
+                sender.send(buffer.clone()).await.unwrap();
+                return Ok(false);
             } else {
                 *state.lock().await = ConnectionState::Disconnecting;
                 rakrs_debug!(
@@ -378,7 +451,18 @@ impl Connection {
                 return Err(());
             }
         }
-        Err(())
+
+        sender.send(buffer.clone()).await.unwrap();
+        return Ok(false);
+    }
+
+    /// Recieve a packet from the client.
+    pub async fn recv(&mut self) -> Result<Vec<u8>, RecvError> {
+        let q = self.internal_net_recv.as_ref().lock().await;
+        match q.recv().await {
+            Ok(packet) => Ok(packet),
+            Err(e) => Err(e),
+        }
     }
 
     // /// Handle a RakNet Event. These are sent as they happen.
@@ -411,12 +495,6 @@ impl Connection {
     //         }
     //     }
     // }
-
-    /// Initializes the client tick.
-    pub async fn tick(&mut self) {
-        let sendq = self.send_queue.write().await;
-        // sendq.tick().await;
-    }
 
     pub async fn close(&mut self) {
         rakrs_debug!(

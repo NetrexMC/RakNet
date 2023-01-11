@@ -12,6 +12,7 @@ use crate::protocol::reliability::Reliability;
 use crate::protocol::RAKNET_HEADER_FRAME_OVERHEAD;
 use crate::server::current_epoch;
 
+#[derive(Debug, Clone)]
 pub enum NetQueueError<E> {
     /// The insertion failed for any given reason.
     InvalidInsertion,
@@ -73,6 +74,13 @@ where
 
     pub fn insert_id(&mut self, seq: u32, item: Item) {
         self.queue.insert(seq, (current_epoch(), item));
+    }
+
+    pub fn get_all(&mut self) -> Vec<(u32, Item)> {
+        self.queue
+            .iter()
+            .map(|(seq, (_, item))| (*seq, item.clone()))
+            .collect::<Vec<_>>()
     }
 
     pub fn flush_old(&mut self, threshold: u64) -> Vec<Item> {
@@ -143,6 +151,11 @@ where
         }
     }
 
+    pub fn next(&mut self) -> u32 {
+        self.window.0 = self.window.0.wrapping_add(1);
+        return self.window.0;
+    }
+
     pub fn insert(&mut self, index: u32, item: Item) -> bool {
         if index < self.window.0 {
             return false;
@@ -158,6 +171,16 @@ where
 
         self.queue.insert(index, item);
         true
+    }
+
+    pub fn missing(&self) -> Vec<u32> {
+        let mut missing = Vec::new();
+        for i in self.window.0..self.window.1 {
+            if !self.queue.contains_key(&i) {
+                missing.push(i);
+            }
+        }
+        missing
     }
 
     pub fn flush(&mut self) -> Vec<Item> {
