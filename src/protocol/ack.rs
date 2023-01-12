@@ -11,12 +11,12 @@ pub(crate) trait Ackable {
 
     /// When an ack packet is recieved.
     /// We should ack the queue
-    fn ack(&mut self, index: Ack) {}
+    fn ack(&mut self, _: Ack) {}
 
     /// When an NACK packet is recieved.
     /// We should nack the queue
     /// This should return the packets that need to be resent.
-    fn nack(&mut self, packet: Ack) -> Vec<Self::NackItem> {
+    fn nack(&mut self, _: Ack) -> Vec<Self::NackItem> {
         todo!()
     }
 }
@@ -45,9 +45,7 @@ impl RangeRecord {
     /// Fixes the end of the range if it is lower than the start.
     pub fn fix(&mut self) {
         if self.end < self.start {
-            let temp = self.end;
-            self.end = self.start;
-            self.start = temp;
+            std::mem::swap(&mut self.start, &mut self.end);
         }
     }
 }
@@ -72,11 +70,6 @@ impl Ack {
         self.id == 0xa0
     }
 
-    pub fn push_record(&mut self, seq: u32) {
-        self.records
-            .push(Record::Single(SingleRecord { sequence: seq }));
-    }
-
     pub fn from_records(missing: Vec<u32>, nack: bool) -> Self {
         let mut records: Vec<Record> = Vec::new();
         let mut current: Range<u32> = 0..0;
@@ -86,10 +79,12 @@ impl Ack {
                 current.end += 1;
             } else if m > current.end {
                 // This is a new range.
-                records.push(Record::Range(RangeRecord {
+                let mut record = RangeRecord {
                     start: current.start,
                     end: current.end,
-                }));
+                };
+                record.fix();
+                records.push(Record::Range(record));
                 current.start = m;
                 current.end = m;
             } else {
@@ -101,35 +96,6 @@ impl Ack {
         }
 
         let mut nack = Self::new(records.len().try_into().unwrap(), nack);
-        nack.records = records;
-
-        return nack;
-    }
-
-    pub fn from_missing(missing: Vec<u32>) -> Self {
-        let mut records: Vec<Record> = Vec::new();
-        let mut current: Range<u32> = 0..0;
-
-        for m in missing {
-            if current.end + 1 == m {
-                current.end += 1;
-            } else if m > current.end {
-                // This is a new range.
-                records.push(Record::Range(RangeRecord {
-                    start: current.start,
-                    end: current.end,
-                }));
-                current.start = m;
-                current.end = m;
-            } else {
-                // This is a new single.
-                records.push(Record::Single(SingleRecord { sequence: m }));
-                current.start = m + 1;
-                current.end = m + 1;
-            }
-        }
-
-        let mut nack = Self::new(records.len().try_into().unwrap(), true);
         nack.records = records;
 
         return nack;
@@ -174,10 +140,12 @@ impl Streamable for Ack {
 
                 records.push(Record::Single(record));
             } else {
-                let record: RangeRecord = RangeRecord {
+                let mut record: RangeRecord = RangeRecord {
                     start: stream.read_u24::<LittleEndian>().unwrap(),
                     end: stream.read_u24::<LittleEndian>().unwrap(),
                 };
+
+                record.fix();
 
                 records.push(Record::Range(record));
             }

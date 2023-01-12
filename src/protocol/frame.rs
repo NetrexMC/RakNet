@@ -1,7 +1,4 @@
-use std::{
-    collections::HashMap,
-    io::{Cursor, Write},
-};
+use std::io::{Cursor, Write};
 
 use binary_utils::error::BinaryError;
 use binary_utils::*;
@@ -38,9 +35,6 @@ pub struct FramePacket {
 
     /// This is internal use only.
     pub(crate) reliability: Reliability,
-
-    /// This is internal use only.
-    pub(crate) byte_length: usize,
 }
 
 impl FramePacket {
@@ -50,55 +44,7 @@ impl FramePacket {
             sequence: 0,
             frames: Vec::new(),
             reliability: Reliability::ReliableOrd,
-            byte_length: 0,
         }
-    }
-
-    /// Paritions a stream into a bunch of fragments and returns a frame packet
-    /// that is partitioned, otherwise known as "fragmented".
-    /// This does not modify reliability. That is up to the caller.
-    pub fn partition(stream: Vec<u8>, id: u16, frag_size: u32) -> Vec<Frame> {
-        let mut meta: FragmentMeta = FragmentMeta {
-            size: 0,
-            id,
-            index: 0,
-        };
-
-        let mut frames: Vec<Frame> = Vec::new();
-        let mut position: usize = 0;
-
-        while position < stream.len() {
-            // check whether or not we can read the rest of of the stream
-            if stream[position..].len() < frag_size as usize {
-                // we can reliably read the rest of the buffer into a single frame.
-                let mut frame = Frame::init();
-                frame.body = stream[position..].to_vec();
-                frame.fragment_meta = Some(meta.clone());
-                frames.push(frame);
-                break;
-            } else {
-                // we can't read the rest of the stream into a single frame
-                // continue to split into multiple frames.
-                let mut frame = Frame::init();
-                let to_pos = position + (frag_size as usize);
-                frame.body = stream[position..to_pos].to_vec();
-                frame.fragment_meta = Some(meta.clone());
-                frames.push(frame);
-                position = to_pos;
-                meta.index += 1;
-            }
-        }
-
-        meta.size = frames.len() as u32;
-
-        // Let's fix up the meta data in each frame.
-        for frame in frames.iter_mut() {
-            if let Some(m) = frame.fragment_meta.as_mut() {
-                m.size = meta.size;
-            }
-        }
-
-        return frames;
     }
 }
 
@@ -117,7 +63,6 @@ impl Streamable for FramePacket {
                     reliability: Reliability::ReliableOrd,
                     sequence,
                     frames,
-                    byte_length: 0,
                 });
             }
 
@@ -126,7 +71,6 @@ impl Streamable for FramePacket {
                     reliability: Reliability::ReliableOrd,
                     sequence,
                     frames,
-                    byte_length: 0,
                 });
             }
 

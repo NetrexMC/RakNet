@@ -4,6 +4,7 @@ pub(crate) mod send;
 pub use self::recv::*;
 pub use self::send::*;
 
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 
 use crate::protocol::frame::FragmentMeta;
@@ -58,7 +59,7 @@ pub trait NetQueue<Item> {
 pub struct RecoveryQueue<Item> {
     /// The current queue of packets by timestamp
     /// (seq, (packet, timestamp))
-    /// todo use the timestamp for round trip time (RTT)
+    // TODO use the timestamp for round trip time (RTT)
     queue: HashMap<u32, (u64, Item)>,
 }
 
@@ -135,7 +136,7 @@ impl<Item> NetQueue<Item> for RecoveryQueue<Item> {
 pub struct OrderedQueue<Item: Clone + std::fmt::Debug> {
     /// The current ordered queue channels
     /// Channel, (Highest Index, Ord Index, Item)
-    pub queue: HashMap<u32, Item>,
+    pub queue: BTreeMap<u32, Item>,
     /// The window for this queue.
     pub window: (u32, u32),
 }
@@ -146,7 +147,7 @@ where
 {
     pub fn new() -> Self {
         Self {
-            queue: HashMap::new(),
+            queue: BTreeMap::new(),
             window: (0, 0),
         }
     }
@@ -173,6 +174,14 @@ where
         true
     }
 
+    pub fn insert_abs(&mut self, index: u32, item: Item) {
+        if index >= self.window.1 {
+            self.window.1 = index + 1;
+        }
+
+        self.queue.insert(index, item);
+    }
+
     pub fn missing(&self) -> Vec<u32> {
         let mut missing = Vec::new();
         for i in self.window.0..self.window.1 {
@@ -184,17 +193,18 @@ where
     }
 
     pub fn flush(&mut self) -> Vec<Item> {
-        let mut items = Vec::<Item>::new();
+        let mut items = Vec::<(u32, Item)>::new();
         while self.queue.contains_key(&self.window.0) {
             if let Some(item) = self.queue.remove(&self.window.0) {
-                items.push(item);
+                items.push((self.window.0, item));
             } else {
                 break;
             }
             self.window.0 = self.window.0.wrapping_add(1);
         }
 
-        return items;
+        items.sort_by(|a, b| a.0.cmp(&b.0));
+        return items.iter().map(|(_, item)| item.clone()).collect::<Vec<Item>>();
     }
 }
 
@@ -413,8 +423,6 @@ impl FragmentQueue {
     /// This will split a given frame into a bunch of smaller frames within the specified
     /// restriction.
     pub fn split_insert(&mut self, buffer: &[u8], mtu: u16) -> Result<u16, FragmentQueueError> {
-        let max_mtu = mtu - RAKNET_HEADER_FRAME_OVERHEAD;
-
         self.fragment_id += self.fragment_id.wrapping_add(1);
 
         let id = self.fragment_id;

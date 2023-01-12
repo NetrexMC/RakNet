@@ -1,8 +1,6 @@
-use binary_utils::*;
 use std::collections::{HashMap, HashSet};
 
 use crate::connection::controller::window::ReliableWindow;
-use crate::protocol::ack::{Ack, Ackable, Record, SingleRecord};
 use crate::protocol::frame::{Frame, FramePacket};
 use crate::protocol::reliability::Reliability;
 use crate::protocol::MAX_FRAGS;
@@ -25,6 +23,7 @@ pub struct RecvQueue {
     /// Set of sequences that we've acknowledged.
     /// (seq, time)
     ack: HashSet<(u32, u64)>,
+    highest_seq: u32,
     ready: Vec<Vec<u8>>,
 }
 
@@ -35,6 +34,7 @@ impl RecvQueue {
             ack: HashSet::new(),
             window: ReliableWindow::new(),
             reliable_window: ReliableWindow::new(),
+            highest_seq: 0,
             ready: Vec::new(),
             order_channels: HashMap::new(),
         }
@@ -68,6 +68,8 @@ impl RecvQueue {
                 return;
             }
         }
+        rakrs_debug!(true, "Handling frame: {:?}", frame);
+
         if let Some(meta) = frame.fragment_meta.as_ref() {
             if meta.size > MAX_FRAGS {
                 rakrs_debug!(true, "Fragment size is too large, rejected {}!", meta.size);
@@ -96,12 +98,12 @@ impl RecvQueue {
                     .entry(channel)
                     .or_insert(OrderedQueue::new());
 
-                if !queue.insert(frame.order_index.unwrap(), frame.body.clone()) {
-                    return;
-                }
-
-                for pk in queue.flush() {
-                    self.ready.push(pk);
+                if queue.window.0 == frame.order_index.unwrap() {
+                    for pk in queue.flush() {
+                        self.ready.push(pk);
+                    }
+                } else {
+                    queue.insert_abs(frame.order_index.unwrap(), frame.body.clone());
                 }
             }
             _ => {

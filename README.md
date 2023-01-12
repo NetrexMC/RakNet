@@ -2,7 +2,15 @@
 
 A fully functional RakNet implementation in rust, asynchronously driven.
 
-To use `tokio` you must enable the `tokio` feature, and use `disable-default-features` to disable the default `async-std` feature.
+### Installation
+
+By default `rakrs` will use `async_std` feature, which in turn, utilizes the `async_std` crate. To use `tokio` you will need to add it to cargo features as `async_tokio`.
+
+Using the tokio library with the `mcpe` feature may look like the following:
+
+```toml
+rakrs = { version = "0.3.0", features = [ "mcpe", "async_std" ], default-features = false }
+```
 
 ```rust
 // Create a server
@@ -34,7 +42,7 @@ async fn main() {
     server.start().await;
 
     loop {
-        let (conn, stream, _) = server.accept().await.unwrap();
+        let conn = server.accept().await.unwrap();
 
         // You can use the default handler, or create your own
         // the default handler

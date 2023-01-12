@@ -1,3 +1,4 @@
+#[allow(unused)]
 /// Server events module. Handles things like updating the MOTD
 /// for certain connections. This is a notifier channel.
 pub mod event;
@@ -8,17 +9,12 @@ use std::{net::SocketAddr, sync::Arc};
 
 #[cfg(feature = "async_std")]
 use async_std::{
-    channel::unbounded,
-    channel::TrySendError,
     channel::{bounded, Receiver, Sender},
-    io::timeout,
     net::UdpSocket,
-    sync::{Condvar, Mutex},
+    sync::Mutex,
     task::{self},
 };
 use binary_utils::Streamable;
-#[cfg(feature = "async_std")]
-use futures::select;
 
 #[cfg(feature = "async_tokio")]
 use tokio::{
@@ -35,14 +31,10 @@ use crate::protocol::mcpe::motd::Motd;
 use crate::protocol::packet::offline::{
     IncompatibleProtocolVersion, OfflinePacket, OpenConnectReply, SessionInfoReply, UnconnectedPong,
 };
-use crate::protocol::packet::online::Disconnect;
 use crate::protocol::packet::{Packet, Payload};
 use crate::protocol::Magic;
 use crate::rakrs_debug;
-use crate::server::event::ServerEventResponse;
 use crate::util::to_address_token;
-
-use self::event::ServerEvent;
 
 pub type Session = (ConnMeta, Sender<Vec<u8>>);
 
@@ -109,10 +101,10 @@ pub struct Listener {
     /// It allows you to use the syntax sugar for `Listener::accept()`.
     recv_comm: Receiver<Connection>,
     send_comm: Sender<Connection>,
-    // todo, fix this!
+    // TODO, fix this!
     // send_evnt: Sender<(ServerEvent, oneshot::Sender<ServerEventResponse>)>,
     // pub recv_evnt: Arc<Mutex<mpsc::Receiver<(ServerEvent, oneshot::Sender<ServerEventResponse>)>>>,
-    // todo
+    // TODO
     /// A Notifier (sephamore) that will wait until all notified listeners
     /// are completed, and finish closing.
     closed: Arc<AtomicBool>,
@@ -147,7 +139,7 @@ impl Listener {
         let (send_comm, recv_comm) = bounded::<Connection>(10);
         // This channel is responsible for handling and dispatching events between clients.
         // Oneshot will garauntee this event is intended for the client whom requested the event.
-        // todo: Fix with new event system
+        // TODO: Fix with new event system
         // let (send_evnt, recv_evnt) =
         //     mpsc::channel::<(ServerEvent, oneshot::Sender<ServerEventResponse>)>(10);
 
@@ -204,6 +196,12 @@ impl Listener {
             let motd_default = default_motd.clone();
 
             loop {
+                // TODO: This may be fixable by killing the task itself.
+                if closer.load(std::sync::atomic::Ordering::Relaxed) {
+                    rakrs_debug!("Server is closing, stopping recieve loop");
+                    break;
+                }
+
                 let length: usize;
                 let origin: SocketAddr;
 
@@ -233,7 +231,8 @@ impl Listener {
                                 OfflinePacket::UnconnectedPing(_) => {
                                     // let (resp_tx, resp_rx) =
                                     //     oneshot::channel::<ServerEventResponse>();
-                                    let mut motd: Motd = motd_default.clone();
+                                    #[cfg(feature = "mcpe")]
+                                    let motd: Motd = motd_default.clone();
 
                                     // if let Err(e) = send_evt.try_send((
                                     //         ServerEvent::RefreshMotdRequest(origin, motd.clone()),
@@ -277,7 +276,7 @@ impl Listener {
                                     continue;
                                 }
                                 OfflinePacket::OpenConnectRequest(mut pk) => {
-                                    // todo make a constant for this
+                                    // TODO make a constant for this
                                     if !versions.contains(&pk.protocol) {
                                         let resp = IncompatibleProtocolVersion {
                                             protocol: pk.protocol,
@@ -310,10 +309,10 @@ impl Listener {
 
                                     let resp = OpenConnectReply {
                                         server_id,
-                                        // todo allow encryption
+                                        // TODO allow encryption
                                         security: false,
                                         magic: Magic::new(),
-                                        // todo make this configurable, this is sent to the client to change
+                                        // TODO make this configurable, this is sent to the client to change
                                         // it's mtu size, right now we're using what the client prefers.
                                         // however in some cases this may not be the preferred use case, for instance
                                         // on servers with larger worlds, you may want a larger mtu size, or if

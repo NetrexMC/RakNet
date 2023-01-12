@@ -39,11 +39,11 @@ pub struct SendQueue {
 
     /// The amount of time that needs to pass for a packet to be
     /// dropped or requested again.
-    timeout: u16,
+    _timeout: u16,
 
     /// The amount of times we should retry sending a packet before
     /// dropping it from the queue. This is currently set to `5`.
-    max_tries: u16,
+    _max_tries: u16,
 
     /// The current sequence number. This is incremented every time
     /// a packet is sent reliably. We can resend these if they are
@@ -56,7 +56,6 @@ pub struct SendQueue {
 
     /// The current recovery queue.
     ack: RecoveryQueue<FramePacket>,
-    ack_tries: Vec<(u32, u8)>,
 
     /// The fragment queue.
     fragment_queue: FragmentQueue,
@@ -75,19 +74,18 @@ pub struct SendQueue {
 impl SendQueue {
     pub fn new(
         mtu_size: u16,
-        timeout: u16,
-        max_tries: u16,
+        _timeout: u16,
+        _max_tries: u16,
         socket: Arc<UdpSocket>,
         address: SocketAddr,
     ) -> Self {
         Self {
             mtu_size,
-            timeout,
-            max_tries,
+            _timeout,
+            _max_tries,
             send_seq: SafeGenerator::new(),
             reliable_seq: SafeGenerator::new(),
             ack: RecoveryQueue::new(),
-            ack_tries: Vec::new(),
             fragment_queue: FragmentQueue::new(),
             order_channels: HashMap::new(),
             ready: Vec::new(),
@@ -263,15 +261,15 @@ impl SendQueue {
 
     pub async fn update(&mut self) {
         // send all the ready packets
-        // todo batch these packets together
-        // todo by lengths
+        // TODO batch these packets together
+        // TODO by lengths
         for frame in self.ready.drain(..).collect::<Vec<Frame>>() {
             self.send_frame(frame).await;
         }
 
         // Flush ACK
         // check to see if we need to resend any packets.
-        // todo actually implement this
+        // TODO actually implement this
         let resend_queue = self.ack.flush().unwrap();
         // let mut resend_queue = Vec::<FramePacket>::new();
 
@@ -336,6 +334,13 @@ impl Ackable for SendQueue {
                 }
             }
         }
+
+        rakrs_debug!(
+            true,
+            "[{}] Resending {} packets",
+            to_address_token(self.address),
+            resend_queue.len()
+        );
 
         return resend_queue;
     }

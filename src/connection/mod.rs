@@ -32,7 +32,6 @@ use tokio::{
 };
 
 use crate::{
-    error::connection::ConnectionError,
     protocol::{
         ack::{Ack, Ackable, ACK, NACK},
         frame::FramePacket,
@@ -138,11 +137,7 @@ impl Connection {
         let tk = c.tasks.clone();
         let mut tasks = tk.lock().await;
         tasks.push(c.init_tick());
-        tasks.push(c.init_net_recv(socket, net, net_sender).await);
-
-        // todo finish the send queue
-        // todo finish the ticking function
-        // todo add function for user to accept and send packets!
+        tasks.push(c.init_net_recv(net, net_sender).await);
 
         return c;
     }
@@ -206,8 +201,10 @@ impl Connection {
 
                 // Flush the queue of acks and nacks, and respond to them
                 let ack = Ack::from_records(recv_q.ack_flush(), false);
-                if let Ok(p) = ack.parse() {
-                    sendq.send_stream(&p).await;
+                if ack.records.len() > 0 {
+                    if let Ok(p) = ack.parse() {
+                        sendq.send_stream(&p).await;
+                    }
                 }
             }
         });
@@ -217,7 +214,6 @@ impl Connection {
     ///
     pub async fn init_net_recv(
         &self,
-        socket: &Arc<UdpSocket>,
         net: Receiver<Vec<u8>>,
         sender: Sender<Vec<u8>>,
     ) -> task::JoinHandle<()> {
@@ -246,7 +242,6 @@ impl Connection {
 
                         if *cstate == ConnectionState::TimingOut {
                             rakrs_debug!(
-                                true,
                                 "[{}] Connection is no longer timing out!",
                                 to_address_token(address)
                             );
@@ -283,7 +278,6 @@ impl Connection {
                                         }
                                         if let Err(e) = res {
                                             rakrs_debug!(
-                                                true,
                                                 "[{}] Failed to process packet: {:?}!",
                                                 to_address_token(address),
                                                 e
@@ -331,7 +325,6 @@ impl Connection {
                             }
                             _ => {
                                 rakrs_debug!(
-                                    true,
                                     "[{}] Unknown RakNet packet recieved (Or packet is sent out of scope).",
                                     to_address_token(address)
                                 );
@@ -364,12 +357,6 @@ impl Connection {
     ) -> Result<bool, ()> {
         if let Ok(packet) = Packet::compose(buffer, &mut 0) {
             if packet.is_online() {
-                rakrs_debug!(
-                    true,
-                    "[{}] Recieved packet: {:?}",
-                    to_address_token(*address),
-                    packet
-                );
                 match packet.get_online() {
                     OnlinePacket::ConnectedPing(pk) => {
                         let response = ConnectedPong {
@@ -391,8 +378,9 @@ impl Connection {
                             return Err(());
                         }
                     }
-                    OnlinePacket::ConnectedPong(pk) => {
+                    OnlinePacket::ConnectedPong(_pk) => {
                         // do nothing rn
+                        // TODO: add ping calculation
                         return Ok(false);
                     }
                     OnlinePacket::ConnectionRequest(pk) => {
@@ -495,6 +483,10 @@ impl Connection {
     //         }
     //     }
     // }
+
+    pub fn is_closed(&self) -> bool {
+        self.disconnect.load(std::sync::atomic::Ordering::Acquire)
+    }
 
     pub async fn close(&mut self) {
         rakrs_debug!(
