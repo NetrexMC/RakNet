@@ -204,7 +204,10 @@ where
         }
 
         items.sort_by(|a, b| a.0.cmp(&b.0));
-        return items.iter().map(|(_, item)| item.clone()).collect::<Vec<Item>>();
+        return items
+            .iter()
+            .map(|(_, item)| item.clone())
+            .collect::<Vec<Item>>();
     }
 }
 

@@ -340,7 +340,7 @@ impl Ackable for SendQueue {
                 }
             }
         }
-        
+
         return resend_queue;
     }
 }

@@ -517,7 +517,10 @@ impl Connection {
     /// These will be sent next tick unless otherwise specified.
     pub async fn send(&mut self, buffer: Vec<u8>, immediate: bool) -> Result<(), SendQueueError> {
         let mut q = self.send_queue.write().await;
-        if let Err(e) = q.insert(buffer, Reliability::ReliableOrd, immediate, Some(0)).await {
+        if let Err(e) = q
+            .insert(buffer, Reliability::ReliableOrd, immediate, Some(0))
+            .await
+        {
             return Err(e);
         }
         Ok(())

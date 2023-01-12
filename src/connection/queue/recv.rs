@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::connection::controller::window::ReliableWindow;
-use crate::protocol::ack::{Ackable, Ack, SingleRecord, Record};
+use crate::protocol::ack::{Ack, Ackable, Record, SingleRecord};
 use crate::protocol::frame::{Frame, FramePacket};
 use crate::protocol::reliability::Reliability;
 use crate::protocol::MAX_FRAGS;
@@ -94,7 +94,11 @@ impl RecvQueue {
                 // reconstructed frame packet!
                 self.ready.push(data);
             } else {
-                rakrs_debug!(true, "Still Missing some fragments! {:?}", frame.fragment_meta.as_ref().unwrap());
+                rakrs_debug!(
+                    true,
+                    "Still Missing some fragments! {:?}",
+                    frame.fragment_meta.as_ref().unwrap()
+                );
             }
             return;
         }
