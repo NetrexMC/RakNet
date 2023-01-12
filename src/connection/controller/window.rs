@@ -59,7 +59,7 @@ impl ReliableWindow {
     }
 
     /// Returns all the packets that are in the window.
-    pub fn missing(&mut self) -> Vec<u32> {
+    pub fn missing(&self) -> Vec<u32> {
         let mut missing = Vec::new();
 
         for i in self.window.0..self.window.1 {
@@ -69,6 +69,10 @@ impl ReliableWindow {
         }
 
         missing
+    }
+
+    pub fn range(&self) -> (u32, u32) {
+        self.window
     }
 
     /// Forcefully clears packets that are not in the window.

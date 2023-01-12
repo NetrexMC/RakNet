@@ -6,6 +6,8 @@ use std::{io::Cursor, ops::Range};
 use binary_utils::Streamable;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt, BE};
 
+use crate::rakrs_debug;
+
 pub(crate) trait Ackable {
     type NackItem;
 
@@ -70,29 +72,47 @@ impl Ack {
         self.id == 0xa0
     }
 
-    pub fn from_records(missing: Vec<u32>, nack: bool) -> Self {
+    pub fn from_records(mut missing: Vec<u32>, nack: bool) -> Self {
         let mut records: Vec<Record> = Vec::new();
         let mut current: Range<u32> = 0..0;
+        missing.sort();
 
         for m in missing {
-            if current.end + 1 == m {
-                current.end += 1;
-            } else if m > current.end {
-                // This is a new range.
-                let mut record = RangeRecord {
-                    start: current.start,
-                    end: current.end,
-                };
-                record.fix();
-                records.push(Record::Range(record));
+            // if the current range is empty, set the start to the current missing
+            if m > current.start && current.start == 0 {
                 current.start = m;
                 current.end = m;
-            } else {
-                // This is a new single.
-                records.push(Record::Single(SingleRecord { sequence: m }));
-                current.start = m + 1;
-                current.end = m + 1;
+                continue;
             }
+            if m == current.end + 1 {
+                current.end = m;
+                continue;
+            } else {
+                // end of range
+                records.push(Record::Range(RangeRecord {
+                    start: current.start,
+                    end: current.end,
+                }));
+                current.start = 0;
+                current.end = 0;
+
+                // we also need to add the current missing to the records
+                records.push(Record::Single(SingleRecord { sequence: m }));
+            }
+        }
+
+        if current.start == current.end {
+            if current.start == 0 {
+                return Self::new(0, false);
+            }
+            records.push(Record::Single(SingleRecord {
+                sequence: current.start,
+            }));
+        } else if current.start != 0 && current.end != 0 {
+            records.push(Record::Range(RangeRecord {
+                start: current.start,
+                end: current.end,
+            }));
         }
 
         let mut nack = Self::new(records.len().try_into().unwrap(), nack);

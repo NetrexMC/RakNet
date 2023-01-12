@@ -47,7 +47,7 @@ use crate::{
 };
 
 use self::{
-    queue::{RecvQueue, SendQueue},
+    queue::{RecvQueue, SendQueue, SendQueueError},
     state::ConnectionState,
 };
 pub(crate) type ConnNetChan = Arc<Mutex<Receiver<Vec<u8>>>>;
@@ -161,7 +161,19 @@ impl Connection {
                 let recv = last_recv.load(std::sync::atomic::Ordering::Relaxed);
                 let mut cstate = state.lock().await;
 
+                if *cstate == ConnectionState::Disconnected {
+                    rakrs_debug!(
+                        true,
+                        "[{}] Connection has been closed due to state!",
+                        to_address_token(address)
+                    );
+                    // closer.notify_all();
+                    closer.store(true, std::sync::atomic::Ordering::Relaxed);
+                    break;
+                }
+
                 if recv + 20000 <= current_epoch() {
+                    *cstate = ConnectionState::Disconnected;
                     rakrs_debug!(
                         true,
                         "[{}] Connection has been closed due to inactivity!",
@@ -203,6 +215,14 @@ impl Connection {
                 let ack = Ack::from_records(recv_q.ack_flush(), false);
                 if ack.records.len() > 0 {
                     if let Ok(p) = ack.parse() {
+                        sendq.send_stream(&p).await;
+                    }
+                }
+
+                // flush nacks from recv queue
+                let nack = Ack::from_records(recv_q.nack_queue(), true);
+                if nack.records.len() > 0 {
+                    if let Ok(p) = nack.parse() {
                         sendq.send_stream(&p).await;
                     }
                 }
@@ -295,21 +315,24 @@ impl Connection {
                                     // We should resend them.
                                     let mut sq = send_q.write().await;
                                     let resend = sq.nack(nack);
-                                    for packet in resend {
-                                        if let Ok(buffer) = packet.parse() {
-                                            if let Err(_) = sender.send(buffer).await {
+
+                                    if resend.len() > 0 {
+                                        for packet in resend {
+                                            if let Ok(buffer) = packet.parse() {
+                                                if let Err(_) = sq.insert(buffer, Reliability::Unreliable, true, Some(0)).await {
+                                                    rakrs_debug!(
+                                                        true,
+                                                        "[{}] Failed to insert packet into send queue!",
+                                                        to_address_token(address)
+                                                    );
+                                                }
+                                            } else {
                                                 rakrs_debug!(
                                                     true,
-                                                    "[{}] Failed to send packet to client!",
+                                                    "[{}] Failed to send packet to client (parsing failed)!",
                                                     to_address_token(address)
                                                 );
                                             }
-                                        } else {
-                                            rakrs_debug!(
-                                                true,
-                                                "[{}] Failed to send packet to client (parsing failed)!",
-                                                to_address_token(address)
-                                            );
                                         }
                                     }
                                 }
@@ -320,7 +343,9 @@ impl Connection {
                                     // The client acknowledges it recieved these packets
                                     // We should remove them from the queue.
                                     let mut sq = send_q.write().await;
-                                    sq.ack(ack);
+                                    sq.ack(ack.clone());
+                                    drop(sq);
+                                    recv_q.lock().await.ack(ack);
                                 }
                             }
                             _ => {
@@ -486,6 +511,16 @@ impl Connection {
 
     pub fn is_closed(&self) -> bool {
         self.disconnect.load(std::sync::atomic::Ordering::Acquire)
+    }
+
+    /// Send a packet to the client.
+    /// These will be sent next tick unless otherwise specified.
+    pub async fn send(&mut self, buffer: Vec<u8>, immediate: bool) -> Result<(), SendQueueError> {
+        let mut q = self.send_queue.write().await;
+        if let Err(e) = q.insert(buffer, Reliability::ReliableOrd, immediate, Some(0)).await {
+            return Err(e);
+        }
+        Ok(())
     }
 
     pub async fn close(&mut self) {

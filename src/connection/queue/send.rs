@@ -231,8 +231,14 @@ impl SendQueue {
     }
 
     pub(crate) async fn send_stream(&mut self, packet: &[u8]) {
-        if let Err(_) = self.socket.send_to(packet, &self.address).await {
+        if let Err(e) = self.socket.send_to(packet, &self.address).await {
             // we couldn't sent the packet!
+            rakrs_debug!(
+                true,
+                "[{}] Failed to send packet! {:?}",
+                to_address_token(self.address),
+                e
+            );
         }
     }
 
@@ -334,14 +340,7 @@ impl Ackable for SendQueue {
                 }
             }
         }
-
-        rakrs_debug!(
-            true,
-            "[{}] Resending {} packets",
-            to_address_token(self.address),
-            resend_queue.len()
-        );
-
+        
         return resend_queue;
     }
 }
