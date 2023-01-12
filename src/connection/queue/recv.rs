@@ -67,8 +67,8 @@ impl RecvQueue {
             if !self.reliable_window.insert(reliable_index) {
                 return;
             }
+            rakrs_debug!(true, "Handling frame: {:?}", frame);
         }
-        rakrs_debug!(true, "Handling frame: {:?}", frame);
 
         if let Some(meta) = frame.fragment_meta.as_ref() {
             if meta.size > MAX_FRAGS {
