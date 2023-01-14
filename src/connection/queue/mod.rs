@@ -235,7 +235,6 @@ where
     }
 }
 
-
 /// A specialized structure for re-ordering fragments over the wire.
 /// You can use this structure to fragment frames as well.
 ///
