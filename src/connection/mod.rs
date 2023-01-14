@@ -30,6 +30,11 @@ use tokio::{
     task::{self, JoinHandle},
     time::sleep,
 };
+#[cfg(feature = "async_tokio")]
+pub enum RecvError {
+    Closed,
+    Timeout,
+}
 
 use crate::{
     protocol::{
@@ -234,7 +239,7 @@ impl Connection {
     ///
     pub async fn init_net_recv(
         &self,
-        net: Receiver<Vec<u8>>,
+        mut net: Receiver<Vec<u8>>,
         sender: Sender<Vec<u8>>,
     ) -> task::JoinHandle<()> {
         let recv_time = self.recv_time.clone();
@@ -471,10 +476,17 @@ impl Connection {
 
     /// Recieve a packet from the client.
     pub async fn recv(&mut self) -> Result<Vec<u8>, RecvError> {
-        let q = self.internal_net_recv.as_ref().lock().await;
+        #[allow(unused_mut)]
+        let mut q = self.internal_net_recv.as_ref().lock().await;
         match q.recv().await {
+            #[cfg(feature = "async_std")]
             Ok(packet) => Ok(packet),
+            #[cfg(feature = "async_std")]
             Err(e) => Err(e),
+            #[cfg(feature = "async_tokio")]
+            Some(packet) => Ok(packet),
+            #[cfg(feature = "async_tokio")]
+            None => Err(RecvError::Closed),
         }
     }
 

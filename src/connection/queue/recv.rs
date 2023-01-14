@@ -25,7 +25,6 @@ pub struct RecvQueue {
     /// (seq, time)
     ack: HashSet<(u32, u64)>,
     nack: HashSet<u32>,
-    highest_seq: u32,
     ready: Vec<Vec<u8>>,
 }
 
@@ -37,7 +36,6 @@ impl RecvQueue {
             nack: HashSet::new(),
             window: ReliableWindow::new(),
             reliable_window: ReliableWindow::new(),
-            highest_seq: 0,
             ready: Vec::new(),
             order_channels: HashMap::new(),
         }
