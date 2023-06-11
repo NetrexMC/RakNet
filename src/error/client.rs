@@ -3,6 +3,7 @@ pub enum ClientError {
     AddrBindErr,
     AlreadyOnline,
     NotListening,
+    IncompatibleProtocolVersion,
     Killed,
     Reset,
 }
