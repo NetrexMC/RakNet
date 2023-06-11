@@ -81,6 +81,17 @@ impl From<SocketAddr> for PossiblySocketAddr<'_> {
     }
 }
 
+impl std::fmt::Display for PossiblySocketAddr<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PossiblySocketAddr::SocketAddr(addr) => write!(f, "{}", addr),
+            PossiblySocketAddr::Str(addr) => write!(f, "{}", addr),
+            PossiblySocketAddr::String(addr) => write!(f, "{}", addr),
+            PossiblySocketAddr::ActuallyNot => write!(f, "Not a valid address!"),
+        }
+    }
+}
+
 pub struct Listener {
     /// If mcpe is true, this is the default MOTD, this is
     /// the default MOTD to send to the client. You can change this later by setting

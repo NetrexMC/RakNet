@@ -1,5 +1,5 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum ServerError {
+pub enum ClientError {
     AddrBindErr,
     AlreadyOnline,
     NotListening,
