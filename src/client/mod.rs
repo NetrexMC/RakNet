@@ -1,4 +1,11 @@
-use std::{sync::{Arc, atomic::{AtomicBool, AtomicU64}}, net::SocketAddr, time::Duration};
+use std::{
+    net::SocketAddr,
+    sync::{
+        atomic::{AtomicBool, AtomicU64},
+        Arc,
+    },
+    time::Duration,
+};
 
 #[cfg(feature = "async_std")]
 use async_std::{
@@ -20,8 +27,18 @@ use tokio::{
 };
 
 use crate::{
-    connection::{queue::{RecvQueue, SendQueue, send}, state::ConnectionState},
-    server::{PossiblySocketAddr, current_epoch}, error::client::ClientError, rakrs_debug, protocol::{packet::{Packet, online::ConnectedPing}, reliability::Reliability, ack::Ack},
+    connection::{
+        queue::{send, RecvQueue, SendQueue},
+        state::ConnectionState,
+    },
+    error::client::ClientError,
+    protocol::{
+        ack::Ack,
+        packet::{online::ConnectedPing, Packet},
+        reliability::Reliability,
+    },
+    rakrs_debug,
+    server::{current_epoch, PossiblySocketAddr},
 };
 
 /// This struct is used to connect to RakNet servers.
@@ -105,7 +122,7 @@ impl Client {
         )));
 
         self.send_queue = Some(send_queue.clone());
-        let (net_send, net_recv) = bounded::<Vec::<u8>>(10);
+        let (net_send, net_recv) = bounded::<Vec<u8>>(10);
 
         self.network_recv = Arc::new(Some(Mutex::new(net_recv)));
 
@@ -115,7 +132,6 @@ impl Client {
             let mut buf: [u8; 2048] = [0; 2048];
 
             loop {
-
                 if closer.load(std::sync::atomic::Ordering::Relaxed) {
                     rakrs_debug!(true, "[CLIENT] Network recv task closed");
                     break;
@@ -160,13 +176,14 @@ impl Client {
         self.tasks.lock().await.push(task);
     }
 
-    async fn init_recv_task(&mut self) -> Result<JoinHandle<()>, ClientError> {
-
-    }
+    async fn init_recv_task(&mut self) -> Result<JoinHandle<()>, ClientError> {}
 
     /// This is an internal function that initializes the client connection.
     /// This is called by `Client::connect()`.
-    async fn init_connect_tick(&mut self, send_queue: Arc<RwLock<SendQueue>>) -> Result<task::JoinHandle<()>, ClientError> {
+    async fn init_connect_tick(
+        &mut self,
+        send_queue: Arc<RwLock<SendQueue>>,
+    ) -> Result<task::JoinHandle<()>, ClientError> {
         // verify that the client is offline
         if self.state.lock().await.is_available() {
             return Err(ClientError::AlreadyOnline);
@@ -191,7 +208,10 @@ impl Client {
                 let mut state = state.lock().await;
 
                 if *state == ConnectionState::Disconnected {
-                    rakrs_debug!(true, "[CLIENT] Client is disconnected. Closing connect tick task");
+                    rakrs_debug!(
+                        true,
+                        "[CLIENT] Client is disconnected. Closing connect tick task"
+                    );
                     closer.store(true, std::sync::atomic::Ordering::Relaxed);
                     break;
                 }
@@ -205,10 +225,7 @@ impl Client {
 
                 if recv + 15000 <= current_epoch() && state.is_reliable() {
                     *state = ConnectionState::TimingOut;
-                    rakrs_debug!(
-                        true,
-                        "[CLIENT] Connection is timing out, sending a ping!",
-                    );
+                    rakrs_debug!(true, "[CLIENT] Connection is timing out, sending a ping!",);
                 }
 
                 let mut send_q = send_queue.write().await;
