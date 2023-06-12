@@ -399,7 +399,7 @@ impl FragmentQueue {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum FragmentQueueError {
     FrameExists,
     FrameNotFragmented,

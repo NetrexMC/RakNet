@@ -18,7 +18,7 @@ use crate::util::{to_address_token, SafeGenerator};
 
 use super::{FragmentQueue, FragmentQueueError, NetQueue, RecoveryQueue};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum SendQueueError {
     /// The packet is too large to be sent.
     PacketTooLarge,
