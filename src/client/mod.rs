@@ -43,10 +43,12 @@ use crate::{
         ack::{Ack, Ackable, ACK, NACK},
         frame::FramePacket,
         packet::{
+            offline::{OfflinePacket, UnconnectedPing},
             online::{ConnectedPing, ConnectedPong, OnlinePacket},
-            Packet, offline::{UnconnectedPing, OfflinePacket},
+            Packet,
         },
-        reliability::Reliability, Magic,
+        reliability::Reliability,
+        Magic,
     },
     rakrs_debug,
     server::{current_epoch, PossiblySocketAddr},
@@ -138,13 +140,18 @@ impl Client {
             }
         };
 
-        rakrs_debug!(true, "[CLIENT] Attempting to connect to address: {}", address);
+        rakrs_debug!(
+            true,
+            "[CLIENT] Attempting to connect to address: {}",
+            address
+        );
 
         let res = timeout(Duration::from_secs(5), sock.connect(address)).await;
 
         if res.is_err() {
             rakrs_debug!("[CLIENT] Failed to connect to address");
-            self.closed.store(false, std::sync::atomic::Ordering::Relaxed);
+            self.closed
+                .store(false, std::sync::atomic::Ordering::Relaxed);
             return Err(ClientError::Killed);
         }
 
@@ -365,7 +372,10 @@ impl Client {
             client_id: rand::random::<i64>(),
         };
 
-        if let Err(_) = socket.send(&Packet::from(unconnected_ping.clone()).parse().unwrap()[..]).await {
+        if let Err(_) = socket
+            .send(&Packet::from(unconnected_ping.clone()).parse().unwrap()[..])
+            .await
+        {
             rakrs_debug!(true, "[CLIENT] Failed to send ping packet!");
             return Err(ClientError::ServerOffline);
         }
@@ -382,12 +392,10 @@ impl Client {
                                     rakrs_debug!(true, "[CLIENT] Recieved pong packet!");
                                     return Ok(pk);
                                 }
-                                _ => {
-
-                                }
+                                _ => {}
                             };
                         }
-                    },
+                    }
                     Err(_) => {
                         rakrs_debug!(true, "[CLIENT] Failed to recieve anything on netowrk channel, is there a sender?");
                         continue;
@@ -492,7 +500,7 @@ impl Client {
                                                 if let Err(_) = q
                                                     .send_packet(
                                                         response.into(),
-                                                        Reliability::Reliable,
+                                                        Reliability::Unreliable,
                                                         true,
                                                     )
                                                     .await
@@ -509,6 +517,13 @@ impl Client {
                                                     true,
                                                     "[CLIENT] Recieved pong packet!"
                                                 );
+                                            }
+                                            OnlinePacket::Disconnect(_) => {
+                                                rakrs_debug!(
+                                                    true,
+                                                    "[CLIENT] Recieved disconnect packet!"
+                                                );
+                                                break;
                                             }
                                             _ => {}
                                         };

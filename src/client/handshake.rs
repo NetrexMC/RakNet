@@ -5,12 +5,7 @@ use std::sync::Mutex;
 use async_std::{
     future::Future,
     net::UdpSocket,
-    task::{
-        Context,
-        Poll,
-        Waker,
-        self
-    },
+    task::{self, Context, Poll, Waker},
 };
 
 use binary_utils::Streamable;
@@ -64,7 +59,7 @@ macro_rules! match_ids {
                     Ok(l) => len = l
                 };
 
-                rakrs_debug!(true, "[CLIENT] Received packet from server: {:x?}", &recv_buf[..len]);
+                // rakrs_debug!(true, "[CLIENT] Received packet from server: {:x?}", &recv_buf[..len]);
 
                 if ids.contains(&recv_buf[0]) {
                     pk = Some(recv_buf[..len].to_vec());
@@ -99,7 +94,7 @@ macro_rules! expect_reply {
                 Ok(l) => len = l,
             };
 
-            rakrs_debug!(true, "[CLIENT] Received packet from server: {:x?}", &recv_buf[..len]);
+            // rakrs_debug!(true, "[CLIENT] Received packet from server: {:x?}", &recv_buf[..len]);
 
             if let Ok(packet) = <$reply>::compose(&mut recv_buf[1..len], &mut 0) {
                 pk = Some(packet);
@@ -175,7 +170,10 @@ impl ClientHandshake {
             rakrs_debug!(true, "[CLIENT] Sending OpenConnectRequest to server...");
 
             if !send_packet(&socket, connect_request.into()).await {
-                rakrs_debug!(true, "[CLIENT] Failed sending OpenConnectRequest to server!");
+                rakrs_debug!(
+                    true,
+                    "[CLIENT] Failed sending OpenConnectRequest to server!"
+                );
                 update_state!(true, shared_state, HandshakeStatus::Failed);
             };
 
@@ -255,11 +253,7 @@ impl ClientHandshake {
             };
 
             if let Err(_) = send_q
-                .send_packet(
-                    connect_request.into(),
-                    Reliability::Reliable,
-                    true
-                )
+                .send_packet(connect_request.into(), Reliability::Reliable, true)
                 .await
             {
                 update_state!(true, shared_state, HandshakeStatus::Failed);
@@ -291,8 +285,6 @@ impl ClientHandshake {
                             for mut raw_pk in raw_packets {
                                 let pk = Packet::compose(&mut raw_pk[..], &mut 0);
 
-                                rakrs_debug!(true, "[CLIENT] Received packet from server: {:x?}", &raw_pk[..]);
-
                                 if let Ok(pk) = pk {
                                     if pk.is_online() {
                                         match pk.get_online() {
@@ -318,7 +310,7 @@ impl ClientHandshake {
                                                 }
 
                                                 continue;
-                                            },
+                                            }
                                             OnlinePacket::ConnectionAccept(pk) => {
                                                 // send new incoming connection
                                                 let new_incoming = NewConnection {
@@ -328,11 +320,10 @@ impl ClientHandshake {
                                                     timestamp: pk.timestamp,
                                                 };
                                                 if let Err(_) = send_q
-                                                    .insert(
-                                                        Packet::from(new_incoming).parse().unwrap(),
+                                                    .send_packet(
+                                                        new_incoming.into(),
                                                         Reliability::Reliable,
                                                         true,
-                                                        Some(0),
                                                     )
                                                     .await
                                                 {
@@ -382,7 +373,13 @@ impl Future for ClientHandshake {
 }
 
 async fn send_packet(socket: &Arc<UdpSocket>, packet: Packet) -> bool {
-    if let Err(e) = socket.send_to(&mut packet.parse().unwrap()[..], socket.peer_addr().unwrap()).await {
+    if let Err(e) = socket
+        .send_to(
+            &mut packet.parse().unwrap()[..],
+            socket.peer_addr().unwrap(),
+        )
+        .await
+    {
         rakrs_debug!("[CLIENT] Failed sending payload to server! {}", e);
         return false;
     } else {
