@@ -239,7 +239,7 @@ impl Connection {
     ///
     pub async fn init_net_recv(
         &self,
-        net: Receiver<Vec<u8>>,
+        mut net: Receiver<Vec<u8>>,
         sender: Sender<Vec<u8>>,
     ) -> task::JoinHandle<()> {
         let recv_time = self.recv_time.clone();

@@ -1,0 +1,11 @@
+[package]
+name = "client"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+async-std = { version = "1.12.0", features = [ "unstable", "attributes" ] }
+binary_utils = { git = "https://github.com/NetrexMC/BinaryUtil", tag = "v0.2.2" }
+rakrs = { path = "../../../", features = [ "debug", "debug_all", "mcpe", "async-std" ]}

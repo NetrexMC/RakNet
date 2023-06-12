@@ -12,11 +12,12 @@ use async_std::{
 
 use binary_utils::Streamable;
 #[cfg(feature = "async_tokio")]
+use std::future::Future;
+#[cfg(feature = "async_tokio")]
+use std::task::{Context, Poll, Waker};
+#[cfg(feature = "async_tokio")]
 use tokio::{
-    future::Future,
     net::UdpSocket,
-    task::Poll,
-    task::Waker,
     task::{self},
 };
 
@@ -161,7 +162,10 @@ impl ClientHandshake {
 
             update_state!(shared_state, HandshakeStatus::Opening);
 
-            send_packet(&socket, connect_request.into()).await;
+            if !send_packet(&socket, connect_request.into()).await {
+                update_state!(true, shared_state, HandshakeStatus::Failed);
+            };
+
             let reply = match_ids!(
                 socket.clone(),
                 OpenConnectReply::id(),
@@ -199,7 +203,9 @@ impl ClientHandshake {
 
             update_state!(shared_state, HandshakeStatus::SessionOpen);
 
-            send_packet(&socket, session_info.into()).await;
+            if !send_packet(&socket, session_info.into()).await {
+                update_state!(true, shared_state, HandshakeStatus::Failed);
+            }
 
             let session_reply = expect_reply!(socket, SessionInfoReply);
 
@@ -316,10 +322,7 @@ impl ClientHandshake {
 impl Future for ClientHandshake {
     type Output = HandshakeStatus;
 
-    fn poll(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut task::Context<'_>,
-    ) -> task::Poll<Self::Output> {
+    fn poll(self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         // see if we can finish
         let mut state = self.status.lock().unwrap();
 
@@ -332,8 +335,11 @@ impl Future for ClientHandshake {
     }
 }
 
-async fn send_packet(socket: &Arc<UdpSocket>, packet: Packet) {
+async fn send_packet(socket: &Arc<UdpSocket>, packet: Packet) -> bool {
     if let Err(e) = socket.send(&mut packet.parse().unwrap()[..]).await {
         rakrs_debug!("[CLIENT] Failed sending payload to server! {}", e);
+        return false;
+    } else {
+        return true;
     }
 }

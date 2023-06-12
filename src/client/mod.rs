@@ -12,6 +12,8 @@ use std::{
 #[cfg(feature = "async_tokio")]
 use crate::connection::RecvError;
 #[cfg(feature = "async_std")]
+use async_std::future::timeout;
+#[cfg(feature = "async_std")]
 use async_std::{
     channel::{bounded, Receiver, RecvError, Sender},
     net::UdpSocket,
@@ -19,6 +21,7 @@ use async_std::{
     task::{self, sleep, JoinHandle},
 };
 use binary_utils::Streamable;
+
 #[cfg(feature = "async_tokio")]
 use tokio::{
     net::UdpSocket,
@@ -27,7 +30,7 @@ use tokio::{
         Mutex, RwLock,
     },
     task::{self, JoinHandle},
-    time::sleep,
+    time::{sleep, timeout},
 };
 
 use crate::{
@@ -122,13 +125,22 @@ impl Client {
             }
         };
 
-        let sock = match UdpSocket::bind(address).await {
+        let sock = match UdpSocket::bind("0.0.0.0:0").await {
             Ok(s) => s,
             Err(e) => {
                 rakrs_debug!("Failed to bind to address: {}", e);
                 return Err(ClientError::Killed);
             }
         };
+
+        if timeout(Duration::from_secs(10), sock.connect(address))
+            .await
+            .is_err()
+        {
+            rakrs_debug!("[CLIENT] Failed to connect to address");
+            self.close().await;
+            return Err(ClientError::Killed);
+        }
 
         let socket = Arc::new(sock);
         let send_queue = Arc::new(RwLock::new(SendQueue::new(
@@ -210,7 +222,10 @@ impl Client {
             .store(true, std::sync::atomic::Ordering::Relaxed);
         let mut tasks = self.tasks.lock().await;
         for task in tasks.drain(..) {
+            #[cfg(feature = "async_std")]
             task.cancel().await;
+            #[cfg(feature = "async_tokio")]
+            task.abort();
         }
     }
 
@@ -444,12 +459,7 @@ impl Client {
                                             _ => {}
                                         };
 
-                                        #[cfg(feature = "async_std")]
                                         if let Err(_) = internal_sender.send(pk_buf).await {
-                                            rakrs_debug!(true, "[CLIENT] Failed to send packet to internal recv channel. Is the client closed?");
-                                        }
-                                        #[cfg(feature = "async_tokio")]
-                                        if let Some(_) = internal_sender.send(pk_buf).await {
                                             rakrs_debug!(true, "[CLIENT] Failed to send packet to internal recv channel. Is the client closed?");
                                         }
                                     } else {
@@ -505,12 +515,7 @@ impl Client {
                     _ => {
                         // we don't know what this is, so we're going to send it to the user, maybe
                         // this is a custom packet
-                        #[cfg(feature = "async_std")]
                         if let Err(_) = internal_sender.send(buffer).await {
-                            rakrs_debug!(true, "[CLIENT] Failed to send packet to internal recv channel. Is the client closed?");
-                        }
-                        #[cfg(feature = "async_tokio")]
-                        if let Some(_) = internal_sender.send(buffer).await {
                             rakrs_debug!(true, "[CLIENT] Failed to send packet to internal recv channel. Is the client closed?");
                         }
                     }
