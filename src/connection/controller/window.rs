@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{server::current_epoch};
+use crate::server::current_epoch;
 
 #[derive(Debug, Clone)]
 pub struct ReliableWindow {
