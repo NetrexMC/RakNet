@@ -59,6 +59,7 @@ packet_id!(ConnectedPong, 0x03);
 pub struct ConnectionRequest {
     pub client_id: i64,
     pub time: i64,
+    pub security: bool,
 }
 packet_id!(ConnectionRequest, 0x09);
 

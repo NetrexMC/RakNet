@@ -44,13 +44,18 @@ use crate::{
         frame::FramePacket,
         packet::{
             online::{ConnectedPing, ConnectedPong, OnlinePacket},
-            Packet,
+            Packet, offline::{UnconnectedPing, OfflinePacket},
         },
-        reliability::Reliability,
+        reliability::Reliability, Magic,
     },
     rakrs_debug,
     server::{current_epoch, PossiblySocketAddr},
 };
+
+#[cfg(feature = "mcpe")]
+use crate::protocol::mcpe::UnconnectedPong;
+#[cfg(not(feature = "mcpe"))]
+use crate::protocol::packet::offline::UnconnectedPong;
 
 pub const DEFAULT_MTU: u16 = 1400;
 
@@ -133,12 +138,13 @@ impl Client {
             }
         };
 
-        if timeout(Duration::from_secs(10), sock.connect(address))
-            .await
-            .is_err()
-        {
+        rakrs_debug!(true, "[CLIENT] Attempting to connect to address: {}", address);
+
+        let res = timeout(Duration::from_secs(5), sock.connect(address)).await;
+
+        if res.is_err() {
             rakrs_debug!("[CLIENT] Failed to connect to address");
-            self.close().await;
+            self.closed.store(false, std::sync::atomic::Ordering::Relaxed);
             return Err(ClientError::Killed);
         }
 
@@ -158,6 +164,9 @@ impl Client {
 
         let closer = self.closed.clone();
 
+        Self::ping(socket.clone()).await?;
+
+        rakrs_debug!(true, "[CLIENT] Starting connection handshake");
         // before we even start the connection, we need to complete the handshake
         let handshake =
             ClientHandshake::new(socket.clone(), self.id as i64, self.version, self.mtu, 5).await;
@@ -166,6 +175,8 @@ impl Client {
             rakrs_debug!("Failed to complete handshake: {:?}", handshake);
             return Err(ClientError::Killed);
         }
+
+        rakrs_debug!(true, "[CLIENT] Handshake completed!");
 
         let socket_task = task::spawn(async move {
             let mut buf: [u8; 2048] = [0; 2048];
@@ -343,6 +354,49 @@ impl Client {
             Some(packet) => Ok(packet),
             #[cfg(feature = "async_tokio")]
             None => Err(RecvError::Closed),
+        }
+    }
+
+    pub async fn ping(socket: Arc<UdpSocket>) -> Result<UnconnectedPong, ClientError> {
+        let mut buf: [u8; 2048] = [0; 2048];
+        let unconnected_ping = UnconnectedPing {
+            timestamp: current_epoch(),
+            magic: Magic::new(),
+            client_id: rand::random::<i64>(),
+        };
+
+        if let Err(_) = socket.send(&Packet::from(unconnected_ping.clone()).parse().unwrap()[..]).await {
+            rakrs_debug!(true, "[CLIENT] Failed to send ping packet!");
+            return Err(ClientError::ServerOffline);
+        }
+
+        loop {
+            rakrs_debug!(true, "[CLIENT] Waiting for pong packet...");
+            if let Ok(recvd) = timeout(Duration::from_millis(10000), socket.recv(&mut buf)).await {
+                match recvd {
+                    Ok(l) => {
+                        let packet = Packet::compose(&mut buf[..l], &mut 0).unwrap();
+                        if packet.is_offline() {
+                            match packet.get_offline() {
+                                OfflinePacket::UnconnectedPong(pk) => {
+                                    rakrs_debug!(true, "[CLIENT] Recieved pong packet!");
+                                    return Ok(pk);
+                                }
+                                _ => {
+
+                                }
+                            };
+                        }
+                    },
+                    Err(_) => {
+                        rakrs_debug!(true, "[CLIENT] Failed to recieve anything on netowrk channel, is there a sender?");
+                        continue;
+                    }
+                }
+            } else {
+                rakrs_debug!(true, "[CLIENT] Ping Failed, server did not respond!");
+                return Err(ClientError::ServerOffline);
+            }
         }
     }
 
@@ -546,7 +600,7 @@ impl Client {
             loop {
                 sleep(Duration::from_millis(50)).await;
 
-                if closer.load(std::sync::atomic::Ordering::Relaxed) {
+                if closer.load(std::sync::atomic::Ordering::Relaxed) == true {
                     rakrs_debug!(true, "[CLIENT] Connect tick task closed");
                     break;
                 }

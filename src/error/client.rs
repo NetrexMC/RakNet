@@ -9,5 +9,6 @@ pub enum ClientError {
     IncompatibleProtocolVersion,
     Killed,
     Reset,
+    ServerOffline,
     SendQueueError(SendQueueError),
 }
