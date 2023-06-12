@@ -5,9 +5,12 @@ use std::sync::Mutex;
 use async_std::{
     future::Future,
     net::UdpSocket,
-    task::Poll,
-    task::Waker,
-    task::{self},
+    task::{
+        Context,
+        Poll,
+        Waker,
+        self
+    },
 };
 
 use binary_utils::Streamable;
