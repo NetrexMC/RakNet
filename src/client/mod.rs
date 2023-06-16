@@ -436,7 +436,7 @@ impl Client {
         let recv_time = self.recv_time.clone();
 
         let r = task::spawn(async move {
-            loop {
+            'task_loop: loop {
                 let pk_recv = net_recv.lock().await.recv().await;
                 if closed.load(std::sync::atomic::Ordering::Relaxed) == true {
                     rakrs_debug!("[CLIENT] (recv_task) The internal network recieve channel has been killed.");
@@ -487,7 +487,7 @@ impl Client {
 
                             let buffers = recv_q.flush();
 
-                            for mut pk_buf in buffers {
+                            'buf_loop: for mut pk_buf in buffers {
                                 if let Ok(packet) = Packet::compose(&mut pk_buf[..], &mut 0) {
                                     if packet.is_online() {
                                         match packet.get_online() {
@@ -510,6 +510,7 @@ impl Client {
                                                         "[CLIENT] Failed to send pong packet!"
                                                     );
                                                 }
+                                                continue 'buf_loop;
                                             }
                                             OnlinePacket::ConnectedPong(_) => {
                                                 // todo: add ping time to client
@@ -523,10 +524,16 @@ impl Client {
                                                     true,
                                                     "[CLIENT] Recieved disconnect packet!"
                                                 );
-                                                break;
+                                                break 'task_loop;
                                             }
                                             _ => {}
                                         };
+
+                                        rakrs_debug!(
+                                            true,
+                                            "[CLIENT] Processing fault packet... {:#?}",
+                                            packet
+                                        );
 
                                         if let Err(_) = internal_sender.send(pk_buf).await {
                                             rakrs_debug!(true, "[CLIENT] Failed to send packet to internal recv channel. Is the client closed?");
@@ -536,10 +543,10 @@ impl Client {
                                         rakrs_debug!("[CLIENT] Recieved offline packet after handshake! In future versions this will kill the client.");
                                     }
                                 } else {
-                                    rakrs_debug!(
-                                        true,
-                                        "[CLIENT] Failed to send packet to client (parsing failed)!",
-                                    );
+                                    // we send this packet
+                                    if let Err(_) = internal_sender.send(pk_buf).await {
+                                        rakrs_debug!(true, "[CLIENT] Failed to send packet to internal recv channel. Is the client closed?");
+                                    }
                                 }
                             }
                         }

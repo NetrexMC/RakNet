@@ -4,7 +4,7 @@ use std::net::ToSocketAddrs;
 #[async_std::main]
 async fn main() {
     let mut client = Client::new(10, DEFAULT_MTU);
-    let mut addr = "versai.pro:19132".to_socket_addrs().unwrap();
+    let mut addr = "zeqa.net:19132".to_socket_addrs().unwrap();
     client.connect(addr.next().unwrap()).await.unwrap();
 
     loop {

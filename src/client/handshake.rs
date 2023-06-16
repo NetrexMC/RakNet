@@ -289,7 +289,10 @@ impl ClientHandshake {
                                     if pk.is_online() {
                                         match pk.get_online() {
                                             OnlinePacket::ConnectedPing(pk) => {
-                                                println!("Received ConnectedPing from server!");
+                                                rakrs_debug!(
+                                                    true,
+                                                    "[CLIENT] Received ConnectedPing from server!"
+                                                );
                                                 let response = ConnectedPong {
                                                     ping_time: pk.time,
                                                     pong_time: current_epoch() as i64,
@@ -392,8 +395,8 @@ async fn send_packet(socket: &Arc<UdpSocket>, packet: Packet) -> bool {
         .await
     {
         rakrs_debug!("[CLIENT] Failed sending payload to server! {}", e);
-        rakrs_debug!(" -> PAYLOAD: {:?}", &packet.parse().unwrap()[..]);
-        rakrs_debug!(" -> PACKET: {:?}", packet);
+        rakrs_debug!(true, " -> PAYLOAD: {:?}", &packet.parse().unwrap()[..]);
+        rakrs_debug!(true, " -> PACKET: {:?}", packet);
         return false;
     } else {
         rakrs_debug!(true, "[CLIENT] Sent payload to server!");
