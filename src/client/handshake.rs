@@ -315,7 +315,18 @@ impl ClientHandshake {
                                                 // send new incoming connection
                                                 let new_incoming = NewConnection {
                                                     server_address: socket.peer_addr().unwrap(),
-                                                    system_address: socket.local_addr().unwrap(),
+                                                    system_address: vec![
+                                                        socket.peer_addr().unwrap(),
+                                                        socket.peer_addr().unwrap(),
+                                                        socket.peer_addr().unwrap(),
+                                                        socket.peer_addr().unwrap(),
+                                                        socket.peer_addr().unwrap(),
+                                                        socket.peer_addr().unwrap(),
+                                                        socket.peer_addr().unwrap(),
+                                                        socket.peer_addr().unwrap(),
+                                                        socket.peer_addr().unwrap(),
+                                                        socket.peer_addr().unwrap(),
+                                                    ],
                                                     request_time: pk.request_time,
                                                     timestamp: pk.timestamp,
                                                 };
@@ -381,6 +392,8 @@ async fn send_packet(socket: &Arc<UdpSocket>, packet: Packet) -> bool {
         .await
     {
         rakrs_debug!("[CLIENT] Failed sending payload to server! {}", e);
+        rakrs_debug!(" -> PAYLOAD: {:?}", &packet.parse().unwrap()[..]);
+        rakrs_debug!(" -> PACKET: {:?}", packet);
         return false;
     } else {
         rakrs_debug!(true, "[CLIENT] Sent payload to server!");

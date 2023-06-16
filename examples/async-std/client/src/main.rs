@@ -1,10 +1,11 @@
 use rakrs::client::{Client, DEFAULT_MTU};
+use std::net::ToSocketAddrs;
 
 #[async_std::main]
 async fn main() {
-    let mut client = Client::new(11, DEFAULT_MTU);
-
-    client.connect("135.148.137.229:19132").await.unwrap();
+    let mut client = Client::new(10, DEFAULT_MTU);
+    let mut addr = "versai.pro:19132".to_socket_addrs().unwrap();
+    client.connect(addr.next().unwrap()).await.unwrap();
 
     loop {
         let pk = client.recv().await.unwrap();
