@@ -1,5 +1,5 @@
 [package]
-name = "rakrs"
+name = "rak-rs"
 version = "0.3.0-rc.5"
 authors = ["Bavfalcon9 <olybear9@gmail.com>"]
 edition = "2021"
