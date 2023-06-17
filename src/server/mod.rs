@@ -81,6 +81,17 @@ impl From<SocketAddr> for PossiblySocketAddr<'_> {
     }
 }
 
+impl std::fmt::Display for PossiblySocketAddr<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PossiblySocketAddr::SocketAddr(addr) => write!(f, "{}", addr),
+            PossiblySocketAddr::Str(addr) => write!(f, "{}", addr),
+            PossiblySocketAddr::String(addr) => write!(f, "{}", addr),
+            PossiblySocketAddr::ActuallyNot => write!(f, "Not a valid address!"),
+        }
+    }
+}
+
 pub struct Listener {
     /// If mcpe is true, this is the default MOTD, this is
     /// the default MOTD to send to the client. You can change this later by setting
@@ -182,6 +193,7 @@ impl Listener {
         let send_comm = self.send_comm.clone();
         // let send_evt = self.send_evnt.clone();
         let server_id = self.id.clone();
+        #[cfg(feature = "mcpe")]
         let default_motd = self.motd.clone();
         let connections = self.connections.clone();
         let closer = self.closed.clone();
@@ -193,6 +205,7 @@ impl Listener {
         task::spawn(async move {
             // We allocate here to prevent constant allocation of this array
             let mut buf: [u8; 2048] = [0; 2048];
+            #[cfg(feature = "mcpe")]
             let motd_default = default_motd.clone();
 
             loop {
@@ -361,9 +374,8 @@ impl Listener {
 
                                     // update the sessions mtuSize, this is referred to internally, we also will send this event to the client
                                     // event channel. However we are not expecting a response.
-                                    drop(
-                                        sessions.get_mut(&origin).unwrap().0.mtu_size = pk.mtu_size,
-                                    );
+
+                                    sessions.get_mut(&origin).unwrap().0.mtu_size = pk.mtu_size;
 
                                     // let (resp_tx, resp_rx) = oneshot::channel::<ServerEventResponse>();
 

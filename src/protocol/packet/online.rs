@@ -1,3 +1,4 @@
+use std::io::Cursor;
 use std::io::Write;
 use std::net::IpAddr;
 use std::net::Ipv4Addr;
@@ -6,6 +7,7 @@ use std::net::SocketAddr;
 use binary_utils::error::BinaryError;
 use binary_utils::*;
 use byteorder::BigEndian;
+use byteorder::ReadBytesExt;
 use byteorder::WriteBytesExt;
 
 use super::Packet;
@@ -59,6 +61,7 @@ packet_id!(ConnectedPong, 0x03);
 pub struct ConnectionRequest {
     pub client_id: i64,
     pub time: i64,
+    pub security: bool,
 }
 packet_id!(ConnectionRequest, 0x09);
 
@@ -109,18 +112,48 @@ packet_id!(ConnectionAccept, 0x10);
 
 /// Going to be completely Honest here, I have no idea what this is used for right now,
 /// even after reading the source code.
-#[derive(Clone, Debug, BinaryStream)]
+#[derive(Clone, Debug)]
 pub struct NewConnection {
     /// The external IP Address of the server.
     pub server_address: SocketAddr,
     /// The internal IP Address of the server.
-    pub system_address: SocketAddr,
+    pub system_address: Vec<SocketAddr>,
     /// The time of the timestamp the client sent with `ConnectionRequest`.
     pub request_time: i64,
     /// The time on the server.
     pub timestamp: i64,
 }
 packet_id!(NewConnection, 0x13);
+
+impl Streamable for NewConnection {
+    fn parse(&self) -> Result<Vec<u8>, BinaryError> {
+        let mut stream = Vec::new();
+        stream.write_all(&self.server_address.parse()?[..])?;
+        for address in &self.system_address {
+            stream.write_all(&address.parse()?[..])?;
+        }
+        stream.write_i64::<BigEndian>(self.request_time)?;
+        stream.write_i64::<BigEndian>(self.timestamp)?;
+        Ok(stream)
+    }
+
+    fn compose(source: &[u8], position: &mut usize) -> Result<Self, BinaryError> {
+        let server_address = SocketAddr::new(IpAddr::from(Ipv4Addr::new(192, 168, 0, 1)), 9120);
+        let mut stream = Cursor::new(source);
+        let mut system_address = Vec::new();
+        for _ in 0..10 {
+            system_address.push(SocketAddr::compose(source, position)?);
+        }
+        let request_time = stream.read_i64::<BigEndian>()?;
+        let timestamp = stream.read_i64::<BigEndian>()?;
+        Ok(Self {
+            server_address,
+            system_address,
+            request_time,
+            timestamp,
+        })
+    }
+}
 
 /// A disconnect notification. Tells the client to disconnect.
 #[derive(Clone, Debug, BinaryStream)]
