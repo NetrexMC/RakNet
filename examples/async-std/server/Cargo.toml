@@ -8,4 +8,4 @@ edition = "2021"
 [dependencies]
 async-std = { version = "1.12.0", features = [ "attributes" ] }
 console-subscriber = "0.1.8"
-rakrs = { path = "../../../", features = [ "debug", "debug_all", "mcpe" ] }
+rak_rs = { path = "../../../", features = [ "debug", "debug_all", "mcpe" ] }

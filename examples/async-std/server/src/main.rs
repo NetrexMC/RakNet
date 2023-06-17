@@ -1,6 +1,6 @@
-use rakrs::connection::Connection;
-use rakrs::mcpe::motd::Gamemode;
-use rakrs::Listener;
+use rak_rs::connection::Connection;
+use rak_rs::mcpe::motd::Gamemode;
+use rak_rs::Listener;
 
 #[async_std::main]
 async fn main() {

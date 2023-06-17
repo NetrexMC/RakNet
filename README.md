@@ -1,54 +1,100 @@
-# RakNet
+# rak-rs
 
-A fully functional RakNet implementation in rust, asynchronously driven.
+A fully functional RakNet implementation in pure rust, asynchronously driven.
 
-### Installation
+## Getting Started
 
-By default `rakrs` will use `async_std` feature, which in turn, utilizes the `async_std` crate. To use `tokio` you will need to add it to cargo features as `async_tokio`.
-
-Using the tokio library with the `mcpe` feature may look like the following:
+RakNet (rak-rs) is available on [crates.io](), to use it, add the following to your `Cargo.toml`:
 
 ```toml
-rakrs = { version = "0.3.0", features = [ "mcpe", "async_std" ], default-features = false }
+[dependencies]
+rakrs = "0.3.0"
 ```
 
-```rust
-// Create a server
-use rakrs::Listener;
-use rakrs::util::handle;
-use rakrs::util::mcpe;
+## Features
 
-async fn my_handler(conn: RakConnection, mut stream: RakStream) {
-    // The `conn.recv()` method constructs a `Packet` from the stream
-    // Which becomes usable later.
-    while let Some(packet) = conn.recv(&mut stream).await {
-        if let Ok(packet) = packet {
-            // RakNet packets are sent here! We can send some back as well!
-            let hello = raknet::protocol::online::ConnectedPing::new();
-            conn.send(hello.into(), Reliability::Reliable).await;
-        }
+This RakNet implementation comes with 3 primary features, `async_std`, `async_tokio` and `mcpe`.  However, by default, only `async_std` is enabled, and `mcpe` requires you to modify your `Cargo.toml`.
+
+If you wish to use these features, add them to your `Cargo.toml` as seen below:
+
+```toml
+[dependencies]
+rak_rs = { version = "0.3.0", default-features = false, features = [ "async_tokio", "mcpe" ] }
+```
+
+
+
+rak-rs also provides the following modules:
+
+- [`rak_rs::client`](https://docs.rs/rak-rs/latest/rak-rs/client) - A client implementation of RakNet, allowing you to connect to a RakNet server.
+- [`rak_rs::connection`](https://docs.rs/rak-rs/latest/rak-rs/client) - A bare-bones implementation of a Raknet peer, this is mainly used for types.
+- [`rak_rs::error`](https://docs.rs/rak-rs/latest/rak-rs/error) - A module with errors that both the Client and Server can respond with.
+- [`rak_rs::protocol`](https://docs.rs/rak-rs/latest/rak-rs/protocol) - A lower level implementation of RakNet, responsible for encoding and decoding packets.
+- [`rak_rs::server`](https://docs.rs/rak-rs/latest/rak-rs/server) - The base server implementation of RakNet.
+- [`rak_rs::utils`](https://docs.rs/rak-rs/latest/rak-rs/utils)  - General utilities used within `rak-rs`.
+
+# Client
+
+The `client` module provides a way for you to interact with RakNet servers with code.
+
+**Example:**
+
+```rust
+use rak_rs::client::{Client, DEFAULT_MTU};
+use std::net::ToSocketAddrs;
+
+#[async_std::main]
+async fn main() {
+    let version: u8 = 10;
+    let addr = "my_server.net:19132".to_socket_addrs().unwrap();
+    let mut client = Client::new(version, DEFAULT_MTU);
+    
+    client.connect(addr.next().unwrap()).await.unwrap();
+    
+    // receive packets
+    loop {
+        let packet = client.recv().await.unwrap();
+        
+        println!("Received a packet! {:?}", packet);
+        
+        client.send_ord(vec![254, 0, 1, 1], Some(1));
     }
 }
 
-async fn main() {
-    // Bind to a socket and allow minecraft protocol
-    let mut server = Listener::bind("0.0.0.0:19132", true).await;
-    server.motd.name = "Rust Bedrock Minecraft server";
-    server.motd.player_count = 100;
-    server.motd.player_max = 200;
-    server.motd.gamemode = mcpe::Gamemode::Survival;
+```
 
-    // Begin listening to incoming connections
-    server.start().await;
+# Server
+
+A RakNet server implementation in pure rust.
+
+**Example:**
+
+```rust
+use rakrs::connection::Connection;
+use rakrs::Listener;
+use rakrs::
+
+#[async_std::main]
+async fn main() {
+    let mut server = Listener::bind("0.0.0.0:19132").await.unwrap();
+    server.start().await.unwrap();
 
     loop {
-        let conn = server.accept().await.unwrap();
+        let conn = server.accept().await;
+        async_std::task::spawn(handle(conn.unwrap()));
+    }
+}
 
-        // You can use the default handler, or create your own
-        // the default handler
-        tokio::spawn(handle(conn, stream));
-        // your own handler
-        tokio::spawn(my_handler(conn, stream));
+async fn handle(mut conn: Connection) {
+    loop {
+        // keeping the connection alive
+        if conn.is_closed() {
+            println!("Connection closed!");
+            break;
+        }
+        if let Ok(pk) = conn.recv().await {
+            println!("Got a connection packet {:?} ", pk);
+        }
     }
 }
 ```

@@ -1,10 +1,10 @@
-use rakrs::Listener;
-use rakrs::Motd;
-use rakrs::connection::Connection;
-use rakrs::mcpe;
-use rakrs::mcpe::motd::Gamemode;
-use rakrs::server::event::ServerEvent;
-use rakrs::server::event::ServerEventResponse;
+use rak_rs::Listener;
+use rak_rs::Motd;
+use rak_rs::connection::Connection;
+use rak_rs::mcpe;
+use rak_rs::mcpe::motd::Gamemode;
+use rak_rs::server::event::ServerEvent;
+use rak_rs::server::event::ServerEventResponse;
 
 
 #[tokio::main]
@@ -18,39 +18,8 @@ async fn main() {
     server.start().await.unwrap();
 
     loop {
-        // let mut recvr = inner.lock().await;
-        // tokio::select! {
-        //     ev = recvr.recv() => {
-        //         match ev {
-        //             Some((event, shoot)) => {
-        //                 match event {
-        //                     ServerEvent::RefreshMotdRequest(_addr, mut motd) => {
-        //                         // force update the motd!!!
-        //                         motd.name = "You are a loser!!!!!!!!!".to_string();
-        //                         motd.player_max = 14_903;
-        //                         motd.player_count = 0;
-        //                         shoot.send(ServerEventResponse::RefreshMotd(motd)).unwrap();
-        //                     },
-        //                     _ => {
-        //                         println!("Got a response!");
-        //                         // YOU NEED TO ALWAYS REPLY TO EVENTS
-        //                         shoot.send(ServerEventResponse::Acknowledged);
-        //                     }
-        //                 }
-        //             },
-        //             None => {
-        //                 println!("Error!");
-        //                 break;
-        //             }
-        //         }
-        //     },
-            // connection = server.accept() => {
-            //     tokio::task::spawn(handle(connection.unwrap()));
-            // }
-
         let conn = server.accept().await;
-        async_std::task::spawn(handle(conn.unwrap()));
-        // }
+        tokio::task::spawn(handle(conn.unwrap()));
     }
 }
 
@@ -62,7 +31,7 @@ async fn handle(mut conn: Connection) {
             break;
         }
         if let Ok(pk) = conn.recv().await {
-            println!("(RAKNET RECIEVE SIDE) Got a connection packet {:?} ", pk);
+            println!("Got a connection packet {:?} ", pk);
         }
         // conn.tick().await;
     }

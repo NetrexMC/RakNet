@@ -1,4 +1,4 @@
-use rakrs::client::{Client, DEFAULT_MTU};
+use rak_rs::client::{Client, DEFAULT_MTU};
 use std::net::ToSocketAddrs;
 
 #[async_std::main]
