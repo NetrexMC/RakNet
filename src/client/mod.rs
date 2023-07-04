@@ -228,13 +228,13 @@ impl Client {
     }
 
     /// Updates the client state
-    pub async fn update_state(&mut self, new_state: ConnectionState) {
+    pub async fn update_state(&self, new_state: ConnectionState) {
         let mut state = self.state.lock().await;
         *state = new_state;
     }
 
     /// Todo: send disconnect packet.
-    pub async fn close(&mut self) {
+    pub async fn close(&self) {
         self.update_state(ConnectionState::Disconnecting).await;
         self.closed
             .store(true, std::sync::atomic::Ordering::Relaxed);
@@ -247,7 +247,7 @@ impl Client {
         }
     }
 
-    pub async fn send_ord(&mut self, buffer: &[u8], channel: u8) -> Result<(), ClientError> {
+    pub async fn send_ord(&self, buffer: &[u8], channel: u8) -> Result<(), ClientError> {
         if self.state.lock().await.is_available() {
             let mut send_q = self.send_queue.as_ref().unwrap().write().await;
             if let Err(send) = send_q
@@ -268,7 +268,7 @@ impl Client {
         }
     }
 
-    pub async fn send_seq(&mut self, buffer: &[u8], channel: u8) -> Result<(), ClientError> {
+    pub async fn send_seq(&self, buffer: &[u8], channel: u8) -> Result<(), ClientError> {
         if self.state.lock().await.is_available() {
             let mut send_q = self.send_queue.as_ref().unwrap().write().await;
             if let Err(send) = send_q
@@ -290,7 +290,7 @@ impl Client {
     }
 
     pub async fn send(
-        &mut self,
+        &self,
         buffer: &[u8],
         reliability: Reliability,
         channel: u8,
@@ -311,7 +311,7 @@ impl Client {
     }
 
     pub async fn send_immediate(
-        &mut self,
+        &self,
         buffer: &[u8],
         reliability: Reliability,
         channel: u8,
@@ -331,7 +331,7 @@ impl Client {
         }
     }
 
-    pub async fn flush_ack(&mut self) {
+    pub async fn flush_ack(&self) {
         let mut send_q = self.send_queue.as_ref().unwrap().write().await;
         let mut recv_q = self.recv_queue.lock().await;
         // Flush the queue of acks and nacks, and respond to them
@@ -351,7 +351,7 @@ impl Client {
         }
     }
 
-    pub async fn recv(&mut self) -> Result<Vec<u8>, RecvError> {
+    pub async fn recv(&self) -> Result<Vec<u8>, RecvError> {
         match self.internal_recv.recv().await {
             #[cfg(feature = "async_std")]
             Ok(packet) => Ok(packet),
@@ -408,11 +408,11 @@ impl Client {
         }
     }
 
-    async fn push_task(&mut self, task: JoinHandle<()>) {
+    async fn push_task(&self, task: JoinHandle<()>) {
         self.tasks.lock().await.push(task);
     }
 
-    async fn init_recv_task(&mut self) -> Result<JoinHandle<()>, ClientError> {
+    async fn init_recv_task(&self) -> Result<JoinHandle<()>, ClientError> {
         let net_recv = match self.network_recv {
             Some(ref n) => n.clone(),
             None => {
@@ -604,7 +604,7 @@ impl Client {
     /// This is an internal function that initializes the client connection.
     /// This is called by `Client::connect()`.
     async fn init_connect_tick(
-        &mut self,
+        &self,
         send_queue: Arc<RwLock<SendQueue>>,
     ) -> Result<task::JoinHandle<()>, ClientError> {
         // verify that the client is offline
