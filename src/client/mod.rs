@@ -267,7 +267,11 @@ impl Client {
             }
             Ok(())
         } else {
-            rakrs_debug!(true, "[CLIENT] Client is not connected! State: {:?}", self.state.lock().await);
+            rakrs_debug!(
+                true,
+                "[CLIENT] Client is not connected! State: {:?}",
+                self.state.lock().await
+            );
             Err(ClientError::NotListening)
         }
     }

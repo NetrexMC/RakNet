@@ -4,12 +4,11 @@ use std::time::Duration;
 
 #[cfg(feature = "async_std")]
 use async_std::{
+    future::timeout,
     future::Future,
     net::UdpSocket,
     task::{self, Context, Poll, Waker},
-    future::timeout,
 };
-
 
 use binary_utils::Streamable;
 #[cfg(feature = "async_tokio")]
@@ -96,7 +95,10 @@ macro_rules! expect_reply {
             let send_result = timeout(Duration::from_secs(10), $socket.recv(&mut recv_buf)).await;
 
             if (send_result.is_err()) {
-                rakrs_debug!(true, "[CLIENT] Failed to receive packet from server! Is it offline?");
+                rakrs_debug!(
+                    true,
+                    "[CLIENT] Failed to receive packet from server! Is it offline?"
+                );
                 break;
             }
 

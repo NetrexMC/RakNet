@@ -5,10 +5,10 @@ use binary_utils::error::BinaryError;
 use binary_utils::*;
 use byteorder::WriteBytesExt;
 
-use crate::protocol::MAGIC;
-use crate::protocol::RAKNET_HEADER_OVERHEAD;
 #[cfg(feature = "mcpe")]
 pub use crate::protocol::mcpe::UnconnectedPong;
+use crate::protocol::MAGIC;
+use crate::protocol::RAKNET_HEADER_OVERHEAD;
 
 use super::Packet;
 use super::PacketId;
