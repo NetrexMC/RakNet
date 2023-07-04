@@ -239,7 +239,7 @@ impl Connection {
     ///
     pub async fn init_net_recv(
         &self,
-        mut net: Receiver<Vec<u8>>,
+        net: Receiver<Vec<u8>>,
         sender: Sender<Vec<u8>>,
     ) -> task::JoinHandle<()> {
         let recv_time = self.recv_time.clone();
@@ -527,7 +527,7 @@ impl Connection {
 
     /// Send a packet to the client.
     /// These will be sent next tick unless otherwise specified.
-    pub async fn send(&mut self, buffer: Vec<u8>, immediate: bool) -> Result<(), SendQueueError> {
+    pub async fn send(&self, buffer: Vec<u8>, immediate: bool) -> Result<(), SendQueueError> {
         let mut q = self.send_queue.write().await;
         if let Err(e) = q
             .insert(buffer, Reliability::ReliableOrd, immediate, Some(0))

@@ -6,7 +6,7 @@ use std::{
         atomic::{AtomicBool, AtomicU64},
         Arc,
     },
-    time::Duration,
+    time::Duration, task::Waker,
 };
 
 #[cfg(feature = "async_tokio")]
