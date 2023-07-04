@@ -33,6 +33,10 @@ pub enum ConnectionState {
     /// the "Unconnected" state, hence "UnconnectedPing"
     Unidentified,
 
+    /// The session has been identified and is ready to be connected.
+    /// This is the state after a connection has been established.
+    Identified,
+
     /// The session is not connected and is not trying to connect.
     /// During this state the session will be dropped. This state occurs when a client
     /// has completely stopped responding to packets or their socket is destroyed.
@@ -87,6 +91,7 @@ impl std::fmt::Display for ConnectionState {
             Self::Disconnecting => write!(f, "Disconnecting"),
             Self::Disconnected => write!(f, "Disconnected"),
             Self::Unidentified => write!(f, "Unidentified"),
+            Self::Identified => write!(f, "Identified"),
             Self::Offline => write!(f, "Offline"),
         }
     }

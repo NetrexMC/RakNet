@@ -174,6 +174,7 @@ impl Client {
 
         Self::ping(socket.clone()).await?;
 
+        self.update_state(ConnectionState::Unidentified).await;
         rakrs_debug!(true, "[CLIENT] Starting connection handshake");
         // before we even start the connection, we need to complete the handshake
         let handshake =
@@ -183,6 +184,7 @@ impl Client {
             rakrs_debug!("Failed to complete handshake: {:?}", handshake);
             return Err(ClientError::Killed);
         }
+        self.update_state(ConnectionState::Identified).await;
 
         rakrs_debug!(true, "[CLIENT] Handshake completed!");
 
@@ -265,6 +267,7 @@ impl Client {
             }
             Ok(())
         } else {
+            rakrs_debug!(true, "[CLIENT] Client is not connected! State: {:?}", self.state.lock().await);
             Err(ClientError::NotListening)
         }
     }
@@ -609,9 +612,10 @@ impl Client {
         send_queue: Arc<RwLock<SendQueue>>,
     ) -> Result<task::JoinHandle<()>, ClientError> {
         // verify that the client is offline
-        if self.state.lock().await.is_available() {
+        if *self.state.lock().await != ConnectionState::Identified {
             return Err(ClientError::AlreadyOnline);
         }
+        self.update_state(ConnectionState::Connected).await;
 
         let closer = self.closed.clone();
         let recv_queue = self.recv_queue.clone();

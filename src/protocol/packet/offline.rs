@@ -5,6 +5,8 @@ use binary_utils::error::BinaryError;
 use binary_utils::*;
 use byteorder::WriteBytesExt;
 
+use crate::protocol::MAGIC;
+use crate::protocol::RAKNET_HEADER_OVERHEAD;
 #[cfg(feature = "mcpe")]
 pub use crate::protocol::mcpe::UnconnectedPong;
 
@@ -83,7 +85,9 @@ impl Streamable for OpenConnectRequest {
             .expect("Failed to parse open connect request");
         stream.write_u8(self.protocol)?;
         // padding
-        for _ in 0..self.mtu_size {
+        // remove 28 bytes from the mtu size
+        let mtu_size = self.mtu_size - stream.len() as u16 - RAKNET_HEADER_OVERHEAD as u16;
+        for _ in 0..mtu_size {
             stream.write_u8(0)?;
         }
         Ok(stream)

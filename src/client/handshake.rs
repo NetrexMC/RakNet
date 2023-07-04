@@ -1,12 +1,15 @@
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::time::Duration;
 
 #[cfg(feature = "async_std")]
 use async_std::{
     future::Future,
     net::UdpSocket,
     task::{self, Context, Poll, Waker},
+    future::timeout,
 };
+
 
 use binary_utils::Streamable;
 #[cfg(feature = "async_tokio")]
@@ -17,6 +20,7 @@ use std::task::{Context, Poll, Waker};
 use tokio::{
     net::UdpSocket,
     task::{self},
+    time::{sleep, timeout},
 };
 
 use crate::connection::queue::send::SendQueue;
@@ -49,9 +53,14 @@ macro_rules! match_ids {
                 }
 
                 let len: usize;
-                let rc = $socket.recv(&mut recv_buf).await;
+                let send_result = timeout(Duration::from_secs(5), $socket.recv(&mut recv_buf)).await;
 
-                match rc {
+                if (send_result.is_err()) {
+                    rakrs_debug!(true, "[CLIENT] Failed to receive packet from server! Is it offline?");
+                    break;
+                }
+
+                match send_result.unwrap() {
                     Err(_) => {
                         tries += 1;
                         continue;
@@ -84,9 +93,14 @@ macro_rules! expect_reply {
             }
 
             let len: usize;
-            let rc = $socket.recv(&mut recv_buf).await;
+            let send_result = timeout(Duration::from_secs(10), $socket.recv(&mut recv_buf)).await;
 
-            match rc {
+            if (send_result.is_err()) {
+                rakrs_debug!(true, "[CLIENT] Failed to receive packet from server! Is it offline?");
+                break;
+            }
+
+            match send_result.unwrap() {
                 Err(_) => {
                     tries += 1;
                     continue;
@@ -159,6 +173,8 @@ impl ClientHandshake {
         let shared_state = state.clone();
 
         task::spawn(async move {
+            // todo: continously send untill we get a reply
+            // todo: we also need to decrease the MTU until we get a reply
             let connect_request = OpenConnectRequest {
                 magic: Magic::new(),
                 protocol: version,

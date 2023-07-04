@@ -268,7 +268,7 @@ impl Streamable for Frame {
         // and order channel
         if self.reliability.is_sequenced_or_ordered() {
             stream.write_u24::<LittleEndian>(self.order_index.unwrap())?;
-            stream.write_u8(self.order_channel.unwrap())?;
+            stream.write_u8(self.order_channel.unwrap_or(0))?;
         }
 
         // check whether or not this frame is fragmented, if it is, write the fragment meta
