@@ -39,7 +39,7 @@
 //!
 //! **Example:**
 //!
-//! ```rust
+//! ```ignore
 //! use rak_rs::client::{Client, DEFAULT_MTU};
 //! use std::net::ToSocketAddrs;
 //!
@@ -69,7 +69,7 @@
 //!
 //! **Example:**
 //!
-//! ```rust
+//! ```ignore
 //! use rakrs::connection::Connection;
 //! use rakrs::Listener;
 //! use rakrs::

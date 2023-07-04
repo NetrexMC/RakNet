@@ -54,7 +54,7 @@ impl_gen!(usize);
 ///
 /// Usage example:
 /// ```rust
-/// use rakrs::util::CacheStore;
+/// use rak_rs::util::CacheStore;
 ///
 /// let mut myStore: CacheStore<u8, Vec<u8>> = CacheStore::new();
 /// let myPacket = (0 as u8, vec![0, 0, 0, 1]);

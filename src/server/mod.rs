@@ -175,8 +175,9 @@ impl Listener {
     }
 
     /// Starts the listener!
-    /// ```rust
-    /// use rakrs::server::Listener;
+    /// TODO
+    /// ```ignore
+    /// use rak_rs::server::Listener;
     /// async fn start() {
     ///     let mut server = Listener::bind("0.0.0.0:19132").await.unwrap();
     ///

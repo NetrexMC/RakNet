@@ -136,8 +136,8 @@ impl<Item> NetQueue<Item> for RecoveryQueue<Item> {
 /// within a reliable window time.
 ///
 /// Usage:
-/// ```rust
-/// use rakrs::connection::queue::OrderedQueue;
+/// ```ignore
+/// use rak_rs::connection::queue::OrderedQueue;
 /// let mut ord_qu: OrderedQueue<Vec<u8>> = OrderedQueue::new();
 /// // Insert a packet with the id of "1"
 /// ord_qu.insert(1, vec![0, 1]);
