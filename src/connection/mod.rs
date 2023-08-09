@@ -22,10 +22,7 @@ use async_std::{
     task::{self, sleep, JoinHandle},
 };
 #[cfg(feature = "async_std")]
-use futures::{
-    select,
-    FutureExt
-};
+use futures::{select, FutureExt};
 #[cfg(feature = "async_tokio")]
 use tokio::{
     net::UdpSocket,
@@ -43,6 +40,7 @@ pub enum RecvError {
 }
 
 use crate::{
+    notify::Notify,
     protocol::{
         ack::{Ack, Ackable, ACK, NACK},
         frame::FramePacket,
@@ -54,7 +52,7 @@ use crate::{
     },
     rakrs_debug,
     server::current_epoch,
-    util::to_address_token, notify::Notify,
+    util::to_address_token,
 };
 
 use self::{

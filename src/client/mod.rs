@@ -4,7 +4,7 @@ use std::{
     net::SocketAddr,
     sync::{
         atomic::{AtomicBool, AtomicU64},
-        Arc
+        Arc,
     },
     task::Waker,
     time::Duration,
@@ -13,32 +13,28 @@ use std::{
 #[cfg(feature = "async_std")]
 use async_std::{
     channel::{bounded, Receiver, RecvError, Sender},
+    future::timeout,
     net::UdpSocket,
     sync::{Mutex, RwLock},
     task::{self, sleep, JoinHandle},
-    future::timeout
 };
 
 #[cfg(feature = "async_std")]
-use futures::{
-    select,
-    FutureExt
-};
+use futures::{select, FutureExt};
 
 use binary_utils::Streamable;
 
 #[cfg(feature = "async_tokio")]
 use tokio::{
     net::UdpSocket,
+    select,
     sync::{
         mpsc::{channel as bounded, Receiver, Sender},
         Mutex, RwLock,
     },
     task::{self, JoinHandle},
     time::{sleep, timeout},
-    select
 };
-
 
 #[cfg(feature = "async_tokio")]
 use crate::connection::RecvError;
@@ -476,32 +472,32 @@ impl Client {
                             rakrs_debug!(true, "[CLIENT] (recv_task) Failed to recieve anything on netowrk channel, is there a sender?");
                             continue;
                         }
-        
+
                         #[cfg(feature = "async_tokio")]
                         if let None = pk_recv {
                             rakrs_debug!(true, "[CLIENT] (recv_task)Failed to recieve anything on netowrk channel, is there a sender?");
                             continue;
                         }
-        
+
                         recv_time.store(current_epoch(), std::sync::atomic::Ordering::Relaxed);
-        
+
                         let mut client_state = state.lock().await;
-        
+
                         if *client_state == ConnectionState::TimingOut {
                             rakrs_debug!(true, "[CLIENT] (recv_task) Client is no longer timing out!");
                             *client_state = ConnectionState::Connected;
                         }
-        
+
                         if *client_state == ConnectionState::Disconnecting {
                             rakrs_debug!(true, "[CLIENT] (recv_task) Client is disconnecting!");
                             break;
                         }
-        
+
                         // drop here so the lock isn't held for too long
                         drop(client_state);
-        
+
                         let mut buffer = pk_recv.unwrap();
-        
+
                         match buffer[0] {
                             0x80..=0x8d => {
                                 if let Ok(frame_packet) = FramePacket::compose(&mut buffer[..], &mut 0) {
@@ -512,9 +508,9 @@ impl Client {
                                             "[CLIENT] Failed to push frame packet into send queue."
                                         );
                                     }
-        
+
                                     let buffers = recv_q.flush();
-        
+
                                     'buf_loop: for mut pk_buf in buffers {
                                         if let Ok(packet) = Packet::compose(&mut pk_buf[..], &mut 0) {
                                             if packet.is_online() {
@@ -556,13 +552,13 @@ impl Client {
                                                     }
                                                     _ => {}
                                                 };
-        
+
                                                 rakrs_debug!(
                                                     true,
                                                     "[CLIENT] Processing fault packet... {:#?}",
                                                     packet
                                                 );
-        
+
                                                 if let Err(_) = internal_sender.send(pk_buf).await {
                                                     rakrs_debug!(true, "[CLIENT] Failed to send packet to internal recv channel. Is the client closed?");
                                                 }
@@ -583,7 +579,7 @@ impl Client {
                                 if let Ok(nack) = Ack::compose(&mut buffer[..], &mut 0) {
                                     let mut send_q = send_queue.write().await;
                                     let to_resend = send_q.nack(nack);
-        
+
                                     if to_resend.len() > 0 {
                                         for ack_packet in to_resend {
                                             if let Ok(buffer) = ack_packet.parse() {
@@ -610,9 +606,9 @@ impl Client {
                                 if let Ok(ack) = Ack::compose(&mut buffer[..], &mut 0) {
                                     let mut send_q = send_queue.write().await;
                                     send_q.ack(ack.clone());
-        
+
                                     drop(send_q);
-        
+
                                     recv_queue.lock().await.ack(ack);
                                 }
                             }
@@ -735,8 +731,6 @@ impl Client {
 
 impl Drop for Client {
     fn drop(&mut self) {
-        futures_executor::block_on(async move {
-            self.close_notifier.lock().await.notify().await
-        });
+        futures_executor::block_on(async move { self.close_notifier.lock().await.notify().await });
     }
 }
