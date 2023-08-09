@@ -2,11 +2,7 @@ pub mod handshake;
 
 use std::{
     net::SocketAddr,
-    sync::{
-        atomic::{AtomicBool, AtomicU64},
-        Arc,
-    },
-    task::Waker,
+    sync::{atomic::AtomicU64, Arc},
     time::Duration,
 };
 
@@ -647,7 +643,7 @@ impl Client {
 
         let t = task::spawn(async move {
             loop {
-                let mut closer = closer_dispatch.lock().await;
+                let closer = closer_dispatch.lock().await;
                 select! {
                     _ = sleep(Duration::from_millis(50)).fuse() => {
                         let recv = last_recv.load(std::sync::atomic::Ordering::Relaxed);

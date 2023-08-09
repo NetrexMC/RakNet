@@ -7,7 +7,6 @@ use byteorder::WriteBytesExt;
 
 #[cfg(feature = "mcpe")]
 pub use crate::protocol::mcpe::UnconnectedPong;
-use crate::protocol::MAGIC;
 use crate::protocol::RAKNET_HEADER_OVERHEAD;
 
 use super::Packet;

@@ -4,8 +4,6 @@ use async_std::channel::{Receiver, Sender};
 #[cfg(feature = "async_tokio")]
 use tokio::sync::mpsc::{Receiver, Sender};
 
-use crate::connection::queue::recv;
-
 /// Notify is a struct that wraps a buffer channel
 /// these channels are used to send messages to the main thread.
 #[derive(Clone)]

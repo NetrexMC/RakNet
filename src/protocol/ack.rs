@@ -6,8 +6,6 @@ use std::{io::Cursor, ops::Range};
 use binary_utils::Streamable;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt, BE};
 
-use crate::rakrs_debug;
-
 pub(crate) trait Ackable {
     type NackItem;
 
