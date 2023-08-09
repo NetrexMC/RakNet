@@ -4,23 +4,27 @@ use std::{
     net::SocketAddr,
     sync::{
         atomic::{AtomicBool, AtomicU64},
-        Arc,
+        Arc
     },
     task::Waker,
     time::Duration,
 };
 
-#[cfg(feature = "async_tokio")]
-use crate::connection::RecvError;
-#[cfg(feature = "async_std")]
-use async_std::future::timeout;
 #[cfg(feature = "async_std")]
 use async_std::{
     channel::{bounded, Receiver, RecvError, Sender},
     net::UdpSocket,
     sync::{Mutex, RwLock},
     task::{self, sleep, JoinHandle},
+    future::timeout
 };
+
+#[cfg(feature = "async_std")]
+use futures::{
+    select,
+    FutureExt
+};
+
 use binary_utils::Streamable;
 
 #[cfg(feature = "async_tokio")]
@@ -32,7 +36,12 @@ use tokio::{
     },
     task::{self, JoinHandle},
     time::{sleep, timeout},
+    select
 };
+
+
+#[cfg(feature = "async_tokio")]
+use crate::connection::RecvError;
 
 use crate::{
     connection::{
@@ -40,6 +49,7 @@ use crate::{
         state::ConnectionState,
     },
     error::client::ClientError,
+    notify::Notify,
     protocol::{
         ack::{Ack, Ackable, ACK, NACK},
         frame::FramePacket,
@@ -82,7 +92,7 @@ pub struct Client {
     /// A list of tasks that are killed when the connection drops.
     tasks: Arc<Mutex<Vec<JoinHandle<()>>>>,
     /// A notifier for when the client should kill threads.
-    closed: Arc<AtomicBool>,
+    close_notifier: Arc<Mutex<Notify>>,
     /// A int for the last time a packet was received.
     recv_time: Arc<AtomicU64>,
     /// The maximum packet size that can be sent to the server.
@@ -106,7 +116,7 @@ impl Client {
             mtu,
             version,
             tasks: Arc::new(Mutex::new(Vec::new())),
-            closed: Arc::new(AtomicBool::new(false)),
+            close_notifier: Arc::new(Mutex::new(Notify::new())),
             recv_time: Arc::new(AtomicU64::new(0)),
             internal_recv,
             internal_send,
@@ -151,8 +161,8 @@ impl Client {
 
         if res.is_err() {
             rakrs_debug!("[CLIENT] Failed to connect to address");
-            self.closed
-                .store(false, std::sync::atomic::Ordering::Relaxed);
+            // todo: properly handle lock.
+            self.close_notifier.lock().await.notify().await;
             return Err(ClientError::Killed);
         }
 
@@ -170,7 +180,7 @@ impl Client {
 
         self.network_recv = Some(Arc::new(Mutex::new(net_recv)));
 
-        let closer = self.closed.clone();
+        let closer = self.close_notifier.clone();
 
         Self::ping(socket.clone()).await?;
 
@@ -190,30 +200,35 @@ impl Client {
 
         let socket_task = task::spawn(async move {
             let mut buf: [u8; 2048] = [0; 2048];
+            let notifier = closer.lock().await;
 
             loop {
-                if closer.load(std::sync::atomic::Ordering::Relaxed) {
-                    rakrs_debug!(true, "[CLIENT] Network recv task closed");
-                    break;
-                }
-
                 let length: usize;
 
-                let recv = socket.recv(&mut buf).await;
-                match recv {
-                    Ok(l) => length = l,
-                    Err(e) => {
-                        rakrs_debug!(true, "[CLIENT] Failed to receive packet: {}", e);
-                        continue;
+                select! {
+                    killed = notifier.wait().fuse() => {
+                        if killed {
+                            rakrs_debug!(true, "[CLIENT] Socket task closed");
+                            break;
+                        }
                     }
-                }
 
-                // no assertions because this is a client
-                // this allows the user to customize their own packet handling
-                // todo: the logic in the recv_task may be better here, as this is latent
-                if let Err(_) = net_send.send(buf[..length].to_vec()).await {
-                    rakrs_debug!(true, "[CLIENT] Failed to send packet to network recv channel. Is the client closed?");
-                }
+                    recv = socket.recv(&mut buf).fuse() => {
+                        match recv {
+                            Ok(l) => length = l,
+                            Err(e) => {
+                                rakrs_debug!(true, "[CLIENT] Failed to receive packet: {}", e);
+                                continue;
+                            }
+                        }
+                        // no assertions because this is a client
+                        // this allows the user to customize their own packet handling
+                        // todo: the logic in the recv_task may be better here, as this is latent
+                        if let Err(_) = net_send.send(buf[..length].to_vec()).await {
+                            rakrs_debug!(true, "[CLIENT] Failed to send packet to network recv channel. Is the client closed?");
+                        }
+                    }
+                };
             }
         });
 
@@ -239,8 +254,8 @@ impl Client {
     /// Todo: send disconnect packet.
     pub async fn close(&self) {
         self.update_state(ConnectionState::Disconnecting).await;
-        self.closed
-            .store(true, std::sync::atomic::Ordering::Relaxed);
+        let notifier = self.close_notifier.clone();
+        notifier.lock().await.notify().await;
         let mut tasks = self.tasks.lock().await;
         for task in tasks.drain(..) {
             #[cfg(feature = "async_std")]
@@ -439,168 +454,175 @@ impl Client {
 
         let recv_queue = self.recv_queue.clone();
         let internal_sender = self.internal_send.clone();
-        let closed = self.closed.clone();
+        let closed = self.close_notifier.clone();
         let state = self.state.clone();
         let recv_time = self.recv_time.clone();
 
         let r = task::spawn(async move {
             'task_loop: loop {
-                let pk_recv = net_recv.lock().await.recv().await;
-                if closed.load(std::sync::atomic::Ordering::Relaxed) == true {
-                    rakrs_debug!("[CLIENT] (recv_task) The internal network recieve channel has been killed.");
-                    break;
-                }
+                let net_dispatch = net_recv.lock().await;
+                let closed_dispatch = closed.lock().await;
+                select! {
+                    killed = closed_dispatch.wait().fuse() => {
+                        if killed {
+                            rakrs_debug!(true, "[CLIENT] Recv task closed");
+                            break;
+                        }
+                    }
+                    pk_recv = net_dispatch.recv().fuse() => {
 
-                #[cfg(feature = "async_std")]
-                if let Err(_) = pk_recv {
-                    rakrs_debug!(true, "[CLIENT] (recv_task) Failed to recieve anything on netowrk channel, is there a sender?");
-                    continue;
-                }
-
-                #[cfg(feature = "async_tokio")]
-                if let None = pk_recv {
-                    rakrs_debug!(true, "[CLIENT] (recv_task)Failed to recieve anything on netowrk channel, is there a sender?");
-                    continue;
-                }
-
-                recv_time.store(current_epoch(), std::sync::atomic::Ordering::Relaxed);
-
-                let mut client_state = state.lock().await;
-
-                if *client_state == ConnectionState::TimingOut {
-                    rakrs_debug!(true, "[CLIENT] (recv_task) Client is no longer timing out!");
-                    *client_state = ConnectionState::Connected;
-                }
-
-                if *client_state == ConnectionState::Disconnecting {
-                    rakrs_debug!(true, "[CLIENT] (recv_task) Client is disconnecting!");
-                    break;
-                }
-
-                // drop here so the lock isn't held for too long
-                drop(client_state);
-
-                let mut buffer = pk_recv.unwrap();
-
-                match buffer[0] {
-                    0x80..=0x8d => {
-                        if let Ok(frame_packet) = FramePacket::compose(&mut buffer[..], &mut 0) {
-                            let mut recv_q = recv_queue.lock().await;
-                            if let Err(_) = recv_q.insert(frame_packet) {
-                                rakrs_debug!(
-                                    true,
-                                    "[CLIENT] Failed to push frame packet into send queue."
-                                );
-                            }
-
-                            let buffers = recv_q.flush();
-
-                            'buf_loop: for mut pk_buf in buffers {
-                                if let Ok(packet) = Packet::compose(&mut pk_buf[..], &mut 0) {
-                                    if packet.is_online() {
-                                        match packet.get_online() {
-                                            OnlinePacket::ConnectedPing(pk) => {
-                                                let response = ConnectedPong {
-                                                    ping_time: pk.time,
-                                                    pong_time: current_epoch() as i64,
+                        #[cfg(feature = "async_std")]
+                        if let Err(_) = pk_recv {
+                            rakrs_debug!(true, "[CLIENT] (recv_task) Failed to recieve anything on netowrk channel, is there a sender?");
+                            continue;
+                        }
+        
+                        #[cfg(feature = "async_tokio")]
+                        if let None = pk_recv {
+                            rakrs_debug!(true, "[CLIENT] (recv_task)Failed to recieve anything on netowrk channel, is there a sender?");
+                            continue;
+                        }
+        
+                        recv_time.store(current_epoch(), std::sync::atomic::Ordering::Relaxed);
+        
+                        let mut client_state = state.lock().await;
+        
+                        if *client_state == ConnectionState::TimingOut {
+                            rakrs_debug!(true, "[CLIENT] (recv_task) Client is no longer timing out!");
+                            *client_state = ConnectionState::Connected;
+                        }
+        
+                        if *client_state == ConnectionState::Disconnecting {
+                            rakrs_debug!(true, "[CLIENT] (recv_task) Client is disconnecting!");
+                            break;
+                        }
+        
+                        // drop here so the lock isn't held for too long
+                        drop(client_state);
+        
+                        let mut buffer = pk_recv.unwrap();
+        
+                        match buffer[0] {
+                            0x80..=0x8d => {
+                                if let Ok(frame_packet) = FramePacket::compose(&mut buffer[..], &mut 0) {
+                                    let mut recv_q = recv_queue.lock().await;
+                                    if let Err(_) = recv_q.insert(frame_packet) {
+                                        rakrs_debug!(
+                                            true,
+                                            "[CLIENT] Failed to push frame packet into send queue."
+                                        );
+                                    }
+        
+                                    let buffers = recv_q.flush();
+        
+                                    'buf_loop: for mut pk_buf in buffers {
+                                        if let Ok(packet) = Packet::compose(&mut pk_buf[..], &mut 0) {
+                                            if packet.is_online() {
+                                                match packet.get_online() {
+                                                    OnlinePacket::ConnectedPing(pk) => {
+                                                        let response = ConnectedPong {
+                                                            ping_time: pk.time,
+                                                            pong_time: current_epoch() as i64,
+                                                        };
+                                                        let mut q = send_queue.write().await;
+                                                        if let Err(_) = q
+                                                            .send_packet(
+                                                                response.into(),
+                                                                Reliability::Unreliable,
+                                                                true,
+                                                            )
+                                                            .await
+                                                        {
+                                                            rakrs_debug!(
+                                                                true,
+                                                                "[CLIENT] Failed to send pong packet!"
+                                                            );
+                                                        }
+                                                        continue 'buf_loop;
+                                                    }
+                                                    OnlinePacket::ConnectedPong(_) => {
+                                                        // todo: add ping time to client
+                                                        rakrs_debug!(
+                                                            true,
+                                                            "[CLIENT] Recieved pong packet!"
+                                                        );
+                                                    }
+                                                    OnlinePacket::Disconnect(_) => {
+                                                        rakrs_debug!(
+                                                            true,
+                                                            "[CLIENT] Recieved disconnect packet!"
+                                                        );
+                                                        break 'task_loop;
+                                                    }
+                                                    _ => {}
                                                 };
-                                                let mut q = send_queue.write().await;
-                                                if let Err(_) = q
-                                                    .send_packet(
-                                                        response.into(),
-                                                        Reliability::Unreliable,
-                                                        true,
-                                                    )
+        
+                                                rakrs_debug!(
+                                                    true,
+                                                    "[CLIENT] Processing fault packet... {:#?}",
+                                                    packet
+                                                );
+        
+                                                if let Err(_) = internal_sender.send(pk_buf).await {
+                                                    rakrs_debug!(true, "[CLIENT] Failed to send packet to internal recv channel. Is the client closed?");
+                                                }
+                                            } else {
+                                                // we should never recieve an offline packet after the handshake
+                                                rakrs_debug!("[CLIENT] Recieved offline packet after handshake! In future versions this will kill the client.");
+                                            }
+                                        } else {
+                                            // we send this packet
+                                            if let Err(_) = internal_sender.send(pk_buf).await {
+                                                rakrs_debug!(true, "[CLIENT] Failed to send packet to internal recv channel. Is the client closed?");
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            NACK => {
+                                if let Ok(nack) = Ack::compose(&mut buffer[..], &mut 0) {
+                                    let mut send_q = send_queue.write().await;
+                                    let to_resend = send_q.nack(nack);
+        
+                                    if to_resend.len() > 0 {
+                                        for ack_packet in to_resend {
+                                            if let Ok(buffer) = ack_packet.parse() {
+                                                if let Err(_) = send_q
+                                                    .insert(buffer, Reliability::Unreliable, true, Some(0))
                                                     .await
                                                 {
                                                     rakrs_debug!(
                                                         true,
-                                                        "[CLIENT] Failed to send pong packet!"
+                                                        "[CLIENT] Failed to insert ack packet into send queue!"
                                                     );
                                                 }
-                                                continue 'buf_loop;
-                                            }
-                                            OnlinePacket::ConnectedPong(_) => {
-                                                // todo: add ping time to client
+                                            } else {
                                                 rakrs_debug!(
                                                     true,
-                                                    "[CLIENT] Recieved pong packet!"
+                                                    "[CLIENT] Failed to send packet to client (parsing failed)!",
                                                 );
                                             }
-                                            OnlinePacket::Disconnect(_) => {
-                                                rakrs_debug!(
-                                                    true,
-                                                    "[CLIENT] Recieved disconnect packet!"
-                                                );
-                                                break 'task_loop;
-                                            }
-                                            _ => {}
-                                        };
-
-                                        rakrs_debug!(
-                                            true,
-                                            "[CLIENT] Processing fault packet... {:#?}",
-                                            packet
-                                        );
-
-                                        if let Err(_) = internal_sender.send(pk_buf).await {
-                                            rakrs_debug!(true, "[CLIENT] Failed to send packet to internal recv channel. Is the client closed?");
                                         }
-                                    } else {
-                                        // we should never recieve an offline packet after the handshake
-                                        rakrs_debug!("[CLIENT] Recieved offline packet after handshake! In future versions this will kill the client.");
-                                    }
-                                } else {
-                                    // we send this packet
-                                    if let Err(_) = internal_sender.send(pk_buf).await {
-                                        rakrs_debug!(true, "[CLIENT] Failed to send packet to internal recv channel. Is the client closed?");
                                     }
                                 }
                             }
-                        }
-                    }
-                    NACK => {
-                        if let Ok(nack) = Ack::compose(&mut buffer[..], &mut 0) {
-                            let mut send_q = send_queue.write().await;
-                            let to_resend = send_q.nack(nack);
-
-                            if to_resend.len() > 0 {
-                                for ack_packet in to_resend {
-                                    if let Ok(buffer) = ack_packet.parse() {
-                                        if let Err(_) = send_q
-                                            .insert(buffer, Reliability::Unreliable, true, Some(0))
-                                            .await
-                                        {
-                                            rakrs_debug!(
-                                                true,
-                                                "[CLIENT] Failed to insert ack packet into send queue!"
-                                            );
-                                        }
-                                    } else {
-                                        rakrs_debug!(
-                                            true,
-                                            "[CLIENT] Failed to send packet to client (parsing failed)!",
-                                        );
-                                    }
+                            ACK => {
+                                if let Ok(ack) = Ack::compose(&mut buffer[..], &mut 0) {
+                                    let mut send_q = send_queue.write().await;
+                                    send_q.ack(ack.clone());
+        
+                                    drop(send_q);
+        
+                                    recv_queue.lock().await.ack(ack);
                                 }
                             }
-                        }
-                    }
-                    ACK => {
-                        if let Ok(ack) = Ack::compose(&mut buffer[..], &mut 0) {
-                            let mut send_q = send_queue.write().await;
-                            send_q.ack(ack.clone());
-
-                            drop(send_q);
-
-                            recv_queue.lock().await.ack(ack);
-                        }
-                    }
-                    _ => {
-                        // we don't know what this is, so we're going to send it to the user, maybe
-                        // this is a custom packet
-                        if let Err(_) = internal_sender.send(buffer).await {
-                            rakrs_debug!(true, "[CLIENT] Failed to send packet to internal recv channel. Is the client closed?");
+                            _ => {
+                                // we don't know what this is, so we're going to send it to the user, maybe
+                                // this is a custom packet
+                                if let Err(_) = internal_sender.send(buffer).await {
+                                    rakrs_debug!(true, "[CLIENT] Failed to send packet to internal recv channel. Is the client closed?");
+                                }
+                            }
                         }
                     }
                 }
@@ -621,7 +643,7 @@ impl Client {
         }
         self.update_state(ConnectionState::Connected).await;
 
-        let closer = self.closed.clone();
+        let closer_dispatch = self.close_notifier.clone();
         let recv_queue = self.recv_queue.clone();
         let state = self.state.clone();
         let last_recv = self.recv_time.clone();
@@ -629,76 +651,80 @@ impl Client {
 
         let t = task::spawn(async move {
             loop {
-                sleep(Duration::from_millis(50)).await;
+                let mut closer = closer_dispatch.lock().await;
+                select! {
+                    _ = sleep(Duration::from_millis(50)).fuse() => {
+                        let recv = last_recv.load(std::sync::atomic::Ordering::Relaxed);
+                        let mut state = state.lock().await;
 
-                if closer.load(std::sync::atomic::Ordering::Relaxed) == true {
-                    rakrs_debug!(true, "[CLIENT] Connect tick task closed");
-                    break;
-                }
+                        if *state == ConnectionState::Disconnected {
+                            rakrs_debug!(
+                                true,
+                                "[CLIENT] Client is disconnected. Closing connect tick task"
+                            );
+                            closer.notify().await;
+                            break;
+                        }
 
-                let recv = last_recv.load(std::sync::atomic::Ordering::Relaxed);
-                let mut state = state.lock().await;
+                        if *state == ConnectionState::Connecting {
+                            rakrs_debug!(
+                                true,
+                                "[CLIENT] Client is not fully connected to the server yet."
+                            );
+                            continue;
+                        }
 
-                if *state == ConnectionState::Disconnected {
-                    rakrs_debug!(
-                        true,
-                        "[CLIENT] Client is disconnected. Closing connect tick task"
-                    );
-                    closer.store(true, std::sync::atomic::Ordering::Relaxed);
-                    break;
-                }
+                        if recv + 20000 <= current_epoch() {
+                            *state = ConnectionState::Disconnected;
+                            rakrs_debug!(true, "[CLIENT] Client timed out. Closing connection...");
+                            closer.notify().await;
+                            break;
+                        }
 
-                if *state == ConnectionState::Connecting {
-                    rakrs_debug!(
-                        true,
-                        "[CLIENT] Client is not fully connected to the server yet."
-                    );
-                    continue;
-                }
+                        if recv + 15000 <= current_epoch() && state.is_reliable() {
+                            *state = ConnectionState::TimingOut;
+                            rakrs_debug!(true, "[CLIENT] Connection is timing out, sending a ping!",);
+                        }
 
-                if recv + 20000 <= current_epoch() {
-                    *state = ConnectionState::Disconnected;
-                    rakrs_debug!(true, "[CLIENT] Client timed out. Closing connection...");
-                    closer.store(true, std::sync::atomic::Ordering::Relaxed);
-                    break;
-                }
+                        let mut send_q = send_queue.write().await;
+                        let mut recv_q = recv_queue.lock().await;
 
-                if recv + 15000 <= current_epoch() && state.is_reliable() {
-                    *state = ConnectionState::TimingOut;
-                    rakrs_debug!(true, "[CLIENT] Connection is timing out, sending a ping!",);
-                }
+                        if last_ping >= 3000 {
+                            let ping = ConnectedPing {
+                                time: current_epoch() as i64,
+                            };
+                            if let Ok(_) = send_q
+                                .send_packet(ping.into(), Reliability::Reliable, true)
+                                .await
+                            {}
+                            last_ping = 0;
+                        } else {
+                            last_ping += 50;
+                        }
 
-                let mut send_q = send_queue.write().await;
-                let mut recv_q = recv_queue.lock().await;
+                        send_q.update().await;
 
-                if last_ping >= 3000 {
-                    let ping = ConnectedPing {
-                        time: current_epoch() as i64,
-                    };
-                    if let Ok(_) = send_q
-                        .send_packet(ping.into(), Reliability::Reliable, true)
-                        .await
-                    {}
-                    last_ping = 0;
-                } else {
-                    last_ping += 50;
-                }
+                        // Flush the queue of acks and nacks, and respond to them
+                        let ack = Ack::from_records(recv_q.ack_flush(), false);
+                        if ack.records.len() > 0 {
+                            if let Ok(p) = ack.parse() {
+                                send_q.send_stream(&p).await;
+                            }
+                        }
 
-                send_q.update().await;
-
-                // Flush the queue of acks and nacks, and respond to them
-                let ack = Ack::from_records(recv_q.ack_flush(), false);
-                if ack.records.len() > 0 {
-                    if let Ok(p) = ack.parse() {
-                        send_q.send_stream(&p).await;
-                    }
-                }
-
-                // flush nacks from recv queue
-                let nack = Ack::from_records(recv_q.nack_queue(), true);
-                if nack.records.len() > 0 {
-                    if let Ok(p) = nack.parse() {
-                        send_q.send_stream(&p).await;
+                        // flush nacks from recv queue
+                        let nack = Ack::from_records(recv_q.nack_queue(), true);
+                        if nack.records.len() > 0 {
+                            if let Ok(p) = nack.parse() {
+                                send_q.send_stream(&p).await;
+                            }
+                        }
+                    },
+                    killed = closer.wait().fuse() => {
+                        if killed {
+                            rakrs_debug!(true, "[CLIENT] Connect tick task closed");
+                            break;
+                        }
                     }
                 }
             }
@@ -709,7 +735,8 @@ impl Client {
 
 impl Drop for Client {
     fn drop(&mut self) {
-        self.closed
-            .store(true, std::sync::atomic::Ordering::Relaxed);
+        futures_executor::block_on(async move {
+            self.close_notifier.lock().await.notify().await
+        });
     }
 }

@@ -20,7 +20,7 @@ async fn main() {
 async fn handle(mut conn: Connection) {
     loop {
         // keeping the connection alive
-        if conn.is_closed() {
+        if conn.is_closed().await {
             println!("Connection closed!");
             break;
         }

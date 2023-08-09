@@ -116,3 +116,6 @@ pub mod util;
 
 pub use protocol::mcpe::{self, motd::Motd};
 pub use server::Listener;
+
+/// An internal module for notifying the connection of state updates.
+pub(crate) mod notify;

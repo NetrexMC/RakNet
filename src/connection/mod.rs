@@ -12,6 +12,8 @@ use std::{
     time::Duration,
 };
 
+use binary_utils::Streamable;
+
 #[cfg(feature = "async_std")]
 use async_std::{
     channel::{bounded, Receiver, RecvError, Sender},
@@ -19,7 +21,11 @@ use async_std::{
     sync::{Mutex, RwLock},
     task::{self, sleep, JoinHandle},
 };
-use binary_utils::Streamable;
+#[cfg(feature = "async_std")]
+use futures::{
+    select,
+    FutureExt
+};
 #[cfg(feature = "async_tokio")]
 use tokio::{
     net::UdpSocket,
@@ -48,7 +54,7 @@ use crate::{
     },
     rakrs_debug,
     server::current_epoch,
-    util::to_address_token,
+    util::to_address_token, notify::Notify,
 };
 
 use self::{
@@ -98,7 +104,7 @@ pub struct Connection {
     internal_net_recv: ConnNetChan,
     /// A notifier for when the connection should close.
     /// This is used for absolute cleanup withtin the connection
-    disconnect: Arc<AtomicBool>,
+    disconnect: Arc<Notify>,
     /// The event dispatcher for the connection.
     // evt_sender: Sender<(ServerEvent, oneshot::Sender<ServerEventResponse>)>,
     /// The event receiver for the connection.
@@ -134,7 +140,7 @@ impl Connection {
             // evt_receiver,
             state: Arc::new(Mutex::new(ConnectionState::Unidentified)),
             // disconnect: Arc::new(Condvar::new()),
-            disconnect: Arc::new(AtomicBool::new(false)),
+            disconnect: Arc::new(Notify::new()),
             recv_time: Arc::new(AtomicU64::new(current_epoch())),
             tasks: Arc::new(Mutex::new(Vec::new())),
         };
@@ -162,76 +168,89 @@ impl Connection {
         // while handling throttle
         return task::spawn(async move {
             loop {
-                sleep(Duration::from_millis(50)).await;
-                let recv = last_recv.load(std::sync::atomic::Ordering::Relaxed);
-                let mut cstate = state.lock().await;
-
-                if *cstate == ConnectionState::Disconnected {
-                    rakrs_debug!(
-                        true,
-                        "[{}] Connection has been closed due to state!",
-                        to_address_token(address)
-                    );
-                    // closer.notify_all();
-                    closer.store(true, std::sync::atomic::Ordering::Relaxed);
-                    break;
-                }
-
-                if recv + 20000 <= current_epoch() {
-                    *cstate = ConnectionState::Disconnected;
-                    rakrs_debug!(
-                        true,
-                        "[{}] Connection has been closed due to inactivity!",
-                        to_address_token(address)
-                    );
-                    // closer.notify_all();
-                    closer.store(true, std::sync::atomic::Ordering::Relaxed);
-                    break;
-                }
-
-                if recv + 15000 <= current_epoch() && cstate.is_reliable() {
-                    *cstate = ConnectionState::TimingOut;
-                    rakrs_debug!(
-                        true,
-                        "[{}] Connection is timing out, sending a ping!",
-                        to_address_token(address)
-                    );
-                }
-
-                let mut sendq = send_queue.write().await;
-                let mut recv_q = recv_queue.lock().await;
-
-                if last_ping >= 3000 {
-                    let ping = ConnectedPing {
-                        time: current_epoch() as i64,
-                    };
-                    if let Ok(_) = sendq
-                        .send_packet(ping.into(), Reliability::Reliable, true)
-                        .await
-                    {};
-                    last_ping = 0;
-                } else {
-                    last_ping += 50;
-                }
-
-                sendq.update().await;
-
-                // Flush the queue of acks and nacks, and respond to them
-                let ack = Ack::from_records(recv_q.ack_flush(), false);
-                if ack.records.len() > 0 {
-                    if let Ok(p) = ack.parse() {
-                        sendq.send_stream(&p).await;
+                select! {
+                    _ = closer.wait().fuse() => {
+                        rakrs_debug!(true, "[{}] [TICK TASK] Connection has been closed due to closer!", to_address_token(address));
+                        break;
                     }
-                }
+                    _ = sleep(Duration::from_millis(50)).fuse() => {
+                        let recv = last_recv.load(std::sync::atomic::Ordering::Relaxed);
+                        let mut cstate = state.lock().await;
 
-                // flush nacks from recv queue
-                let nack = Ack::from_records(recv_q.nack_queue(), true);
-                if nack.records.len() > 0 {
-                    if let Ok(p) = nack.parse() {
-                        sendq.send_stream(&p).await;
+                        if *cstate == ConnectionState::Disconnected {
+                            rakrs_debug!(
+                                true,
+                                "[{}] Connection has been closed due to state!",
+                                to_address_token(address)
+                            );
+                            // closer.notify_all();
+                            closer.notify().await;
+                            break;
+                        }
+
+                        if recv + 20000 <= current_epoch() {
+                            *cstate = ConnectionState::Disconnected;
+                            rakrs_debug!(
+                                true,
+                                "[{}] Connection has been closed due to inactivity!",
+                                to_address_token(address)
+                            );
+                            // closer.notify_all();
+                            closer.notify().await;
+                            break;
+                        }
+
+                        if recv + 15000 <= current_epoch() && cstate.is_reliable() {
+                            *cstate = ConnectionState::TimingOut;
+                            rakrs_debug!(
+                                true,
+                                "[{}] Connection is timing out, sending a ping!",
+                                to_address_token(address)
+                            );
+                        }
+
+                        let mut sendq = send_queue.write().await;
+                        let mut recv_q = recv_queue.lock().await;
+
+                        if last_ping >= 3000 {
+                            let ping = ConnectedPing {
+                                time: current_epoch() as i64,
+                            };
+                            if let Ok(_) = sendq
+                                .send_packet(ping.into(), Reliability::Reliable, true)
+                                .await
+                            {};
+                            last_ping = 0;
+                        } else {
+                            last_ping += 50;
+                        }
+
+                        sendq.update().await;
+
+                        // Flush the queue of acks and nacks, and respond to them
+                        let ack = Ack::from_records(recv_q.ack_flush(), false);
+                        if ack.records.len() > 0 {
+                            if let Ok(p) = ack.parse() {
+                                sendq.send_stream(&p).await;
+                            }
+                        }
+
+                        // flush nacks from recv queue
+                        let nack = Ack::from_records(recv_q.nack_queue(), true);
+                        if nack.records.len() > 0 {
+                            if let Ok(p) = nack.parse() {
+                                sendq.send_stream(&p).await;
+                            }
+                        }
                     }
                 }
             }
+
+            rakrs_debug!(
+                true,
+                "[{}] Connection has been closed due to end of tick!",
+                to_address_token(address)
+            );
         });
     }
 
@@ -251,14 +270,6 @@ impl Connection {
 
         return task::spawn(async move {
             loop {
-                if disconnect.load(std::sync::atomic::Ordering::Relaxed) {
-                    rakrs_debug!(
-                        true,
-                        "[{}] Recv task has been closed!",
-                        to_address_token(address)
-                    );
-                    break;
-                }
                 macro_rules! handle_payload {
                     ($payload: ident) => {
                         // We've recieved a payload!
@@ -297,7 +308,7 @@ impl Connection {
                                                 // DISCONNECT
                                                 // disconnect.close();
                                                 rakrs_debug!(true, "[{}] Connection::process_packet returned true!", to_address_token(address));
-                                                disconnect.store(true, std::sync::atomic::Ordering::Relaxed);
+                                                disconnect.notify().await;
                                                 break;
                                             }
                                         }
@@ -363,16 +374,24 @@ impl Connection {
                     };
                 }
 
-                match net.recv().await {
-                    #[cfg(feature = "async_std")]
-                    Ok(payload) => {
-                        handle_payload!(payload);
+                select! {
+                    _ = disconnect.wait().fuse() => {
+                        rakrs_debug!(true, "[{}] [RECV TASK] Connection has been closed due to closer!", to_address_token(address));
+                        break;
                     }
-                    #[cfg(feature = "async_tokio")]
-                    Some(payload) => {
-                        handle_payload!(payload);
+                    res = net.recv().fuse() => {
+                        match res {
+                            #[cfg(feature = "async_std")]
+                            Ok(payload) => {
+                                handle_payload!(payload);
+                            }
+                            #[cfg(feature = "async_tokio")]
+                            Some(payload) => {
+                                handle_payload!(payload);
+                            }
+                            _ => continue,
+                        }
                     }
-                    _ => continue,
                 }
             }
         });
@@ -521,8 +540,8 @@ impl Connection {
     //     }
     // }
 
-    pub fn is_closed(&self) -> bool {
-        self.disconnect.load(std::sync::atomic::Ordering::Acquire)
+    pub async fn is_closed(&self) -> bool {
+        !self.state.lock().await.is_available()
     }
 
     /// Send a packet to the client.

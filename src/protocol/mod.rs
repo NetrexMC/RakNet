@@ -14,3 +14,6 @@ pub const MAX_ORD_CHANS: u8 = 32;
 pub const RAKNET_HEADER_FRAME_OVERHEAD: u16 = 20 + 8 + 8 + 4 + 20;
 // IP Header + UDP Header + RakNet Header
 pub const RAKNET_HEADER_OVERHEAD: u16 = 20 + 8 + 8;
+
+pub const MTU_MAX: u16 = 2400;
+pub const MTU_MIN: u16 = 400;
