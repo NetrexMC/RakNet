@@ -27,6 +27,7 @@ use tokio::{
         mpsc::{channel as bounded, Receiver, Sender},
         Mutex, RwLock,
     },
+    select,
     task::{self, JoinHandle},
     time::sleep,
 };
@@ -163,12 +164,8 @@ impl Connection {
         // while handling throttle
         return task::spawn(async move {
             loop {
-                select! {
-                    _ = closer.wait().fuse() => {
-                        rakrs_debug!(true, "[{}] [TICK TASK] Connection has been closed due to closer!", to_address_token(address));
-                        break;
-                    }
-                    _ = sleep(Duration::from_millis(50)).fuse() => {
+                macro_rules! tick_body {
+                    () => {
                         let recv = last_recv.load(std::sync::atomic::Ordering::Relaxed);
                         let mut cstate = state.lock().await;
 
@@ -237,6 +234,28 @@ impl Connection {
                                 sendq.send_stream(&p).await;
                             }
                         }
+                    };
+                }
+
+                #[cfg(feature = "async_std")]
+                select! {
+                    _ = closer.wait().fuse() => {
+                        rakrs_debug!(true, "[{}] [TICK TASK] Connection has been closed due to closer!", to_address_token(address));
+                        break;
+                    }
+                    _ = sleep(Duration::from_millis(50)).fuse() => {
+                       tick_body!();
+                    }
+                }
+
+                #[cfg(feature = "async_tokio")]
+                select! {
+                    _ = closer.wait() => {
+                        rakrs_debug!(true, "[{}] [TICK TASK] Connection has been closed due to closer!", to_address_token(address));
+                        break;
+                    }
+                    _ = sleep(Duration::from_millis(50)) => {
+                       tick_body!();
                     }
                 }
             }
@@ -253,7 +272,12 @@ impl Connection {
     ///
     pub async fn init_net_recv(
         &self,
+        // THIS IS ONLY ACTIVATED ON STD
+        #[cfg(feature = "async_std")]
         net: Receiver<Vec<u8>>,
+        // ONLY ACTIVATED ON TOKIO
+        #[cfg(feature = "async_tokio")]
+        mut net: Receiver<Vec<u8>>,
         sender: Sender<Vec<u8>>,
     ) -> task::JoinHandle<()> {
         let recv_time = self.recv_time.clone();
@@ -369,6 +393,7 @@ impl Connection {
                     };
                 }
 
+                #[cfg(feature = "async_std")]
                 select! {
                     _ = disconnect.wait().fuse() => {
                         rakrs_debug!(true, "[{}] [RECV TASK] Connection has been closed due to closer!", to_address_token(address));
@@ -376,18 +401,29 @@ impl Connection {
                     }
                     res = net.recv().fuse() => {
                         match res {
-                            #[cfg(feature = "async_std")]
                             Ok(payload) => {
                                 handle_payload!(payload);
                             }
-                            #[cfg(feature = "async_tokio")]
+                            _ => continue,
+                        }
+                    }
+                };
+
+                #[cfg(feature = "async_tokio")]
+                select! {
+                    _ = disconnect.wait() => {
+                        rakrs_debug!(true, "[{}] [RECV TASK] Connection has been closed due to closer!", to_address_token(address));
+                        break;
+                    }
+                    res = net.recv() => {
+                        match res {
                             Some(payload) => {
                                 handle_payload!(payload);
                             }
                             _ => continue,
                         }
                     }
-                }
+                };
             }
         });
     }

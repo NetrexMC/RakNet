@@ -6,7 +6,7 @@ use rak_rs::Listener;
 async fn main() {
     // console_subscriber::init();
     let mut server = Listener::bind("0.0.0.0:19132").await.unwrap();
-    server.motd.name = "RakNet Rust!".to_string();
+    server.motd.name = "RakNet Rust (async-std)!".to_string();
     server.motd.gamemode = Gamemode::Survival;
 
     server.start().await.unwrap();

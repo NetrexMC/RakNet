@@ -19,7 +19,7 @@ use std::task::{Context, Poll, Waker};
 use tokio::{
     net::UdpSocket,
     task::{self},
-    time::{sleep, timeout},
+    time::timeout,
 };
 
 use crate::connection::queue::send::SendQueue;

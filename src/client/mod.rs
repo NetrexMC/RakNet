@@ -197,6 +197,7 @@ impl Client {
             loop {
                 let length: usize;
 
+                #[cfg(feature = "async_std")]
                 select! {
                     killed = notifier.wait().fuse() => {
                         if killed {
@@ -216,6 +217,31 @@ impl Client {
                         // no assertions because this is a client
                         // this allows the user to customize their own packet handling
                         // todo: the logic in the recv_task may be better here, as this is latent
+                        if let Err(_) = net_send.send(buf[..length].to_vec()).await {
+                            rakrs_debug!(true, "[CLIENT] Failed to send packet to network recv channel. Is the client closed?");
+                        }
+                    }
+                };
+
+                #[cfg(feature = "async_tokio")]
+                select! {
+                    killed = notifier.wait() => {
+                        if killed {
+                            rakrs_debug!(true, "[CLIENT] Socket task closed");
+                            break;
+                        }
+                    }
+
+                    recv = socket.recv(&mut buf) => {
+                        match recv {
+                            Ok(l) => length = l,
+                            Err(e) => {
+                                rakrs_debug!(true, "[CLIENT] Failed to receive packet: {}", e);
+                                continue;
+                            }
+                        }
+                        // no assertions because this is a client
+                        // this allows the user to customize their own packet handling
                         if let Err(_) = net_send.send(buf[..length].to_vec()).await {
                             rakrs_debug!(true, "[CLIENT] Failed to send packet to network recv channel. Is the client closed?");
                         }
@@ -366,15 +392,20 @@ impl Client {
         }
     }
 
+    #[cfg(feature = "async_std")]
     pub async fn recv(&self) -> Result<Vec<u8>, RecvError> {
         match self.internal_recv.recv().await {
             #[cfg(feature = "async_std")]
             Ok(packet) => Ok(packet),
             #[cfg(feature = "async_std")]
-            Err(e) => Err(e),
-            #[cfg(feature = "async_tokio")]
+            Err(e) => Err(e)
+        }
+    }
+
+    #[cfg(feature = "async_tokio")]
+    pub async fn recv(&mut self) -> Result<Vec<u8>, RecvError> {
+        match self.internal_recv.recv().await {
             Some(packet) => Ok(packet),
-            #[cfg(feature = "async_tokio")]
             None => Err(RecvError::Closed),
         }
     }
@@ -452,25 +483,22 @@ impl Client {
 
         let r = task::spawn(async move {
             'task_loop: loop {
+                #[cfg(feature = "async_std")]
                 let net_dispatch = net_recv.lock().await;
-                let closed_dispatch = closed.lock().await;
-                select! {
-                    killed = closed_dispatch.wait().fuse() => {
-                        if killed {
-                            rakrs_debug!(true, "[CLIENT] Recv task closed");
-                            break;
-                        }
-                    }
-                    pk_recv = net_dispatch.recv().fuse() => {
+                #[cfg(feature = "async_tokio")]
+                let mut net_dispatch = net_recv.lock().await;
 
+                let closed_dispatch = closed.lock().await;
+                macro_rules! recv_body {
+                    ($pk_recv: expr) => {
                         #[cfg(feature = "async_std")]
-                        if let Err(_) = pk_recv {
+                        if let Err(_) = $pk_recv {
                             rakrs_debug!(true, "[CLIENT] (recv_task) Failed to recieve anything on netowrk channel, is there a sender?");
                             continue;
                         }
 
                         #[cfg(feature = "async_tokio")]
-                        if let None = pk_recv {
+                        if let None = $pk_recv {
                             rakrs_debug!(true, "[CLIENT] (recv_task)Failed to recieve anything on netowrk channel, is there a sender?");
                             continue;
                         }
@@ -492,7 +520,7 @@ impl Client {
                         // drop here so the lock isn't held for too long
                         drop(client_state);
 
-                        let mut buffer = pk_recv.unwrap();
+                        let mut buffer = $pk_recv.unwrap();
 
                         match buffer[0] {
                             0x80..=0x8d => {
@@ -616,6 +644,32 @@ impl Client {
                                 }
                             }
                         }
+                    };
+                }
+
+                #[cfg(feature = "async_std")]
+                select! {
+                    killed = closed_dispatch.wait().fuse() => {
+                        if killed {
+                            rakrs_debug!(true, "[CLIENT] Recv task closed");
+                            break;
+                        }
+                    }
+                    pk_recv = net_dispatch.recv().fuse() => {
+                        recv_body!(pk_recv);
+                    }
+                }
+
+                #[cfg(feature = "async_tokio")]
+                select! {
+                    killed = closed_dispatch.wait() => {
+                        if killed {
+                            rakrs_debug!(true, "[CLIENT] Recv task closed");
+                            break;
+                        }
+                    }
+                    pk_recv = net_dispatch.recv() => {
+                        recv_body!(pk_recv);
                     }
                 }
             }
@@ -644,8 +698,9 @@ impl Client {
         let t = task::spawn(async move {
             loop {
                 let closer = closer_dispatch.lock().await;
-                select! {
-                    _ = sleep(Duration::from_millis(50)).fuse() => {
+
+                macro_rules! tick_body {
+                    () => {
                         let recv = last_recv.load(std::sync::atomic::Ordering::Relaxed);
                         let mut state = state.lock().await;
 
@@ -711,8 +766,28 @@ impl Client {
                                 send_q.send_stream(&p).await;
                             }
                         }
+                    };
+                }
+
+                #[cfg(feature = "async_std")]
+                select! {
+                    _ = sleep(Duration::from_millis(50)).fuse() => {
+                        tick_body!();
                     },
                     killed = closer.wait().fuse() => {
+                        if killed {
+                            rakrs_debug!(true, "[CLIENT] Connect tick task closed");
+                            break;
+                        }
+                    }
+                }
+
+                #[cfg(feature = "async_tokio")]
+                select! {
+                    _ = sleep(Duration::from_millis(50)) => {
+                        tick_body!();
+                    },
+                    killed = closer.wait() => {
                         if killed {
                             rakrs_debug!(true, "[CLIENT] Connect tick task closed");
                             break;
