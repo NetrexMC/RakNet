@@ -15,9 +15,8 @@ use async_std::{
     task::{self},
 };
 use binary_util::ByteReader;
-use binary_util::ByteWriter;
 
-use binary_util::interfaces::Writer;
+use binary_util::interfaces::{Reader, Writer};
 #[cfg(feature = "async_tokio")]
 use tokio::{
     net::UdpSocket,
@@ -236,7 +235,7 @@ impl Listener {
                 }
 
                 // Do a quick check to see if this a valid raknet packet, otherwise we're going to handle it normally
-                if let Ok(pk) = OfflinePacket::read(ByteReader::new(&buf[..length])) {
+                if let Ok(pk) = OfflinePacket::read(&mut ByteReader::from(&buf[..length])) {
                     // Offline packets are not buffered to the user.
                     // The reason for this is because we don't wish for the user to be able to disrupt
                     // raknet protocol, and handshaking.

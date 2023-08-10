@@ -18,7 +18,7 @@ use async_std::{
 #[cfg(feature = "async_std")]
 use futures::{select, FutureExt};
 
-use binary_util::Streamable;
+use binary_util::interfaces::{Reader, Writer};
 
 #[cfg(feature = "async_tokio")]
 use tokio::{
@@ -48,7 +48,7 @@ use crate::{
         packet::{
             offline::{OfflinePacket, UnconnectedPing},
             online::{ConnectedPing, ConnectedPong, OnlinePacket},
-            Packet,
+            RakPacket,
         },
         reliability::Reliability,
         Magic,
@@ -419,7 +419,7 @@ impl Client {
         };
 
         if let Err(_) = socket
-            .send(&Packet::from(unconnected_ping.clone()).parse().unwrap()[..])
+            .send(RakPacket::Offline(OfflinePacket::UnconnectedPing(unconnected_ping)))
             .await
         {
             rakrs_debug!(true, "[CLIENT] Failed to send ping packet!");
@@ -431,7 +431,7 @@ impl Client {
             if let Ok(recvd) = timeout(Duration::from_millis(10000), socket.recv(&mut buf)).await {
                 match recvd {
                     Ok(l) => {
-                        let packet = Packet::compose(&mut buf[..l], &mut 0).unwrap();
+                        let packet = OfflinePacket::read(&mut buf[..l]).unwrap();
                         if packet.is_offline() {
                             match packet.get_offline() {
                                 OfflinePacket::UnconnectedPong(pk) => {
@@ -536,7 +536,7 @@ impl Client {
                                     let buffers = recv_q.flush();
 
                                     'buf_loop: for mut pk_buf in buffers {
-                                        if let Ok(packet) = Packet::compose(&mut pk_buf[..], &mut 0) {
+                                        if let Ok(packet) = RakPacket::read(&mut pk_buf[..], &mut 0) {
                                             if packet.is_online() {
                                                 match packet.get_online() {
                                                     OnlinePacket::ConnectedPing(pk) => {

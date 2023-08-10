@@ -1,6 +1,6 @@
 use std::io::{Cursor, Write};
 
-use binary_util::BinaryIo;
+use binary_util::{BinaryIo, interfaces::{Reader, Writer}};
 
 /// The information for the given fragment.
 /// This is used to determine how to reassemble the frame.
@@ -15,7 +15,7 @@ use super::reliability::Reliability;
 
 /// Frames are a encapsulation of a packet or packets.
 /// They are used to send packets to the connection in a reliable way.
-#[derive(Debug, Clone, BinaryIo)]
+#[derive(Debug, Clone)]
 pub struct FramePacket {
     pub sequence: u32,
     pub frames: Vec<Frame>,
@@ -33,59 +33,37 @@ impl FramePacket {
     }
 }
 
-impl Streamable for FramePacket {
-    fn compose(source: &[u8], position: &mut usize) -> Result<Self, error::BinaryError> {
-        let mut stream = Cursor::new(source);
-        stream.set_position(*position as u64);
-        stream.read_u8()?;
+impl Reader<FramePacket> for FramePacket {
+    fn read(buf: &mut binary_util::ByteReader) -> Result<FramePacket, std::io::Error> {
         let mut frames: Vec<Frame> = Vec::new();
-        let sequence = stream.read_u24::<LittleEndian>()?;
-        let mut offset: usize = stream.position() as usize;
+        let sequence = buf.read_u24_le()?;
 
         loop {
-            if stream.position() > source.len() as u64 {
-                return Ok(FramePacket {
-                    reliability: Reliability::ReliableOrd,
-                    sequence,
-                    frames,
-                });
-            }
-
-            if stream.position() == source.len() as u64 {
-                break Ok(FramePacket {
-                    reliability: Reliability::ReliableOrd,
-                    sequence,
-                    frames,
-                });
-            }
-
-            if let Ok(frame) = Frame::compose(&source, &mut offset) {
-                stream.set_position(offset as u64);
-                frames.push(frame.clone());
-
-                // if frame.parse()?.len() + stream.position() as usize > source.len() {
-                //     return Ok(FramePacket { sequence, frames, byte_length: 0 });
-                // } else {
-                //     continue;
-                // }
+            if let Ok(frame) = buf.read_struct::<Frame>() {
+                frames.push(frame);
             } else {
-                return Err(BinaryError::RecoverableKnown(
-                    "Frame composition failed! Failed to read frame.".into(),
-                ));
+                break;
             }
         }
-    }
 
-    fn parse(&self) -> Result<Vec<u8>, BinaryError> {
-        let mut stream = Cursor::new(Vec::new());
-        stream.write_u8(0x80)?;
-        stream.write_u24::<LittleEndian>(self.sequence)?;
+        Ok(FramePacket {
+            sequence,
+            frames,
+            reliability: Reliability::ReliableOrd,
+        })
+    }
+}
+
+impl Writer for FramePacket {
+    fn write(&self, buf: &mut binary_util::ByteWriter) -> Result<(), std::io::Error> {
+        buf.write_u8(0x80)?;
+        buf.write_u24_le(self.sequence)?;
 
         for frame in &self.frames {
-            stream.write_all(&frame.parse()?)?;
+            buf.write(frame.write_to_bytes()?.as_slice())?;
         }
 
-        Ok(stream.into_inner())
+        Ok(())
     }
 }
 
@@ -168,105 +146,63 @@ impl Frame {
     }
 }
 
-impl Streamable for Frame {
-    fn compose(source: &[u8], position: &mut usize) -> Result<Self, error::BinaryError> {
-        let mut stream = Cursor::new(source.to_vec());
+impl Reader<Frame> for Frame {
+    fn read(buf: &mut binary_util::ByteReader) -> Result<Frame, std::io::Error> {
+        let mut frame = Frame::init();
 
-        // create a dummy frame for us to write to.
-        let mut frame: Frame = Frame::init();
-
-        // set the position to the current position
-        stream.set_position(*position as u64);
-
-        // read the flags
-        frame.flags = stream.read_u8()?;
-        // set the reliability
+        frame.flags = buf.read_u8()?;
         frame.reliability = Reliability::from_flags(frame.flags);
+        frame.size = buf.read_u16()? / 8;
 
-        // read the length of the body in bits
-        frame.size = stream.read_u16::<BigEndian>()? / 8;
-
-        // check whether or not this frame is reliable, if it is, read the reliable index
         if frame.reliability.is_reliable() {
-            frame.reliable_index = Some(stream.read_u24::<LittleEndian>()?);
+            frame.reliable_index = Some(buf.read_u24_le()?);
         }
 
-        // check whether or not this frame is sequenced, if it is, read the sequenced index
         if frame.reliability.is_sequenced() {
-            frame.sequence_index = Some(stream.read_u24::<LittleEndian>()?);
+            frame.sequence_index = Some(buf.read_u24_le()?);
         }
 
-        // check whether or not this frame is ordered, if it is, read the order index
-        // and order channel
-        if frame.reliability.is_sequenced_or_ordered() {
-            frame.order_index = Some(stream.read_u24::<LittleEndian>()?);
-            frame.order_channel = Some(stream.read_u8()?);
+        if frame.reliability.is_ordered() {
+            frame.order_index = Some(buf.read_u24_le()?);
+            frame.order_channel = Some(buf.read_u8()?);
         }
 
-        // check whether or not this frame is fragmented, if it is, read the fragment meta
-        if (frame.flags & 0x10) > 0 {
-            frame.fragment_meta = Some(FragmentMeta {
-                size: stream.read_u32::<BigEndian>()?.try_into().unwrap(),
-                id: stream.read_u16::<BigEndian>()?,
-                index: stream.read_u32::<BigEndian>()?.try_into().unwrap(),
-            });
+        if frame.flags & 0x10 == 0x10 {
+            frame.fragment_meta = Some(FragmentMeta::read(buf)?);
         }
 
-        // read the body
-        frame.body = (&source
-            [stream.position() as usize..stream.position() as usize + frame.size as usize])
-            .to_vec();
-        // update the position.
-        *position = stream.position() as usize + frame.size as usize;
+        let body = [0; frame.size];
+
+        frame.body = buf.read(&)?;
 
         Ok(frame)
     }
+}
 
-    fn parse(&self) -> Result<Vec<u8>, error::BinaryError> {
-        let mut stream = Cursor::new(Vec::new());
-        // generate the flags!
-        let mut flags = self.reliability.to_flags();
+impl Writer for Frame {
+    fn write(&self, buf: &mut binary_util::ByteWriter) -> Result<(), std::io::Error> {
+        buf.write_u8(self.flags)?;
+        buf.write_u16(self.size * 8)?;
 
-        // check whether or not this frame is fragmented, if it is, set the fragment flag
-        if self.fragment_meta.is_some() {
-            flags |= 0x10;
-        }
-
-        let size = self.body.len() as u16;
-
-        // write the flags
-        stream.write_u8(flags)?;
-        // write the length of the body in bits
-        stream.write_u16::<BigEndian>(size * 8)?;
-
-        // check whether or not this frame is reliable, if it is, write the reliable index
         if self.reliability.is_reliable() {
-            stream.write_u24::<LittleEndian>(self.reliable_index.unwrap())?;
+            buf.write_u24_le(self.reliable_index.unwrap_or(0))?;
         }
 
-        // check whether or not this frame is sequenced, if it is, write the sequenced index
         if self.reliability.is_sequenced() {
-            stream.write_u24::<LittleEndian>(self.sequence_index.unwrap())?;
+            buf.write_u24_le(self.sequence_index.unwrap_or(0))?;
         }
 
-        // check whether or not this frame is ordered, if it is, write the order index
-        // and order channel
-        if self.reliability.is_sequenced_or_ordered() {
-            stream.write_u24::<LittleEndian>(self.order_index.unwrap())?;
-            stream.write_u8(self.order_channel.unwrap_or(0))?;
+        if self.reliability.is_ordered() {
+            buf.write_u24_le(self.order_index.unwrap_or(0))?;
+            buf.write_u8(self.order_channel.unwrap_or(0))?;
         }
 
-        // check whether or not this frame is fragmented, if it is, write the fragment meta
-        if self.fragment_meta.is_some() {
-            let fragment_meta = self.fragment_meta.as_ref().unwrap();
-            stream.write_u32::<BigEndian>(fragment_meta.size.try_into().unwrap())?;
-            stream.write_u16::<BigEndian>(fragment_meta.id)?;
-            stream.write_u32::<BigEndian>(fragment_meta.index.try_into().unwrap())?;
+        if self.flags & 0x10 == 0x10 {
+            self.fragment_meta.as_ref().unwrap().write(buf)?;
         }
 
-        // write the body
-        stream.write_all(&self.body)?;
+        buf.write(&self.body)?;
 
-        Ok(stream.get_ref().clone())
+        Ok(())
     }
 }

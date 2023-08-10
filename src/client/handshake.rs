@@ -10,6 +10,7 @@ use async_std::{
     task::{self, Context, Poll, Waker},
 };
 
+use binary_util::ByteReader;
 use binary_util::Streamable;
 #[cfg(feature = "async_tokio")]
 use std::future::Future;
@@ -25,14 +26,13 @@ use tokio::{
 use crate::connection::queue::send::SendQueue;
 use crate::connection::queue::RecvQueue;
 use crate::protocol::frame::FramePacket;
+use crate::protocol::packet::RakPacket;
 use crate::protocol::packet::offline::{
     IncompatibleProtocolVersion, OpenConnectReply, OpenConnectRequest, SessionInfoReply,
     SessionInfoRequest,
 };
 use crate::protocol::packet::online::ConnectedPong;
 use crate::protocol::packet::online::{ConnectionRequest, NewConnection, OnlinePacket};
-use crate::protocol::packet::Packet;
-use crate::protocol::packet::PacketId;
 use crate::protocol::reliability::Reliability;
 use crate::protocol::Magic;
 use crate::rakrs_debug;
@@ -178,7 +178,6 @@ impl ClientHandshake {
             // todo: continously send untill we get a reply
             // todo: we also need to decrease the MTU until we get a reply
             let connect_request = OpenConnectRequest {
-                magic: Magic::new(),
                 protocol: version,
                 mtu_size: mtu,
             };
@@ -295,85 +294,83 @@ impl ClientHandshake {
                 // proccess frame packet
                 match buf[0] {
                     0x80..=0x8d => {
-                        if let Ok(pk) = FramePacket::compose(&mut buf[..len], &mut 0) {
+                        if let Ok(pk) = FramePacket::read(&mut buf[..len]) {
                             recv_q.insert(pk).unwrap();
 
                             let raw_packets = recv_q.flush();
 
                             for mut raw_pk in raw_packets {
-                                let pk = Packet::compose(&mut raw_pk[..], &mut 0);
+                                let pk = ByteReader::from(&mut raw_pk[..]);
 
-                                if let Ok(pk) = pk {
-                                    if pk.is_online() {
-                                        match pk.get_online() {
-                                            OnlinePacket::ConnectedPing(pk) => {
+                                if let Ok(pk) = OnlinePacket::read(&mut pk) {
+                                    match pk {
+                                        OnlinePacket::ConnectedPing(pk) => {
+                                            rakrs_debug!(
+                                                true,
+                                                "[CLIENT] Received ConnectedPing from server!"
+                                            );
+                                            let response = ConnectedPong {
+                                                ping_time: pk.time,
+                                                pong_time: current_epoch() as i64,
+                                            };
+
+                                            if let Err(_) = send_q
+                                                .send_packet(
+                                                    response.into(),
+                                                    Reliability::Reliable,
+                                                    true,
+                                                )
+                                                .await
+                                            {
                                                 rakrs_debug!(
                                                     true,
-                                                    "[CLIENT] Received ConnectedPing from server!"
+                                                    "[CLIENT] Failed to send pong packet!"
                                                 );
-                                                let response = ConnectedPong {
-                                                    ping_time: pk.time,
-                                                    pong_time: current_epoch() as i64,
-                                                };
-
-                                                if let Err(_) = send_q
-                                                    .send_packet(
-                                                        response.into(),
-                                                        Reliability::Reliable,
-                                                        true,
-                                                    )
-                                                    .await
-                                                {
-                                                    rakrs_debug!(
-                                                        true,
-                                                        "[CLIENT] Failed to send pong packet!"
-                                                    );
-                                                }
-
-                                                continue;
                                             }
-                                            OnlinePacket::ConnectionAccept(pk) => {
-                                                // send new incoming connection
-                                                let new_incoming = NewConnection {
-                                                    server_address: socket.peer_addr().unwrap(),
-                                                    system_address: vec![
-                                                        socket.peer_addr().unwrap(),
-                                                        socket.peer_addr().unwrap(),
-                                                        socket.peer_addr().unwrap(),
-                                                        socket.peer_addr().unwrap(),
-                                                        socket.peer_addr().unwrap(),
-                                                        socket.peer_addr().unwrap(),
-                                                        socket.peer_addr().unwrap(),
-                                                        socket.peer_addr().unwrap(),
-                                                        socket.peer_addr().unwrap(),
-                                                        socket.peer_addr().unwrap(),
-                                                    ],
-                                                    request_time: pk.request_time,
-                                                    timestamp: pk.timestamp,
-                                                };
-                                                if let Err(_) = send_q
-                                                    .send_packet(
-                                                        new_incoming.into(),
-                                                        Reliability::Reliable,
-                                                        true,
-                                                    )
-                                                    .await
-                                                {
-                                                    update_state!(
-                                                        true,
-                                                        shared_state,
-                                                        HandshakeStatus::Failed
-                                                    );
-                                                } else {
-                                                    update_state!(
-                                                        true,
-                                                        shared_state,
-                                                        HandshakeStatus::Completed
-                                                    );
-                                                }
-                                            }
-                                            _ => {}
+
+                                            continue;
                                         }
+                                        OnlinePacket::ConnectionAccept(pk) => {
+                                            // send new incoming connection
+                                            let new_incoming = NewConnection {
+                                                server_address: socket.peer_addr().unwrap(),
+                                                system_address: vec![
+                                                    socket.peer_addr().unwrap(),
+                                                    socket.peer_addr().unwrap(),
+                                                    socket.peer_addr().unwrap(),
+                                                    socket.peer_addr().unwrap(),
+                                                    socket.peer_addr().unwrap(),
+                                                    socket.peer_addr().unwrap(),
+                                                    socket.peer_addr().unwrap(),
+                                                    socket.peer_addr().unwrap(),
+                                                    socket.peer_addr().unwrap(),
+                                                    socket.peer_addr().unwrap(),
+                                                ],
+                                                request_time: pk.request_time,
+                                                timestamp: pk.timestamp,
+                                            };
+                                            if let Err(_) = send_q
+                                                .send_packet(
+                                                    new_incoming.into(),
+                                                    Reliability::Reliable,
+                                                    true,
+                                                )
+                                                .await
+                                            {
+                                                update_state!(
+                                                    true,
+                                                    shared_state,
+                                                    HandshakeStatus::Failed
+                                                );
+                                            } else {
+                                                update_state!(
+                                                    true,
+                                                    shared_state,
+                                                    HandshakeStatus::Completed
+                                                );
+                                            }
+                                        }
+                                        _ => {}
                                     }
                                 }
                             }
@@ -404,7 +401,7 @@ impl Future for ClientHandshake {
     }
 }
 
-async fn send_packet(socket: &Arc<UdpSocket>, packet: Packet) -> bool {
+async fn send_packet(socket: &Arc<UdpSocket>, packet: RakPacket) -> bool {
     if let Err(e) = socket
         .send_to(
             &mut packet.parse().unwrap()[..],

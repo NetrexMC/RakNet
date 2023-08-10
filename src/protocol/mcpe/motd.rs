@@ -184,12 +184,22 @@ impl Reader<Motd> for Motd {
 
         Ok(Motd {
             name,
-            protocol: protocol.parse().unwrap(),
+            protocol: protocol.as_str().parse().unwrap(),
             version,
             player_count: player_count.parse().unwrap(),
             player_max: player_max.parse().unwrap(),
             server_guid: server_guid.parse().unwrap(),
-            gamemode: gamemode.parse().unwrap(),
+            gamemode:  match gamemode
+                .as_str()
+                .parse::<u8>()
+                .expect("Gamemode is not a byte")
+            {
+                0 => Gamemode::Survival,
+                1 => Gamemode::Creative,
+                2 => Gamemode::Adventure,
+                3 => Gamemode::Spectator,
+                _ => Gamemode::Survival,
+            },
             port,
             ipv6_port,
         })

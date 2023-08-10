@@ -1,6 +1,5 @@
 use binary_util::interfaces::{Reader, Writer};
 use binary_util::io::{ByteReader, ByteWriter};
-use binary_util::{error::BinaryError, BinaryIo};
 
 /// A unique identifier recoginzing the client as offline.
 pub(crate) const MAGIC: [u8; 16] = [
