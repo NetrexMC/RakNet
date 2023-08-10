@@ -1,4 +1,5 @@
-use binary_utils::Streamable;
+use binary_util::interfaces::{Reader, Writer};
+use binary_util::io::{ByteReader, ByteWriter};
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -95,110 +96,112 @@ impl Motd {
     }
 }
 
-impl Streamable for Motd {
-    fn compose(
-        source: &[u8],
-        position: &mut usize,
-    ) -> Result<Self, binary_utils::error::BinaryError> {
-        let motd = String::compose(source, position)?;
+impl Reader<Motd> for Motd {
+    fn read(buf: &mut ByteReader) -> Result<Motd, std::io::Error> {
+        let str_len = buf.read_u16()?;
+        let mut str_buf = vec![0; str_len as usize];
+
+        buf.read(&mut str_buf)?;
+
+        let motd = String::from_utf8(str_buf).unwrap();
+
         let parts = motd
             .split(";")
             .map(|c| c.to_string())
             .collect::<Vec<String>>();
+
         let name = parts
             .get(1)
-            .ok_or(binary_utils::error::BinaryError::RecoverableKnown(
-                "Invalid motd name".into(),
-            ))?;
+            .ok_or(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Invalid motd name",
+            ))?
+            .clone();
+
         let protocol = parts
             .get(2)
-            .ok_or(binary_utils::error::BinaryError::RecoverableKnown(
-                "Invalid motd protocol".into(),
-            ))?;
+            .ok_or(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Invalid motd protocol",
+            ))?
+            .clone();
+
         let version = parts
             .get(3)
-            .ok_or(binary_utils::error::BinaryError::RecoverableKnown(
-                "Invalid motd version".into(),
-            ))?;
-        let player_count =
-            parts
-                .get(4)
-                .ok_or(binary_utils::error::BinaryError::RecoverableKnown(
-                    "Invalid motd player count".into(),
-                ))?;
+            .ok_or(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Invalid motd version",
+            ))?
+            .clone();
+
+        let player_count = parts
+            .get(4)
+            .ok_or(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Invalid motd player count",
+            ))?
+            .clone();
+
         let player_max = parts
             .get(5)
-            .ok_or(binary_utils::error::BinaryError::RecoverableKnown(
-                "Invalid motd player maxmium".into(),
-            ))?;
-        let server_guid =
-            parts
-                .get(6)
-                .ok_or(binary_utils::error::BinaryError::RecoverableKnown(
-                    "Invalid motd server guid".into(),
-                ))?;
-        let _ = parts
-            .get(7)
-            .ok_or(binary_utils::error::BinaryError::RecoverableKnown(
-                "Invalid motd software name".into(),
-            ))?;
-        let _ = parts
-            .get(8)
-            .ok_or(binary_utils::error::BinaryError::RecoverableKnown(
-                "Invalid motd gamemode string".into(),
-            ))?;
+            .ok_or(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Invalid motd player max",
+            ))?
+            .clone();
+
+        let server_guid = parts
+            .get(6)
+            .ok_or(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Invalid motd server guid",
+            ))?
+            .clone();
+
         let gamemode = parts
-            .get(9)
-            .ok_or(binary_utils::error::BinaryError::RecoverableKnown(
-                "Invalid motd gamemode".into(),
-            ))?;
+            .get(8)
+            .ok_or(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Invalid motd gamemode",
+            ))?
+            .clone();
+
         let port = parts
             .get(10)
-            .ok_or(binary_utils::error::BinaryError::RecoverableKnown(
-                "Invalid motd port".into(),
-            ))?;
+            .ok_or(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Invalid motd port",
+            ))?
+            .clone();
+
         let ipv6_port = parts
             .get(11)
-            .ok_or(binary_utils::error::BinaryError::RecoverableKnown(
-                "Invalid motd port".into(),
-            ))?;
+            .ok_or(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Invalid motd ipv6 port",
+            ))?
+            .clone();
 
         Ok(Motd {
-            name: name.clone(),
-            protocol: protocol
-                .as_str()
-                .parse::<u16>()
-                .expect("Invalid motd protocol"),
-            version: version.clone(),
-            player_count: player_count
-                .as_str()
-                .parse::<u32>()
-                .expect("Player count is not a number"),
-            player_max: player_max
-                .as_str()
-                .parse::<u32>()
-                .expect("Player Maximum is not a number"),
-            server_guid: server_guid
-                .as_str()
-                .parse::<u64>()
-                .expect("Server GUID is not a number"),
-            port: port.clone(),
-            ipv6_port: ipv6_port.clone(),
-            gamemode: match gamemode
-                .as_str()
-                .parse::<u8>()
-                .expect("Gamemode is not a byte")
-            {
-                0 => Gamemode::Survival,
-                1 => Gamemode::Creative,
-                2 => Gamemode::Adventure,
-                3 => Gamemode::Spectator,
-                _ => Gamemode::Survival,
-            },
+            name,
+            protocol: protocol.parse().unwrap(),
+            version,
+            player_count: player_count.parse().unwrap(),
+            player_max: player_max.parse().unwrap(),
+            server_guid: server_guid.parse().unwrap(),
+            gamemode: gamemode.parse().unwrap(),
+            port,
+            ipv6_port,
         })
     }
+}
 
-    fn parse(&self) -> Result<Vec<u8>, binary_utils::error::BinaryError> {
-        self.write().parse()
+impl Writer for Motd {
+    fn write(&self, buf: &mut ByteWriter) -> Result<(), std::io::Error> {
+        let motd = self.write();
+        let motd_len = motd.len() as u16;
+        buf.write_u16(motd_len)?;
+        buf.write(motd.as_bytes())?;
+        Ok(())
     }
 }

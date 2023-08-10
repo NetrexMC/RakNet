@@ -4,13 +4,13 @@ use std::sync::Arc;
 
 #[cfg(feature = "async_std")]
 use async_std::net::UdpSocket;
-use binary_utils::Streamable;
+use binary_util::Streamable;
 #[cfg(feature = "async_tokio")]
 use tokio::net::UdpSocket;
 
 use crate::protocol::ack::{Ack, Ackable, Record, SingleRecord};
 use crate::protocol::frame::{Frame, FramePacket};
-use crate::protocol::packet::Packet;
+use crate::protocol::packet::RakPacket;
 use crate::protocol::reliability::Reliability;
 use crate::protocol::RAKNET_HEADER_FRAME_OVERHEAD;
 use crate::rakrs_debug;
@@ -244,7 +244,7 @@ impl SendQueue {
 
     pub async fn send_packet(
         &mut self,
-        packet: Packet,
+        packet: RakPacket,
         reliability: Reliability,
         immediate: bool,
     ) -> Result<(), SendQueueError> {

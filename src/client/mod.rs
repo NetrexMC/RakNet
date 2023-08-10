@@ -18,7 +18,7 @@ use async_std::{
 #[cfg(feature = "async_std")]
 use futures::{select, FutureExt};
 
-use binary_utils::Streamable;
+use binary_util::Streamable;
 
 #[cfg(feature = "async_tokio")]
 use tokio::{

@@ -1,21 +1,13 @@
 use std::io::{Cursor, Write};
 
-use binary_utils::error::BinaryError;
-use binary_utils::*;
-use byteorder::{BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
+use binary_util::BinaryIo;
 
 /// The information for the given fragment.
 /// This is used to determine how to reassemble the frame.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, BinaryIo)]
 pub struct FragmentMeta {
-    /// The total number of fragments in this frame.
     pub(crate) size: u32,
-    /// The identifier for this fragment.
-    /// This is used similar to a ordered channel, where the trailing buffer
-    /// will be stored with this identifier.
     pub(crate) id: u16,
-    /// The index of the fragment.
-    /// This is the arrangement of the fragments in the frame.
     pub(crate) index: u32,
 }
 
@@ -23,18 +15,11 @@ use super::reliability::Reliability;
 
 /// Frames are a encapsulation of a packet or packets.
 /// They are used to send packets to the connection in a reliable way.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, BinaryIo)]
 pub struct FramePacket {
-    /// The sequence of this frame.
-    /// We'll use this to respond with Ack and Nack to.
-    /// This is sized check to 24 bits.
     pub sequence: u32,
-
-    /// The frames for this frame packet, not to exceed the mtu size.
     pub frames: Vec<Frame>,
-
-    /// This is internal use only.
-    pub(crate) reliability: Reliability,
+    pub reliability: Reliability,
 }
 
 impl FramePacket {

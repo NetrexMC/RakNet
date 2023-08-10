@@ -14,8 +14,10 @@ use async_std::{
     sync::Mutex,
     task::{self},
 };
-use binary_utils::Streamable;
+use binary_util::ByteReader;
+use binary_util::ByteWriter;
 
+use binary_util::interfaces::Writer;
 #[cfg(feature = "async_tokio")]
 use tokio::{
     net::UdpSocket,
@@ -31,7 +33,7 @@ use crate::protocol::mcpe::motd::Motd;
 use crate::protocol::packet::offline::{
     IncompatibleProtocolVersion, OfflinePacket, OpenConnectReply, SessionInfoReply, UnconnectedPong,
 };
-use crate::protocol::packet::{Packet, Payload};
+use crate::protocol::packet::RakPacket;
 use crate::protocol::Magic;
 use crate::rakrs_debug;
 use crate::util::to_address_token;
@@ -234,181 +236,174 @@ impl Listener {
                 }
 
                 // Do a quick check to see if this a valid raknet packet, otherwise we're going to handle it normally
-                if let Ok(packet) = Packet::compose(&mut buf, &mut 0) {
-                    // if this is an offline packet, we can retrieve the buffer we should send.
-                    match packet.payload {
-                        Payload::Offline(pk) => {
-                            // Offline packets are not buffered to the user.
-                            // The reason for this is because we don't wish for the user to be able to disrupt
-                            // raknet protocol, and handshaking.
-                            match pk {
-                                OfflinePacket::UnconnectedPing(_) => {
-                                    // let (resp_tx, resp_rx) =
-                                    //     oneshot::channel::<ServerEventResponse>();
-                                    #[cfg(feature = "mcpe")]
-                                    let motd: Motd = motd_default.clone();
+                if let Ok(pk) = OfflinePacket::read(ByteReader::new(&buf[..length])) {
+                    // Offline packets are not buffered to the user.
+                    // The reason for this is because we don't wish for the user to be able to disrupt
+                    // raknet protocol, and handshaking.
+                    match pk {
+                        OfflinePacket::UnconnectedPing(_) => {
+                            // let (resp_tx, resp_rx) =
+                            //     oneshot::channel::<ServerEventResponse>();
+                            #[cfg(feature = "mcpe")]
+                            let motd: Motd = motd_default.clone();
 
-                                    // if let Err(e) = send_evt.try_send((
-                                    //         ServerEvent::RefreshMotdRequest(origin, motd.clone()),
-                                    //         // resp_tx,
-                                    //     ))
-                                    // {
-                                    //     match e {
-                                    //         TrySendError::Full(_) => {
-                                    //             rakrs_debug!(true, "[{}] Event dispatcher is full! Dropping request.", to_address_token(origin));
-                                    //         }
-                                    //         TrySendError::Closed(_) => {
-                                    //             rakrs_debug!(true, "[{}] Event dispatcher is closed! Dropping request.", to_address_token(origin));
-                                    //         }
-                                    //     }
-                                    // }
+                            // if let Err(e) = send_evt.try_send((
+                            //         ServerEvent::RefreshMotdRequest(origin, motd.clone()),
+                            //         // resp_tx,
+                            //     ))
+                            // {
+                            //     match e {
+                            //         TrySendError::Full(_) => {
+                            //             rakrs_debug!(true, "[{}] Event dispatcher is full! Dropping request.", to_address_token(origin));
+                            //         }
+                            //         TrySendError::Closed(_) => {
+                            //             rakrs_debug!(true, "[{}] Event dispatcher is closed! Dropping request.", to_address_token(origin));
+                            //         }
+                            //     }
+                            // }
 
-                                    // if let Ok(res) = resp_rx.await {
-                                    //     // get the motd from the server event otherwise use defaults.
-                                    //     // if let Ok(res) = res {
-                                    //         match res {
-                                    //             ServerEventResponse::RefreshMotd(m) => {
-                                    //                 motd = m;
-                                    //             }
-                                    //             _ => {
-                                    //                 rakrs_debug!(true, "[{}] Response to ServerEvent::RefreshMotdRequest is invalid!", to_address_token(origin));
-                                    //             }
-                                    //         }
-                                    //     // };
-                                    // }
+                            // if let Ok(res) = resp_rx.await {
+                            //     // get the motd from the server event otherwise use defaults.
+                            //     // if let Ok(res) = res {
+                            //         match res {
+                            //             ServerEventResponse::RefreshMotd(m) => {
+                            //                 motd = m;
+                            //             }
+                            //             _ => {
+                            //                 rakrs_debug!(true, "[{}] Response to ServerEvent::RefreshMotdRequest is invalid!", to_address_token(origin));
+                            //             }
+                            //         }
+                            //     // };
+                            // }
 
-                                    // unconnected pong signature is different if MCPE is specified.
-                                    let resp = UnconnectedPong {
-                                        timestamp: current_epoch(),
-                                        server_id,
-                                        magic: Magic::new(),
-                                        #[cfg(feature = "mcpe")]
-                                        motd,
-                                    };
+                            // unconnected pong signature is different if MCPE is specified.
+                            let resp = UnconnectedPong {
+                                timestamp: current_epoch(),
+                                server_id,
+                                magic: Magic::new(),
+                                #[cfg(feature = "mcpe")]
+                                motd,
+                            };
 
-                                    send_packet_to_socket(&socket, resp.into(), origin).await;
+                            send_packet_to_socket(&socket, resp.into(), origin).await;
+                            continue;
+                        }
+                        OfflinePacket::OpenConnectRequest(mut pk) => {
+                            // TODO make a constant for this
+                            if !versions.contains(&pk.protocol) {
+                                let resp = IncompatibleProtocolVersion {
+                                    protocol: pk.protocol,
+                                    magic: Magic::new(),
+                                    server_id,
+                                };
+
+                                rakrs_debug!("[{}] Sent ({}) which is invalid RakNet protocol. Version is incompatible with server.", pk.protocol, to_address_token(*&origin));
+
+                                send_packet_to_socket(&socket, resp.into(), origin).await;
+                                continue;
+                            }
+
+                            rakrs_debug!(
+                                true,
+                                "[{}] Client requested Mtu Size: {}",
+                                to_address_token(*&origin),
+                                pk.mtu_size
+                            );
+
+                            if pk.mtu_size > 2048 {
+                                rakrs_debug!(
+                                    true,
+                                    "[{}] Client requested Mtu Size: {} which is larger than the maximum allowed size of 2048",
+                                    to_address_token(*&origin),
+                                    pk.mtu_size
+                                );
+                                pk.mtu_size = 2048;
+                            }
+
+                            let resp = OpenConnectReply {
+                                server_id,
+                                // TODO allow encryption
+                                security: false,
+                                magic: Magic::new(),
+                                // TODO make this configurable, this is sent to the client to change
+                                // it's mtu size, right now we're using what the client prefers.
+                                // however in some cases this may not be the preferred use case, for instance
+                                // on servers with larger worlds, you may want a larger mtu size, or if
+                                // your limited on network bandwith
+                                mtu_size: pk.mtu_size,
+                            };
+                            send_packet_to_socket(&socket, resp.into(), origin).await;
+                            continue;
+                        }
+                        OfflinePacket::SessionInfoRequest(pk) => {
+                            let resp = SessionInfoReply {
+                                server_id,
+                                client_address: origin,
+                                magic: Magic::new(),
+                                mtu_size: pk.mtu_size,
+                                security: false,
+                            };
+
+                            // This is a valid packet, let's check if a session exists, if not, we should create it.
+                            // Event if the connection is only in offline mode.
+                            let mut sessions = connections.lock().await;
+
+                            if !sessions.contains_key(&origin) {
+                                rakrs_debug!(true, "Creating new session for {}", origin);
+                                let meta = ConnMeta::new(0);
+                                let (net_send, net_recv) = bounded::<Vec<u8>>(10);
+                                let connection =
+                                    Connection::new(origin, &socket, net_recv, pk.mtu_size).await;
+                                rakrs_debug!(true, "Created Session for {}", origin);
+
+                                // Add the connection to the available connections list.
+                                // we're using the name "sessions" here to differeniate
+                                // for some reason the reciever likes to be dropped, so we're saving it here.
+                                sessions.insert(origin, (meta, net_send));
+
+                                // notify the connection communicator
+                                if let Err(err) = send_comm.send(connection).await {
+                                    let connection = err.0;
+                                    // there was an error, and we should terminate this connection immediately.
+                                    rakrs_debug!("[{}] Error while communicating with internal connection channel! Connection withdrawn.", to_address_token(connection.address));
+                                    sessions.remove(&origin);
                                     continue;
-                                }
-                                OfflinePacket::OpenConnectRequest(mut pk) => {
-                                    // TODO make a constant for this
-                                    if !versions.contains(&pk.protocol) {
-                                        let resp = IncompatibleProtocolVersion {
-                                            protocol: pk.protocol,
-                                            magic: Magic::new(),
-                                            server_id,
-                                        };
-
-                                        rakrs_debug!("[{}] Sent ({}) which is invalid RakNet protocol. Version is incompatible with server.", pk.protocol, to_address_token(*&origin));
-
-                                        send_packet_to_socket(&socket, resp.into(), origin).await;
-                                        continue;
-                                    }
-
-                                    rakrs_debug!(
-                                        true,
-                                        "[{}] Client requested Mtu Size: {}",
-                                        to_address_token(*&origin),
-                                        pk.mtu_size
-                                    );
-
-                                    if pk.mtu_size > 2048 {
-                                        rakrs_debug!(
-                                            true,
-                                            "[{}] Client requested Mtu Size: {} which is larger than the maximum allowed size of 2048",
-                                            to_address_token(*&origin),
-                                            pk.mtu_size
-                                        );
-                                        pk.mtu_size = 2048;
-                                    }
-
-                                    let resp = OpenConnectReply {
-                                        server_id,
-                                        // TODO allow encryption
-                                        security: false,
-                                        magic: Magic::new(),
-                                        // TODO make this configurable, this is sent to the client to change
-                                        // it's mtu size, right now we're using what the client prefers.
-                                        // however in some cases this may not be the preferred use case, for instance
-                                        // on servers with larger worlds, you may want a larger mtu size, or if
-                                        // your limited on network bandwith
-                                        mtu_size: pk.mtu_size,
-                                    };
-                                    send_packet_to_socket(&socket, resp.into(), origin).await;
-                                    continue;
-                                }
-                                OfflinePacket::SessionInfoRequest(pk) => {
-                                    let resp = SessionInfoReply {
-                                        server_id,
-                                        client_address: origin,
-                                        magic: Magic::new(),
-                                        mtu_size: pk.mtu_size,
-                                        security: false,
-                                    };
-
-                                    // This is a valid packet, let's check if a session exists, if not, we should create it.
-                                    // Event if the connection is only in offline mode.
-                                    let mut sessions = connections.lock().await;
-
-                                    if !sessions.contains_key(&origin) {
-                                        rakrs_debug!(true, "Creating new session for {}", origin);
-                                        let meta = ConnMeta::new(0);
-                                        let (net_send, net_recv) = bounded::<Vec<u8>>(10);
-                                        let connection =
-                                            Connection::new(origin, &socket, net_recv, pk.mtu_size)
-                                                .await;
-                                        rakrs_debug!(true, "Created Session for {}", origin);
-
-                                        // Add the connection to the available connections list.
-                                        // we're using the name "sessions" here to differeniate
-                                        // for some reason the reciever likes to be dropped, so we're saving it here.
-                                        sessions.insert(origin, (meta, net_send));
-
-                                        // notify the connection communicator
-                                        if let Err(err) = send_comm.send(connection).await {
-                                            let connection = err.0;
-                                            // there was an error, and we should terminate this connection immediately.
-                                            rakrs_debug!("[{}] Error while communicating with internal connection channel! Connection withdrawn.", to_address_token(connection.address));
-                                            sessions.remove(&origin);
-                                            continue;
-                                        }
-                                    }
-
-                                    // update the sessions mtuSize, this is referred to internally, we also will send this event to the client
-                                    // event channel. However we are not expecting a response.
-
-                                    sessions.get_mut(&origin).unwrap().0.mtu_size = pk.mtu_size;
-
-                                    // let (resp_tx, resp_rx) = oneshot::channel::<ServerEventResponse>();
-
-                                    // if let Err(_) = timeout(Duration::from_millis(5), resp_rx).await {
-                                    //     rakrs_debug!(
-                                    //         "[{}] Failed to update mtu size with the client!",
-                                    //         to_address_token(origin)
-                                    //     );
-                                    // }
-
-                                    // if let Err(_) = send_evt.send((ServerEvent::SetMtuSize(pk.mtu_size), resp_tx))
-                                    //     .await
-                                    // {
-                                    //     rakrs_debug!(
-                                    //         "[{}] Failed to update mtu size with the client!",
-                                    //         to_address_token(origin)
-                                    //     );
-                                    // }
-
-                                    send_packet_to_socket(&socket, resp.into(), origin).await;
-                                    continue;
-                                }
-                                _ => {
-                                    rakrs_debug!(
-                                        "[{}] Received invalid packet!",
-                                        to_address_token(*&origin)
-                                    );
                                 }
                             }
+
+                            // update the sessions mtuSize, this is referred to internally, we also will send this event to the client
+                            // event channel. However we are not expecting a response.
+
+                            sessions.get_mut(&origin).unwrap().0.mtu_size = pk.mtu_size;
+
+                            // let (resp_tx, resp_rx) = oneshot::channel::<ServerEventResponse>();
+
+                            // if let Err(_) = timeout(Duration::from_millis(5), resp_rx).await {
+                            //     rakrs_debug!(
+                            //         "[{}] Failed to update mtu size with the client!",
+                            //         to_address_token(origin)
+                            //     );
+                            // }
+
+                            // if let Err(_) = send_evt.send((ServerEvent::SetMtuSize(pk.mtu_size), resp_tx))
+                            //     .await
+                            // {
+                            //     rakrs_debug!(
+                            //         "[{}] Failed to update mtu size with the client!",
+                            //         to_address_token(origin)
+                            //     );
+                            // }
+
+                            send_packet_to_socket(&socket, resp.into(), origin).await;
+                            continue;
                         }
-                        _ => {}
-                    };
+                        _ => {
+                            rakrs_debug!(
+                                "[{}] Received invalid packet!",
+                                to_address_token(*&origin)
+                            );
+                        }
+                    }
                 }
 
                 // Packet may be valid, but we'll let the connection decide this
@@ -487,9 +482,9 @@ impl Listener {
     }
 }
 
-async fn send_packet_to_socket(socket: &Arc<UdpSocket>, packet: Packet, origin: SocketAddr) {
+async fn send_packet_to_socket(socket: &Arc<UdpSocket>, packet: RakPacket, origin: SocketAddr) {
     if let Err(e) = socket
-        .send_to(&mut packet.parse().unwrap()[..], origin)
+        .send_to(&mut packet.write_to_bytes().unwrap().as_slice(), origin)
         .await
     {
         rakrs_debug!(

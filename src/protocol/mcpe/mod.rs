@@ -3,19 +3,16 @@
 /// display information about the server.
 pub mod motd;
 
-use crate::packet_id;
-
-use binary_utils::*;
+use binary_util::BinaryIo;
 
 use self::motd::Motd;
 
-use super::{packet::PacketId, Magic};
+use super::Magic;
 
-#[derive(Debug, Clone, BinaryStream)]
+#[derive(Debug, Clone, BinaryIo)]
 pub struct UnconnectedPong {
     pub timestamp: u64,
     pub server_id: u64,
     pub magic: Magic,
     pub motd: Motd,
 }
-packet_id!(UnconnectedPong, 0x1c);

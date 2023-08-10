@@ -10,7 +10,7 @@ use async_std::{
     task::{self, Context, Poll, Waker},
 };
 
-use binary_utils::Streamable;
+use binary_util::Streamable;
 #[cfg(feature = "async_tokio")]
 use std::future::Future;
 #[cfg(feature = "async_tokio")]

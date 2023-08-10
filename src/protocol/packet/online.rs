@@ -1,69 +1,45 @@
-use std::io::Cursor;
-use std::io::Write;
-use std::net::IpAddr;
-use std::net::Ipv4Addr;
 use std::net::SocketAddr;
 
-use binary_utils::error::BinaryError;
-use binary_utils::*;
-use byteorder::BigEndian;
-use byteorder::ReadBytesExt;
-use byteorder::WriteBytesExt;
+use binary_util::interfaces::{Reader, Writer};
+use binary_util::io::{ByteReader, ByteWriter};
+use binary_util::BinaryIo;
 
-use super::Packet;
-use super::PacketId;
-use super::Payload;
-use crate::{packet_id, register_packets};
-
-/// A enum that represents all online packets.
-#[derive(Clone, Debug)]
+#[derive(BinaryIo, Clone, Debug)]
+#[repr(u8)]
 pub enum OnlinePacket {
-    ConnectedPing(ConnectedPing),
-    ConnectedPong(ConnectedPong),
-    LostConnection(LostConnection),
-    ConnectionRequest(ConnectionRequest),
-    ConnectionAccept(ConnectionAccept),
-    NewConnection(NewConnection),
-    Disconnect(Disconnect),
+    ConnectedPing(ConnectedPing) = 0x00,
+    ConnectedPong(ConnectedPong) = 0x03,
+    LostConnection(LostConnection) = 0x04,
+    ConnectionRequest(ConnectionRequest) = 0x09,
+    ConnectionAccept(ConnectionAccept) = 0x10,
+    NewConnection(NewConnection) = 0x13,
+    Disconnect(Disconnect) = 0x15,
 }
-
-register_packets![
-    Online is OnlinePacket,
-    ConnectedPing,
-    ConnectedPong,
-    ConnectionRequest,
-    ConnectionAccept,
-    NewConnection,
-    Disconnect
-];
 
 /// Connected Ping Packet
 /// This packet is sent by the client to the server.
 /// The server should respond with a `ConnectedPong` packet.
-#[derive(Clone, Debug, BinaryStream)]
+#[derive(Clone, Debug, BinaryIo)]
 pub struct ConnectedPing {
     pub time: i64,
 }
-packet_id!(ConnectedPing, 0x00);
 
 /// Connected Pong Packet
 /// This packet is sent by the server to the client in response to a `ConnectedPing` packet.
-#[derive(Clone, Debug, BinaryStream)]
+#[derive(Clone, Debug, BinaryIo)]
 pub struct ConnectedPong {
     pub ping_time: i64,
     pub pong_time: i64,
 }
-packet_id!(ConnectedPong, 0x03);
 
 /// A connection Request Request, this contains information about the client. Like it's
 /// current time and the client id.
-#[derive(Clone, Debug, BinaryStream)]
+#[derive(Clone, Debug, BinaryIo)]
 pub struct ConnectionRequest {
     pub client_id: i64,
     pub time: i64,
     pub security: bool,
 }
-packet_id!(ConnectionRequest, 0x09);
 
 /// A connection Accept packet, this is sent by the server to the client.
 /// This is sent by the server and contains information about the server.
@@ -71,44 +47,69 @@ packet_id!(ConnectionRequest, 0x09);
 pub struct ConnectionAccept {
     /// The address of the client connecting (locally?).
     pub client_address: SocketAddr,
-    /// The system index is the index of the system that the client is connected to.
-    /// This is the index of the server on the client.
-    /// (Not sure why this is useful)
+    /// The system index of the server.
     pub system_index: i16,
     /// The internal id's of the server or alternative IP's of the server.
     /// These are addresses the client will use if it can't connect to the server.
     /// (Not sure why this is useful)
-    pub internal_id: SocketAddr,
+    pub internal_ids: Vec<SocketAddr>,
     /// The time of the timestamp the client sent with `ConnectionRequest`.
     pub request_time: i64,
     /// The time on the server.
     pub timestamp: i64,
 }
 
-impl Streamable for ConnectionAccept {
-    fn parse(&self) -> Result<Vec<u8>, BinaryError> {
-        let mut stream = Vec::new();
-        stream.write_all(&self.client_address.parse()?[..])?;
-        stream.write_i16::<BigEndian>(self.system_index)?;
-        for _ in 0..10 {
-            stream.write_all(&self.internal_id.parse()?[..])?;
-        }
-        stream.write_i64::<BigEndian>(self.request_time)?;
-        stream.write_i64::<BigEndian>(self.timestamp)?;
-        Ok(stream)
-    }
+impl Reader<ConnectionAccept> for ConnectionAccept {
+    fn read(buf: &mut ByteReader) -> std::io::Result<Self> {
+        let client_address = buf.read_struct::<SocketAddr>()?;
 
-    fn compose(_source: &[u8], _position: &mut usize) -> Result<Self, BinaryError> {
+        // read the system index, this is
+        let system_index = buf.read_i16()?;
+        let internal_ids = Vec::new::<SocketAddr>();
+
+        for _ in 0..20 {
+            // we only have the request time and timestamp left...
+            if buf.len() < 16 {
+                break;
+            }
+            internal_ids.push(buf.read_struct::<SocketAddr>()?);
+        }
+
+        let request_time = buf.read_i64()?;
+        let timestamp = buf.read_i64()?;
+
         Ok(Self {
-            client_address: SocketAddr::new(IpAddr::from(Ipv4Addr::new(192, 168, 0, 1)), 9120),
-            system_index: 0,
-            internal_id: SocketAddr::new(IpAddr::from(Ipv4Addr::new(127, 0, 0, 1)), 1920),
-            request_time: 0,
-            timestamp: 0,
+            client_address,
+            system_index,
+            internal_ids,
+            request_time,
+            timestamp,
         })
     }
 }
-packet_id!(ConnectionAccept, 0x10);
+
+impl Writer for ConnectionAccept {
+    fn write(&self, buf: &mut ByteWriter) -> std::io::Result<()> {
+        buf.write_struct(&self.client_address)?;
+        buf.write_i16(self.system_index)?;
+
+        if self.internal_ids.len() > 20 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Too many internal id's",
+            ));
+        }
+
+        for internal_id in &self.internal_ids {
+            buf.write_struct(internal_id)?;
+        }
+
+        buf.write_i64(self.request_time)?;
+        buf.write_i64(self.timestamp)?;
+
+        Ok(())
+    }
+}
 
 /// Going to be completely Honest here, I have no idea what this is used for right now,
 /// even after reading the source code.
@@ -123,29 +124,24 @@ pub struct NewConnection {
     /// The time on the server.
     pub timestamp: i64,
 }
-packet_id!(NewConnection, 0x13);
 
-impl Streamable for NewConnection {
-    fn parse(&self) -> Result<Vec<u8>, BinaryError> {
-        let mut stream = Vec::new();
-        stream.write_all(&self.server_address.parse()?[..])?;
-        for address in &self.system_address {
-            stream.write_all(&address.parse()?[..])?;
-        }
-        stream.write_i64::<BigEndian>(self.request_time)?;
-        stream.write_i64::<BigEndian>(self.timestamp)?;
-        Ok(stream)
-    }
+impl Reader<NewConnection> for NewConnection {
+    fn read(buf: &mut ByteReader) -> std::io::Result<Self> {
+        let server_address = buf.read_struct::<SocketAddr>()?;
 
-    fn compose(source: &[u8], position: &mut usize) -> Result<Self, BinaryError> {
-        let server_address = SocketAddr::new(IpAddr::from(Ipv4Addr::new(192, 168, 0, 1)), 9120);
-        let mut stream = Cursor::new(source);
-        let mut system_address = Vec::new();
-        for _ in 0..10 {
-            system_address.push(SocketAddr::compose(source, position)?);
+        let system_address = Vec::new::<SocketAddr>();
+
+        for _ in 0..20 {
+            // we only have the request time and timestamp left...
+            if buf.len() < 16 {
+                break;
+            }
+            system_address.push(buf.read_struct::<SocketAddr>()?);
         }
-        let request_time = stream.read_i64::<BigEndian>()?;
-        let timestamp = stream.read_i64::<BigEndian>()?;
+
+        let request_time = buf.read_i64()?;
+        let timestamp = buf.read_i64()?;
+
         Ok(Self {
             server_address,
             system_address,
@@ -155,13 +151,33 @@ impl Streamable for NewConnection {
     }
 }
 
+impl Writer for NewConnection {
+    fn write(&self, buf: &mut ByteWriter) -> std::io::Result<()> {
+        buf.write_struct(&self.server_address)?;
+
+        if self.system_address.len() > 20 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Too many internal id's",
+            ));
+        }
+
+        for system_address in &self.system_address {
+            buf.write_struct(system_address)?;
+        }
+
+        buf.write_i64(self.request_time)?;
+        buf.write_i64(self.timestamp)?;
+
+        Ok(())
+    }
+}
+
 /// A disconnect notification. Tells the client to disconnect.
-#[derive(Clone, Debug, BinaryStream)]
+#[derive(Clone, Debug, BinaryIo)]
 pub struct Disconnect {}
-packet_id!(Disconnect, 0x15);
 
 /// A connection lost notification.
 /// This is sent by the client when it loses connection to the server.
-#[derive(Clone, Debug, BinaryStream)]
+#[derive(Clone, Debug, BinaryIo)]
 pub struct LostConnection {}
-packet_id!(LostConnection, 0x04);
