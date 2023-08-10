@@ -23,11 +23,11 @@ use futures::{select, FutureExt};
 #[cfg(feature = "async_tokio")]
 use tokio::{
     net::UdpSocket,
+    select,
     sync::{
         mpsc::{channel as bounded, Receiver, Sender},
         Mutex, RwLock,
     },
-    select,
     task::{self, JoinHandle},
     time::sleep,
 };
@@ -273,11 +273,9 @@ impl Connection {
     pub async fn init_net_recv(
         &self,
         // THIS IS ONLY ACTIVATED ON STD
-        #[cfg(feature = "async_std")]
-        net: Receiver<Vec<u8>>,
+        #[cfg(feature = "async_std")] net: Receiver<Vec<u8>>,
         // ONLY ACTIVATED ON TOKIO
-        #[cfg(feature = "async_tokio")]
-        mut net: Receiver<Vec<u8>>,
+        #[cfg(feature = "async_tokio")] mut net: Receiver<Vec<u8>>,
         sender: Sender<Vec<u8>>,
     ) -> task::JoinHandle<()> {
         let recv_time = self.recv_time.clone();

@@ -398,7 +398,7 @@ impl Client {
             #[cfg(feature = "async_std")]
             Ok(packet) => Ok(packet),
             #[cfg(feature = "async_std")]
-            Err(e) => Err(e)
+            Err(e) => Err(e),
         }
     }
 
@@ -730,7 +730,10 @@ impl Client {
 
                         if recv + 15000 <= current_epoch() && state.is_reliable() {
                             *state = ConnectionState::TimingOut;
-                            rakrs_debug!(true, "[CLIENT] Connection is timing out, sending a ping!",);
+                            rakrs_debug!(
+                                true,
+                                "[CLIENT] Connection is timing out, sending a ping!",
+                            );
                         }
 
                         let mut send_q = send_queue.write().await;
