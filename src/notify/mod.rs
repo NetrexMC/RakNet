@@ -5,7 +5,7 @@ mod async_std;
 mod tokio;
 
 #[cfg(feature = "async_std")]
-pub use async_std::Notify;
+pub use self::async_std::Notify;
 
 #[cfg(feature = "tokio")]
-pub use tokio::Notify;
+pub use self::tokio::Notify;

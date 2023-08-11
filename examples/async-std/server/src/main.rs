@@ -5,9 +5,11 @@ use rak_rs::Listener;
 #[async_std::main]
 async fn main() {
     // console_subscriber::init();
-    let mut server = Listener::bind("0.0.0.0:19132").await.unwrap();
+    let mut server = Listener::bind("0.0.0.0:19133").await.unwrap();
     server.motd.name = "RakNet Rust (async-std)!".to_string();
     server.motd.gamemode = Gamemode::Survival;
+    server.motd.player_count = 69420;
+    server.motd.player_max = 69424;
 
     server.start().await.unwrap();
 
