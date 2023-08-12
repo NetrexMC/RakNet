@@ -1,6 +1,7 @@
-use std::io::{Cursor, Write};
-
-use binary_util::{BinaryIo, interfaces::{Reader, Writer}};
+use binary_util::{
+    interfaces::{Reader, Writer},
+    BinaryIo,
+};
 
 /// The information for the given fragment.
 /// This is used to determine how to reassemble the frame.
@@ -35,11 +36,15 @@ impl FramePacket {
 
 impl Reader<FramePacket> for FramePacket {
     fn read(buf: &mut binary_util::ByteReader) -> Result<FramePacket, std::io::Error> {
+        // FRAME PACKET HEADER
+        buf.read_u8()?;
         let mut frames: Vec<Frame> = Vec::new();
+
         let sequence = buf.read_u24_le()?;
 
         loop {
-            if let Ok(frame) = buf.read_struct::<Frame>() {
+            let frame_pos = buf.read_struct::<Frame>();
+            if let Ok(frame) = frame_pos {
                 frames.push(frame);
             } else {
                 break;
@@ -117,10 +122,10 @@ impl Frame {
     }
 
     /// Initializes a new frame with the given reliability.
-    pub fn new(reliability: Reliability, body: Option<Vec<u8>>) -> Self {
+    pub fn new(reliability: Reliability, body: Option<&[u8]>) -> Self {
         Self {
             flags: 0,
-            size: if let Some(b) = body.as_ref() {
+            size: if let Some(b) = body {
                 b.len() as u16
             } else {
                 0
@@ -131,7 +136,7 @@ impl Frame {
             order_channel: None,
             fragment_meta: None,
             reliability,
-            body: body.unwrap_or(Vec::new()),
+            body: body.unwrap_or(&[]).to_vec(),
         }
     }
 
@@ -152,7 +157,12 @@ impl Reader<Frame> for Frame {
 
         frame.flags = buf.read_u8()?;
         frame.reliability = Reliability::from_flags(frame.flags);
-        frame.size = buf.read_u16()? / 8;
+
+        let size = buf.read_u16();
+
+        if let Ok(size) = size {
+            frame.size = size / 8;
+        }
 
         if frame.reliability.is_reliable() {
             frame.reliable_index = Some(buf.read_u24_le()?);
@@ -167,13 +177,15 @@ impl Reader<Frame> for Frame {
             frame.order_channel = Some(buf.read_u8()?);
         }
 
-        if frame.flags & 0x10 == 0x10 {
+        if (frame.flags & 0x10) > 0 {
             frame.fragment_meta = Some(FragmentMeta::read(buf)?);
         }
 
-        let body = [0; frame.size];
+        let mut body = vec![0; frame.size as usize];
 
-        frame.body = buf.read(&)?;
+        if let Ok(_) = buf.read(&mut body) {
+            frame.body = body.to_vec();
+        }
 
         Ok(frame)
     }
@@ -181,7 +193,14 @@ impl Reader<Frame> for Frame {
 
 impl Writer for Frame {
     fn write(&self, buf: &mut binary_util::ByteWriter) -> Result<(), std::io::Error> {
-        buf.write_u8(self.flags)?;
+        let mut flags = self.reliability.to_flags();
+
+        // check whether or not this frame is fragmented, if it is, set the fragment flag
+        if self.fragment_meta.is_some() {
+            flags |= 0x10;
+        }
+
+        buf.write_u8(flags)?;
         buf.write_u16(self.size * 8)?;
 
         if self.reliability.is_reliable() {
@@ -197,8 +216,14 @@ impl Writer for Frame {
             buf.write_u8(self.order_channel.unwrap_or(0))?;
         }
 
-        if self.flags & 0x10 == 0x10 {
-            self.fragment_meta.as_ref().unwrap().write(buf)?;
+        if self.fragment_meta.is_some() {
+            buf.write(
+                self.fragment_meta
+                    .as_ref()
+                    .unwrap()
+                    .write_to_bytes()?
+                    .as_slice(),
+            )?;
         }
 
         buf.write(&self.body)?;

@@ -5,8 +5,8 @@ authors = ["Bavfalcon9 <olybear9@gmail.com>"]
 edition = "2021"
 
 [features]
-# default = [ "async_std" ]
-default = ["async_tokio" ]
+default = [ "async_std" ]
+# default = ["async_tokio" ]
 mcpe = []
 debug = []
 debug_all = []

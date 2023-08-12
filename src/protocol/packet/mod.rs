@@ -68,3 +68,106 @@ impl Reader<RakPacket> for RakPacket {
         ))
     }
 }
+
+impl From<OfflinePacket> for RakPacket {
+    fn from(packet: OfflinePacket) -> Self {
+        RakPacket::Offline(packet)
+    }
+}
+
+impl From<OnlinePacket> for RakPacket {
+    fn from(packet: OnlinePacket) -> Self {
+        RakPacket::Online(packet)
+    }
+}
+
+impl From<RakPacket> for OnlinePacket {
+    fn from(packet: RakPacket) -> Self {
+        match packet {
+            RakPacket::Online(packet) => packet,
+            _ => panic!("Invalid packet conversion"),
+        }
+    }
+}
+
+impl From<RakPacket> for OfflinePacket {
+    fn from(packet: RakPacket) -> Self {
+        match packet {
+            RakPacket::Offline(packet) => packet,
+            _ => panic!("Invalid packet conversion"),
+        }
+    }
+}
+
+/// A utility macro that adds the implementation for any `OnlinePacket(Pk)` where
+/// `Pk` can be converted to `RakPacket`, `OnlinePacket` or `OfflinePacket`
+/// and vice versa.
+///
+/// For example, we want unconnected pong to be unwrapped, we can do this without
+/// a match statement like this:
+/// ```rust ignore
+/// use raknet::packet::RakPacket;
+/// use raknet::packet::online::OnlinePacket;
+/// use raknet::packet::online::UnconnectedPing;
+/// let some_packet = RakPacket::from(&source)?;
+/// let connected_ping: UnconnectedPing = some_packet.into();
+/// ```
+///
+/// This macro also allows for converting any `OnlinePacket(Pk)` to a `RakPacket`, where `Pk` can
+/// be directly converted into a packet. For example:
+/// ```rust ignore
+/// use raknet::packet::Packet;
+/// use raknet::packet::online::OnlinePacket;
+/// use raknet::packet::online::UnconnectedPong;
+///
+/// let packet: Packet = UnconnectedPong {
+///     magic: Magic::new(),
+///     timestamp: SystemTime::now(),
+///     client_id: -129
+/// }.into();
+/// ```
+///
+/// The macro can be expressed in the following way:
+/// ```rust ignore
+/// register_packets! {
+///     Online is OnlinePacket,
+///     UnconnectedPing,
+///     // etc...
+/// }
+/// ```
+#[macro_export]
+macro_rules! register_packets {
+    ($name: ident is $kind: ident, $($packet: ident),*) => {
+        $(
+            impl From<$packet> for $kind {
+                fn from(packet: $packet) -> Self {
+                    $kind::$packet(packet)
+                }
+            }
+
+            impl From<$packet> for RakPacket {
+                fn from(packet: $packet) -> Self {
+                    $kind::$packet(packet).into()
+                }
+            }
+
+            impl From<$kind> for $packet {
+                fn from(packet: $kind) -> Self {
+                    match packet {
+                        $kind::$packet(packet) => packet.into(),
+                        _ => panic!("Invalid packet conversion"),
+                    }
+                }
+            }
+
+            impl From<RakPacket> for $packet {
+                fn from(packet: RakPacket) -> Self {
+                    match packet {
+                        RakPacket::$name(packet) => packet.into(),
+                        _ => panic!("Invalid packet conversion"),
+                    }
+                }
+            }
+        )*
+    };
+}

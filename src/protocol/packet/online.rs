@@ -1,5 +1,8 @@
 use std::net::SocketAddr;
 
+use super::RakPacket;
+use crate::register_packets;
+
 use binary_util::interfaces::{Reader, Writer};
 use binary_util::io::{ByteReader, ByteWriter};
 use binary_util::BinaryIo;
@@ -14,6 +17,17 @@ pub enum OnlinePacket {
     ConnectionAccept(ConnectionAccept) = 0x10,
     NewConnection(NewConnection) = 0x13,
     Disconnect(Disconnect) = 0x15,
+}
+
+register_packets! {
+    Online is OnlinePacket,
+    ConnectedPing,
+    ConnectedPong,
+    LostConnection,
+    ConnectionRequest,
+    ConnectionAccept,
+    NewConnection,
+    Disconnect
 }
 
 /// Connected Ping Packet
@@ -65,11 +79,11 @@ impl Reader<ConnectionAccept> for ConnectionAccept {
 
         // read the system index, this is
         let system_index = buf.read_i16()?;
-        let internal_ids = Vec::new::<SocketAddr>();
+        let mut internal_ids = Vec::<SocketAddr>::new();
 
         for _ in 0..20 {
             // we only have the request time and timestamp left...
-            if buf.len() < 16 {
+            if buf.as_slice().len() < 16 {
                 break;
             }
             internal_ids.push(buf.read_struct::<SocketAddr>()?);
@@ -90,7 +104,7 @@ impl Reader<ConnectionAccept> for ConnectionAccept {
 
 impl Writer for ConnectionAccept {
     fn write(&self, buf: &mut ByteWriter) -> std::io::Result<()> {
-        buf.write_struct(&self.client_address)?;
+        buf.write_type::<SocketAddr>(&self.client_address)?;
         buf.write_i16(self.system_index)?;
 
         if self.internal_ids.len() > 20 {
@@ -101,7 +115,7 @@ impl Writer for ConnectionAccept {
         }
 
         for internal_id in &self.internal_ids {
-            buf.write_struct(internal_id)?;
+            buf.write_type::<SocketAddr>(internal_id)?;
         }
 
         buf.write_i64(self.request_time)?;
@@ -129,11 +143,11 @@ impl Reader<NewConnection> for NewConnection {
     fn read(buf: &mut ByteReader) -> std::io::Result<Self> {
         let server_address = buf.read_struct::<SocketAddr>()?;
 
-        let system_address = Vec::new::<SocketAddr>();
+        let mut system_address = Vec::<SocketAddr>::new();
 
         for _ in 0..20 {
             // we only have the request time and timestamp left...
-            if buf.len() < 16 {
+            if buf.as_slice().len() < 16 {
                 break;
             }
             system_address.push(buf.read_struct::<SocketAddr>()?);
@@ -153,7 +167,7 @@ impl Reader<NewConnection> for NewConnection {
 
 impl Writer for NewConnection {
     fn write(&self, buf: &mut ByteWriter) -> std::io::Result<()> {
-        buf.write_struct(&self.server_address)?;
+        buf.write_type::<SocketAddr>(&self.server_address)?;
 
         if self.system_address.len() > 20 {
             return Err(std::io::Error::new(
@@ -163,7 +177,7 @@ impl Writer for NewConnection {
         }
 
         for system_address in &self.system_address {
-            buf.write_struct(system_address)?;
+            buf.write_type::<SocketAddr>(system_address)?;
         }
 
         buf.write_i64(self.request_time)?;

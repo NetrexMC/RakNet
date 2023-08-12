@@ -1,9 +1,12 @@
 use std::net::SocketAddr;
 
+use super::RakPacket;
 #[cfg(feature = "mcpe")]
 pub use crate::protocol::mcpe::UnconnectedPong;
 use crate::protocol::Magic;
 use crate::protocol::RAKNET_HEADER_OVERHEAD;
+use crate::register_packets;
+
 use binary_util::interfaces::{Reader, Writer};
 use binary_util::io::{ByteReader, ByteWriter};
 use binary_util::BinaryIo;
@@ -13,12 +16,23 @@ use binary_util::BinaryIo;
 #[repr(u8)]
 pub enum OfflinePacket {
     UnconnectedPing(UnconnectedPing) = 0x01,
+    UnconnectedPong(UnconnectedPong) = 0x1c,
     OpenConnectRequest(OpenConnectRequest) = 0x05,
     OpenConnectReply(OpenConnectReply) = 0x06,
     SessionInfoRequest(SessionInfoRequest) = 0x07,
     SessionInfoReply(SessionInfoReply) = 0x08,
-    UnconnectedPong(UnconnectedPong) = 0x1c,
     IncompatibleProtocolVersion(IncompatibleProtocolVersion) = 0x19,
+}
+
+register_packets! {
+    Offline is OfflinePacket,
+    UnconnectedPing,
+    UnconnectedPong,
+    OpenConnectRequest,
+    OpenConnectReply,
+    SessionInfoRequest,
+    SessionInfoReply,
+    IncompatibleProtocolVersion
 }
 
 /// Unconnected Ping
@@ -58,7 +72,7 @@ impl Reader<OpenConnectRequest> for OpenConnectRequest {
 
 impl Writer for OpenConnectRequest {
     fn write(&self, buf: &mut ByteWriter) -> Result<(), std::io::Error> {
-        buf.write_struct::<Magic>()?;
+        buf.write_type::<Magic>(&Magic::new())?;
         buf.write_u8(self.protocol)?;
         // padding
         // remove 28 bytes from the mtu size

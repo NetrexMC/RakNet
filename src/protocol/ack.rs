@@ -41,6 +41,7 @@ pub struct RangeRecord {
     pub end: u32,
 }
 
+#[allow(dead_code)]
 impl RangeRecord {
     /// Fixes the end of the range if it is lower than the start.
     pub fn fix(&mut self) {
@@ -50,7 +51,7 @@ impl RangeRecord {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, BinaryIo)]
 pub struct Ack {
     pub id: u8,
     pub count: u16,

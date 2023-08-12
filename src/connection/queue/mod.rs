@@ -354,7 +354,7 @@ impl FragmentQueue {
             let mut index: u32 = 0;
 
             for buf in splits.iter() {
-                let mut f = Frame::new(Reliability::ReliableOrd, Some(buf.clone()));
+                let mut f = Frame::new(Reliability::ReliableOrd, Some(&buf[..]));
                 f.fragment_meta = Some(FragmentMeta {
                     index,
                     size: splits.len() as u32,

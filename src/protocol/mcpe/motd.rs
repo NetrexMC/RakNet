@@ -189,7 +189,7 @@ impl Reader<Motd> for Motd {
             player_count: player_count.parse().unwrap(),
             player_max: player_max.parse().unwrap(),
             server_guid: server_guid.parse().unwrap(),
-            gamemode:  match gamemode
+            gamemode: match gamemode
                 .as_str()
                 .parse::<u8>()
                 .expect("Gamemode is not a byte")
