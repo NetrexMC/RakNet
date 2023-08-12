@@ -1,4 +1,5 @@
-use binary_utils::{error::BinaryError, Streamable};
+use binary_util::interfaces::{Reader, Writer};
+use binary_util::io::{ByteReader, ByteWriter};
 
 /// A unique identifier recoginzing the client as offline.
 pub(crate) const MAGIC: [u8; 16] = [
@@ -6,31 +7,33 @@ pub(crate) const MAGIC: [u8; 16] = [
 ];
 
 #[derive(Debug, Clone)]
-pub struct Magic(pub Vec<u8>);
+pub struct Magic;
 
 impl Magic {
     pub fn new() -> Self {
-        Self(MAGIC.to_vec())
+        Self {}
     }
 }
 
-impl Streamable for Magic {
-    fn parse(&self) -> Result<Vec<u8>, BinaryError> {
-        Ok(MAGIC.to_vec())
-    }
+impl Reader<Magic> for Magic {
+    fn read(buf: &mut ByteReader) -> Result<Magic, std::io::Error> {
+        let mut magic = [0u8; 16];
+        buf.read(&mut magic)?;
 
-    fn compose(source: &[u8], position: &mut usize) -> Result<Self, BinaryError> {
-        // magic is 16 bytes
-        let pos = *position + (16 as usize);
-        let magic = &source[*position..pos];
-        *position += 16;
-
-        if magic.to_vec() != MAGIC.to_vec() {
-            Err(BinaryError::RecoverableKnown(
-                "Could not construct magic from malformed bytes.".to_string(),
-            ))
-        } else {
-            Ok(Self(magic.to_vec()))
+        if magic != MAGIC {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Invalid magic",
+            ));
         }
+
+        Ok(Magic)
+    }
+}
+
+impl Writer for Magic {
+    fn write(&self, buf: &mut ByteWriter) -> Result<(), std::io::Error> {
+        buf.write(&MAGIC)?;
+        Ok(())
     }
 }

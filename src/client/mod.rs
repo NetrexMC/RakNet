@@ -18,7 +18,8 @@ use async_std::{
 #[cfg(feature = "async_std")]
 use futures::{select, FutureExt};
 
-use binary_utils::Streamable;
+use binary_util::interfaces::{Reader, Writer};
+use binary_util::io::ByteReader;
 
 #[cfg(feature = "async_tokio")]
 use tokio::{
@@ -48,7 +49,7 @@ use crate::{
         packet::{
             offline::{OfflinePacket, UnconnectedPing},
             online::{ConnectedPing, ConnectedPong, OnlinePacket},
-            Packet,
+            RakPacket,
         },
         reliability::Reliability,
         Magic,
@@ -287,12 +288,7 @@ impl Client {
         if self.state.lock().await.is_available() {
             let mut send_q = self.send_queue.as_ref().unwrap().write().await;
             if let Err(send) = send_q
-                .insert(
-                    buffer.to_vec(),
-                    Reliability::ReliableOrd,
-                    false,
-                    Some(channel),
-                )
+                .insert(buffer, Reliability::ReliableOrd, false, Some(channel))
                 .await
             {
                 rakrs_debug!(true, "[CLIENT] Failed to insert packet into send queue!");
@@ -313,12 +309,7 @@ impl Client {
         if self.state.lock().await.is_available() {
             let mut send_q = self.send_queue.as_ref().unwrap().write().await;
             if let Err(send) = send_q
-                .insert(
-                    buffer.to_vec(),
-                    Reliability::ReliableSeq,
-                    false,
-                    Some(channel),
-                )
+                .insert(buffer, Reliability::ReliableSeq, false, Some(channel))
                 .await
             {
                 rakrs_debug!(true, "[CLIENT] Failed to insert packet into send queue!");
@@ -339,7 +330,7 @@ impl Client {
         if self.state.lock().await.is_available() {
             let mut send_q = self.send_queue.as_ref().unwrap().write().await;
             if let Err(send) = send_q
-                .insert(buffer.to_vec(), reliability, false, Some(channel))
+                .insert(buffer, reliability, false, Some(channel))
                 .await
             {
                 rakrs_debug!(true, "[CLIENT] Failed to insert packet into send queue!");
@@ -360,7 +351,7 @@ impl Client {
         if self.state.lock().await.is_available() {
             let mut send_q = self.send_queue.as_ref().unwrap().write().await;
             if let Err(send) = send_q
-                .insert(buffer.to_vec(), reliability, true, Some(channel))
+                .insert(buffer, reliability, true, Some(channel))
                 .await
             {
                 rakrs_debug!(true, "[CLIENT] Failed to insert packet into send queue!");
@@ -378,16 +369,16 @@ impl Client {
         // Flush the queue of acks and nacks, and respond to them
         let ack = Ack::from_records(recv_q.ack_flush(), false);
         if ack.records.len() > 0 {
-            if let Ok(p) = ack.parse() {
-                send_q.send_stream(&p).await;
+            if let Ok(p) = ack.write_to_bytes() {
+                send_q.send_stream(p.as_slice()).await;
             }
         }
 
         // flush nacks from recv queue
         let nack = Ack::from_records(recv_q.nack_queue(), true);
         if nack.records.len() > 0 {
-            if let Ok(p) = nack.parse() {
-                send_q.send_stream(&p).await;
+            if let Ok(p) = nack.write_to_bytes() {
+                send_q.send_stream(p.as_slice()).await;
             }
         }
     }
@@ -419,7 +410,12 @@ impl Client {
         };
 
         if let Err(_) = socket
-            .send(&Packet::from(unconnected_ping.clone()).parse().unwrap()[..])
+            .send(
+                RakPacket::from(unconnected_ping)
+                    .write_to_bytes()
+                    .unwrap()
+                    .as_slice(),
+            )
             .await
         {
             rakrs_debug!(true, "[CLIENT] Failed to send ping packet!");
@@ -431,15 +427,18 @@ impl Client {
             if let Ok(recvd) = timeout(Duration::from_millis(10000), socket.recv(&mut buf)).await {
                 match recvd {
                     Ok(l) => {
-                        let packet = Packet::compose(&mut buf[..l], &mut 0).unwrap();
-                        if packet.is_offline() {
-                            match packet.get_offline() {
-                                OfflinePacket::UnconnectedPong(pk) => {
+                        let mut reader = ByteReader::from(&buf[..l]);
+                        let packet = RakPacket::read(&mut reader).unwrap();
+
+                        match packet {
+                            RakPacket::Offline(offline) => match offline {
+                                OfflinePacket::UnconnectedPong(pong) => {
                                     rakrs_debug!(true, "[CLIENT] Recieved pong packet!");
-                                    return Ok(pk);
+                                    return Ok(pong);
                                 }
                                 _ => {}
-                            };
+                            },
+                            _ => {}
                         }
                     }
                     Err(_) => {
@@ -499,7 +498,7 @@ impl Client {
 
                         #[cfg(feature = "async_tokio")]
                         if let None = $pk_recv {
-                            rakrs_debug!(true, "[CLIENT] (recv_task)Failed to recieve anything on netowrk channel, is there a sender?");
+                            rakrs_debug!(true, "[CLIENT] (recv_task) Failed to recieve anything on netowrk channel, is there a sender?");
                             continue;
                         }
 
@@ -520,11 +519,11 @@ impl Client {
                         // drop here so the lock isn't held for too long
                         drop(client_state);
 
-                        let mut buffer = $pk_recv.unwrap();
+                        let mut buffer = ByteReader::from($pk_recv.unwrap());
 
-                        match buffer[0] {
+                        match buffer.as_slice()[0] {
                             0x80..=0x8d => {
-                                if let Ok(frame_packet) = FramePacket::compose(&mut buffer[..], &mut 0) {
+                                if let Ok(frame_packet) = FramePacket::read(&mut buffer) {
                                     let mut recv_q = recv_queue.lock().await;
                                     if let Err(_) = recv_q.insert(frame_packet) {
                                         rakrs_debug!(
@@ -535,64 +534,67 @@ impl Client {
 
                                     let buffers = recv_q.flush();
 
-                                    'buf_loop: for mut pk_buf in buffers {
-                                        if let Ok(packet) = Packet::compose(&mut pk_buf[..], &mut 0) {
-                                            if packet.is_online() {
-                                                match packet.get_online() {
-                                                    OnlinePacket::ConnectedPing(pk) => {
-                                                        let response = ConnectedPong {
-                                                            ping_time: pk.time,
-                                                            pong_time: current_epoch() as i64,
-                                                        };
-                                                        let mut q = send_queue.write().await;
-                                                        if let Err(_) = q
-                                                            .send_packet(
-                                                                response.into(),
-                                                                Reliability::Unreliable,
-                                                                true,
-                                                            )
-                                                            .await
-                                                        {
+                                    'buf_loop: for pk_buf_raw in buffers {
+                                        let mut pk_buf = ByteReader::from(&pk_buf_raw[..]);
+                                        if let Ok(rak_packet) = RakPacket::read(&mut pk_buf) {
+                                            match rak_packet {
+                                                RakPacket::Online(pk) => {
+                                                    match pk {
+                                                        OnlinePacket::ConnectedPing(pk) => {
+                                                            let response = ConnectedPong {
+                                                                ping_time: pk.time,
+                                                                pong_time: current_epoch() as i64,
+                                                            };
+                                                            let mut q = send_queue.write().await;
+                                                            if let Err(_) = q
+                                                                .send_packet(
+                                                                    response.into(),
+                                                                    Reliability::Unreliable,
+                                                                    true,
+                                                                )
+                                                                .await
+                                                            {
+                                                                rakrs_debug!(
+                                                                    true,
+                                                                    "[CLIENT] Failed to send pong packet!"
+                                                                );
+                                                            }
+                                                            continue 'buf_loop;
+                                                        }
+                                                        OnlinePacket::ConnectedPong(_) => {
+                                                            // todo: add ping time to client
                                                             rakrs_debug!(
                                                                 true,
-                                                                "[CLIENT] Failed to send pong packet!"
+                                                                "[CLIENT] Recieved pong packet!"
                                                             );
                                                         }
-                                                        continue 'buf_loop;
-                                                    }
-                                                    OnlinePacket::ConnectedPong(_) => {
-                                                        // todo: add ping time to client
-                                                        rakrs_debug!(
-                                                            true,
-                                                            "[CLIENT] Recieved pong packet!"
-                                                        );
-                                                    }
-                                                    OnlinePacket::Disconnect(_) => {
-                                                        rakrs_debug!(
-                                                            true,
-                                                            "[CLIENT] Recieved disconnect packet!"
-                                                        );
-                                                        break 'task_loop;
-                                                    }
-                                                    _ => {}
-                                                };
+                                                        OnlinePacket::Disconnect(_) => {
+                                                            rakrs_debug!(
+                                                                true,
+                                                                "[CLIENT] Recieved disconnect packet!"
+                                                            );
+                                                            break 'task_loop;
+                                                        }
+                                                        _ => {
+                                                            rakrs_debug!(
+                                                                true,
+                                                                "[CLIENT] Processing fault packet... {:#?}",
+                                                                pk
+                                                            );
 
-                                                rakrs_debug!(
-                                                    true,
-                                                    "[CLIENT] Processing fault packet... {:#?}",
-                                                    packet
-                                                );
-
-                                                if let Err(_) = internal_sender.send(pk_buf).await {
-                                                    rakrs_debug!(true, "[CLIENT] Failed to send packet to internal recv channel. Is the client closed?");
+                                                            if let Err(_) = internal_sender.send(pk_buf_raw).await {
+                                                                rakrs_debug!(true, "[CLIENT] Failed to send packet to internal recv channel. Is the client closed?");
+                                                            }
+                                                        }
+                                                    }
+                                                },
+                                                RakPacket::Offline(_) => {
+                                                    rakrs_debug!("[CLIENT] Recieved offline packet after handshake! In future versions this will kill the client.");
                                                 }
-                                            } else {
-                                                // we should never recieve an offline packet after the handshake
-                                                rakrs_debug!("[CLIENT] Recieved offline packet after handshake! In future versions this will kill the client.");
                                             }
                                         } else {
                                             // we send this packet
-                                            if let Err(_) = internal_sender.send(pk_buf).await {
+                                            if let Err(_) = internal_sender.send(pk_buf_raw).await {
                                                 rakrs_debug!(true, "[CLIENT] Failed to send packet to internal recv channel. Is the client closed?");
                                             }
                                         }
@@ -600,15 +602,15 @@ impl Client {
                                 }
                             }
                             NACK => {
-                                if let Ok(nack) = Ack::compose(&mut buffer[..], &mut 0) {
+                                if let Ok(nack) = Ack::read(&mut buffer) {
                                     let mut send_q = send_queue.write().await;
                                     let to_resend = send_q.nack(nack);
 
                                     if to_resend.len() > 0 {
                                         for ack_packet in to_resend {
-                                            if let Ok(buffer) = ack_packet.parse() {
+                                            if let Ok(buffer) = ack_packet.write_to_bytes() {
                                                 if let Err(_) = send_q
-                                                    .insert(buffer, Reliability::Unreliable, true, Some(0))
+                                                    .insert(buffer.as_slice(), Reliability::Unreliable, true, Some(0))
                                                     .await
                                                 {
                                                     rakrs_debug!(
@@ -627,7 +629,7 @@ impl Client {
                                 }
                             }
                             ACK => {
-                                if let Ok(ack) = Ack::compose(&mut buffer[..], &mut 0) {
+                                if let Ok(ack) = Ack::read(&mut buffer) {
                                     let mut send_q = send_queue.write().await;
                                     send_q.ack(ack.clone());
 
@@ -639,7 +641,7 @@ impl Client {
                             _ => {
                                 // we don't know what this is, so we're going to send it to the user, maybe
                                 // this is a custom packet
-                                if let Err(_) = internal_sender.send(buffer).await {
+                                if let Err(_) = internal_sender.send(buffer.as_slice().to_vec()).await {
                                     rakrs_debug!(true, "[CLIENT] Failed to send packet to internal recv channel. Is the client closed?");
                                 }
                             }
@@ -757,16 +759,16 @@ impl Client {
                         // Flush the queue of acks and nacks, and respond to them
                         let ack = Ack::from_records(recv_q.ack_flush(), false);
                         if ack.records.len() > 0 {
-                            if let Ok(p) = ack.parse() {
-                                send_q.send_stream(&p).await;
+                            if let Ok(p) = ack.write_to_bytes() {
+                                send_q.send_stream(p.as_slice()).await;
                             }
                         }
 
                         // flush nacks from recv queue
                         let nack = Ack::from_records(recv_q.nack_queue(), true);
                         if nack.records.len() > 0 {
-                            if let Ok(p) = nack.parse() {
-                                send_q.send_stream(&p).await;
+                            if let Ok(p) = nack.write_to_bytes() {
+                                send_q.send_stream(p.as_slice()).await;
                             }
                         }
                     };

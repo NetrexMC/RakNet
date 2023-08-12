@@ -9,7 +9,8 @@ use std::{
     time::Duration,
 };
 
-use binary_utils::Streamable;
+use binary_util::interfaces::{Reader, Writer};
+use binary_util::ByteReader;
 
 #[cfg(feature = "async_std")]
 use async_std::{
@@ -43,8 +44,8 @@ use crate::{
         ack::{Ack, Ackable, ACK, NACK},
         frame::FramePacket,
         packet::{
+            offline::OfflinePacket,
             online::{ConnectedPing, ConnectedPong, ConnectionAccept, OnlinePacket},
-            Packet,
         },
         reliability::Reliability,
     },
@@ -222,16 +223,16 @@ impl Connection {
                         // Flush the queue of acks and nacks, and respond to them
                         let ack = Ack::from_records(recv_q.ack_flush(), false);
                         if ack.records.len() > 0 {
-                            if let Ok(p) = ack.parse() {
-                                sendq.send_stream(&p).await;
+                            if let Ok(p) = ack.write_to_bytes() {
+                                sendq.send_stream(p.as_slice()).await;
                             }
                         }
 
                         // flush nacks from recv queue
                         let nack = Ack::from_records(recv_q.nack_queue(), true);
                         if nack.records.len() > 0 {
-                            if let Ok(p) = nack.parse() {
-                                sendq.send_stream(&p).await;
+                            if let Ok(p) = nack.write_to_bytes() {
+                                sendq.send_stream(p.as_slice()).await;
                             }
                         }
                     };
@@ -304,20 +305,28 @@ impl Connection {
                         drop(cstate);
 
                         let id = $payload[0];
+                        let mut reader = ByteReader::from(&$payload[..]);
                         match id {
                             // This is a frame packet.
                             // This packet will be handled by the recv_queue
                             0x80..=0x8d => {
-                                if let Ok(pk) = FramePacket::compose(&$payload[..], &mut 0) {
+                                if let Ok(pk) = FramePacket::read(&mut reader) {
                                     let mut rq = recv_q.lock().await;
 
-                                    if let Ok(_) = rq.insert(pk) {};
+                                    if let Err(e) = rq.insert(pk) {
+                                        rakrs_debug!(
+                                            true,
+                                            "[{}] Failed to insert frame packet! {:?}",
+                                            to_address_token(address),
+                                            e
+                                        );
+                                    };
 
                                     let buffers = rq.flush();
 
                                     for buffer in buffers {
                                         let res = Connection::process_packet(
-                                            &buffer, &address, &sender, &send_q, &state,
+                                            ByteReader::from(buffer), &address, &sender, &send_q, &state,
                                         )
                                         .await;
                                         if let Ok(v) = res {
@@ -339,11 +348,17 @@ impl Connection {
                                     }
 
                                     drop(rq);
+                                } else {
+                                    rakrs_debug!(
+                                        true,
+                                        "[{}] Failed to parse frame packet!",
+                                        to_address_token(address)
+                                    );
                                 }
                             }
                             NACK => {
                                 // Validate this is a nack packet
-                                if let Ok(nack) = Ack::compose(&$payload[..], &mut 0) {
+                                if let Ok(nack) = Ack::read(&mut reader) {
                                     // The client acknowledges it did not recieve these packets
                                     // We should resend them.
                                     let mut sq = send_q.write().await;
@@ -351,8 +366,8 @@ impl Connection {
 
                                     if resend.len() > 0 {
                                         for packet in resend {
-                                            if let Ok(buffer) = packet.parse() {
-                                                if let Err(_) = sq.insert(buffer, Reliability::Unreliable, true, Some(0)).await {
+                                            if let Ok(buffer) = packet.write_to_bytes() {
+                                                if let Err(_) = sq.insert(buffer.as_slice(), Reliability::Unreliable, true, Some(0)).await {
                                                     rakrs_debug!(
                                                         true,
                                                         "[{}] Failed to insert packet into send queue!",
@@ -372,7 +387,7 @@ impl Connection {
                             }
                             ACK => {
                                 // first lets validate this is an ack packet
-                                if let Ok(ack) = Ack::compose(&$payload[..], &mut 0) {
+                                if let Ok(ack) = Ack::read(&mut reader) {
                                     // The client acknowledges it recieved these packets
                                     // We should remove them from the queue.
                                     let mut sq = send_q.write().await;
@@ -427,99 +442,114 @@ impl Connection {
     }
 
     pub async fn process_packet(
-        buffer: &Vec<u8>,
+        mut buffer: ByteReader,
         address: &SocketAddr,
         sender: &Sender<Vec<u8>>,
         send_q: &Arc<RwLock<SendQueue>>,
         state: &Arc<Mutex<ConnectionState>>,
     ) -> Result<bool, ()> {
-        if let Ok(packet) = Packet::compose(buffer, &mut 0) {
-            if packet.is_online() {
-                match packet.get_online() {
-                    OnlinePacket::ConnectedPing(pk) => {
-                        let response = ConnectedPong {
-                            ping_time: pk.time,
-                            pong_time: current_epoch() as i64,
-                        };
-                        let mut q = send_q.write().await;
-                        if let Ok(_) = q
-                            .send_packet(response.into(), Reliability::Reliable, true)
-                            .await
-                        {
-                            return Ok(false);
-                        } else {
-                            rakrs_debug!(
-                                true,
-                                "[{}] Failed to send ConnectedPong packet!",
-                                to_address_token(*address)
-                            );
-                            return Err(());
-                        }
-                    }
-                    OnlinePacket::ConnectedPong(_pk) => {
-                        // do nothing rn
-                        // TODO: add ping calculation
+        let raw = buffer.clone();
+        let raw = raw.as_slice();
+        if let Ok(online_packet) = OnlinePacket::read(&mut buffer.clone()) {
+            match online_packet {
+                OnlinePacket::ConnectedPing(pk) => {
+                    let response = ConnectedPong {
+                        ping_time: pk.time,
+                        pong_time: current_epoch() as i64,
+                    };
+                    let mut q = send_q.write().await;
+                    if let Ok(_) = q
+                        .send_packet(response.into(), Reliability::Reliable, true)
+                        .await
+                    {
                         return Ok(false);
+                    } else {
+                        rakrs_debug!(
+                            true,
+                            "[{}] Failed to send ConnectedPong packet!",
+                            to_address_token(*address)
+                        );
+                        return Err(());
                     }
-                    OnlinePacket::ConnectionRequest(pk) => {
-                        let response = ConnectionAccept {
-                            system_index: 0,
-                            client_address: *address,
-                            internal_id: SocketAddr::new(
-                                IpAddr::V4(Ipv4Addr::new(255, 255, 255, 255)),
-                                19132,
-                            ),
-                            request_time: pk.time,
-                            timestamp: current_epoch() as i64,
-                        };
-                        let mut q = send_q.write().await;
-                        *state.lock().await = ConnectionState::Connecting;
-                        if let Ok(_) = q
-                            .send_packet(response.into(), Reliability::Reliable, true)
-                            .await
-                        {
-                            return Ok(false);
-                        } else {
-                            rakrs_debug!(
-                                true,
-                                "[{}] Failed to send ConnectionAccept packet!",
-                                to_address_token(*address)
-                            );
-                            return Err(());
-                        }
-                    }
-                    OnlinePacket::Disconnect(_) => {
-                        // Disconnect the client immediately.
-                        // connection.disconnect("Client disconnected.", false);
-                        return Ok(true);
-                    }
-                    OnlinePacket::LostConnection(_) => {
-                        // Disconnect the client immediately.
-                        // connection.disconnect("Client disconnected.", false);
-                        return Ok(true);
-                    }
-                    OnlinePacket::NewConnection(_) => {
-                        *state.lock().await = ConnectionState::Connected;
+                }
+                OnlinePacket::ConnectedPong(_pk) => {
+                    // do nothing rn
+                    // TODO: add ping calculation
+                    return Ok(false);
+                }
+                OnlinePacket::ConnectionRequest(pk) => {
+                    let internal_ids = vec![
+                        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(255, 255, 255, 255)), 19132),
+                        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(255, 255, 255, 255)), 19133),
+                        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(255, 255, 255, 255)), 19134),
+                        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(255, 255, 255, 255)), 19135),
+                        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(255, 255, 255, 255)), 19136),
+                    ];
+                    let response = ConnectionAccept {
+                        system_index: 0,
+                        client_address: *address,
+                        internal_ids,
+                        request_time: pk.time,
+                        timestamp: current_epoch() as i64,
+                    };
+                    let mut q = send_q.write().await;
+                    *state.lock().await = ConnectionState::Connecting;
+                    if let Ok(_) = q
+                        .send_packet(response.clone().into(), Reliability::Reliable, true)
+                        .await
+                    {
                         return Ok(false);
+                    } else {
+                        rakrs_debug!(
+                            true,
+                            "[{}] Failed to send ConnectionAccept packet!",
+                            to_address_token(*address)
+                        );
+                        return Err(());
                     }
-                    _ => {}
-                };
-
-                sender.send(buffer.clone()).await.unwrap();
-                return Ok(false);
-            } else {
-                *state.lock().await = ConnectionState::Disconnecting;
-                rakrs_debug!(
-                    true,
-                    "[{}] Invalid protocol! Disconnecting client!",
-                    to_address_token(*address)
-                );
-                return Err(());
+                }
+                OnlinePacket::Disconnect(_) => {
+                    // Disconnect the client immediately.
+                    // connection.disconnect("Client disconnected.", false);
+                    return Ok(true);
+                }
+                OnlinePacket::LostConnection(_) => {
+                    // Disconnect the client immediately.
+                    // connection.disconnect("Client disconnected.", false);
+                    return Ok(true);
+                }
+                OnlinePacket::NewConnection(_) => {
+                    *state.lock().await = ConnectionState::Connected;
+                    return Ok(false);
+                }
+                _ => {
+                    rakrs_debug!(
+                        true,
+                        "[{}] Forwarding packet to socket!\n{:?}",
+                        to_address_token(*address),
+                        buffer.as_slice()
+                    );
+                    sender.send(raw.to_vec()).await.unwrap();
+                    return Ok(false);
+                }
             }
+        } else if let Ok(_) = OfflinePacket::read(&mut buffer) {
+            *state.lock().await = ConnectionState::Disconnecting;
+            rakrs_debug!(
+                true,
+                "[{}] Invalid protocol! Disconnecting client!",
+                to_address_token(*address)
+            );
+            return Err(());
         }
 
-        sender.send(buffer.clone()).await.unwrap();
-        return Ok(false);
+        rakrs_debug!(
+            true,
+            "[{}] Either Game-packet or unknown packet, sending buffer to client...",
+            to_address_token(*address)
+        );
+        sender.send(raw.to_vec()).await.unwrap();
+        Ok(false)
     }
 
     /// Recieve a packet from the client.
@@ -575,7 +605,7 @@ impl Connection {
 
     /// Send a packet to the client.
     /// These will be sent next tick unless otherwise specified.
-    pub async fn send(&self, buffer: Vec<u8>, immediate: bool) -> Result<(), SendQueueError> {
+    pub async fn send(&self, buffer: &[u8], immediate: bool) -> Result<(), SendQueueError> {
         let mut q = self.send_queue.write().await;
         if let Err(e) = q
             .insert(buffer, Reliability::ReliableOrd, immediate, Some(0))

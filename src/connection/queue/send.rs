@@ -4,13 +4,14 @@ use std::sync::Arc;
 
 #[cfg(feature = "async_std")]
 use async_std::net::UdpSocket;
-use binary_utils::Streamable;
+
+use binary_util::interfaces::Writer;
 #[cfg(feature = "async_tokio")]
 use tokio::net::UdpSocket;
 
 use crate::protocol::ack::{Ack, Ackable, Record, SingleRecord};
 use crate::protocol::frame::{Frame, FramePacket};
-use crate::protocol::packet::Packet;
+use crate::protocol::packet::RakPacket;
 use crate::protocol::reliability::Reliability;
 use crate::protocol::RAKNET_HEADER_FRAME_OVERHEAD;
 use crate::rakrs_debug;
@@ -99,7 +100,7 @@ impl SendQueue {
     /// the buffer is larger than max MTU.
     pub async fn insert(
         &mut self,
-        packet: Vec<u8>,
+        packet: &[u8],
         reliability: Reliability,
         immediate: bool,
         channel: Option<u8>,
@@ -159,8 +160,8 @@ impl SendQueue {
                 }
 
                 // Add this frame packet to the recovery queue.
-                if let Ok(p) = pk.parse() {
-                    self.send_stream(&p[..]).await;
+                if let Ok(p) = pk.write_to_bytes() {
+                    self.send_stream(p.as_slice()).await;
                     self.ack.insert_id(pk.sequence, pk);
                     return Ok(());
                 } else {
@@ -225,8 +226,8 @@ impl SendQueue {
             self.ack.insert_id(self.reliable_seq.get(), pk.clone());
         }
 
-        if let Ok(buf) = pk.parse() {
-            self.send_stream(&buf[..]).await;
+        if let Ok(buf) = pk.write_to_bytes() {
+            self.send_stream(buf.as_slice()).await;
         }
     }
 
@@ -244,13 +245,16 @@ impl SendQueue {
 
     pub async fn send_packet(
         &mut self,
-        packet: Packet,
+        packet: RakPacket,
         reliability: Reliability,
         immediate: bool,
     ) -> Result<(), SendQueueError> {
         // parse the packet
-        if let Ok(buf) = packet.parse() {
-            if let Err(e) = self.insert(buf, reliability, immediate, None).await {
+        if let Ok(buf) = packet.write_to_bytes() {
+            if let Err(e) = self
+                .insert(buf.as_slice(), reliability, immediate, None)
+                .await
+            {
                 rakrs_debug!(
                     true,
                     "[{}] Failed to insert packet into send queue: {:?}",
@@ -286,8 +290,8 @@ impl SendQueue {
         // }
 
         for packet in resend_queue.iter() {
-            if let Ok(buf) = packet.parse() {
-                self.send_stream(&buf[..]).await;
+            if let Ok(buf) = packet.write_to_bytes() {
+                self.send_stream(buf.as_slice()).await;
             }
         }
     }
