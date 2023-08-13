@@ -529,7 +529,13 @@ impl Connection {
                         to_address_token(*address),
                         buffer.as_slice()
                     );
-                    sender.send(raw.to_vec()).await.unwrap();
+                    if let Err(_) = sender.send(raw.to_vec()).await {
+                        rakrs_debug!(
+                            "[{}] Failed to to forward packet to recv channel...",
+                            to_address_token(*address)
+                        );
+                        return Err(());
+                    }
                     return Ok(false);
                 }
             }
@@ -548,7 +554,13 @@ impl Connection {
             "[{}] Either Game-packet or unknown packet, sending buffer to client...",
             to_address_token(*address)
         );
-        sender.send(raw.to_vec()).await.unwrap();
+        if let Err(_) = sender.send(raw.to_vec()).await {
+            rakrs_debug!(
+                "[{}] Failed to to forward packet to recv channel...",
+                to_address_token(*address)
+            );
+            return Err(());
+        }
         Ok(false)
     }
 
