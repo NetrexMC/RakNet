@@ -10,7 +10,6 @@ use std::{
 };
 
 use binary_util::interfaces::{Reader, Writer};
-use binary_util::ByteReader;
 
 #[cfg(feature = "async_std")]
 use async_std::{
@@ -118,6 +117,7 @@ impl Connection {
         address: SocketAddr,
         socket: &Arc<UdpSocket>,
         net: Receiver<Vec<u8>>,
+        notifier: Arc<Sender<SocketAddr>>,
         mtu: u16,
     ) -> Self {
         let (net_sender, net_receiver) = bounded::<Vec<u8>>(100);
@@ -144,14 +144,14 @@ impl Connection {
 
         let tk = c.tasks.clone();
         let mut tasks = tk.lock().await;
-        tasks.push(c.init_tick());
+        tasks.push(c.init_tick(notifier));
         tasks.push(c.init_net_recv(net, net_sender).await);
 
         return c;
     }
 
     /// Initializes the client ticking process!
-    pub fn init_tick(&self) -> task::JoinHandle<()> {
+    pub fn init_tick(&self, notifier: Arc<Sender<SocketAddr>>) -> task::JoinHandle<()> {
         let address = self.address;
         let closer = self.disconnect.clone();
         let last_recv = self.recv_time.clone();
@@ -241,7 +241,7 @@ impl Connection {
                 #[cfg(feature = "async_std")]
                 select! {
                     _ = closer.wait().fuse() => {
-                        rakrs_debug!(true, "[{}] [TICK TASK] Connection has been closed due to closer!", to_address_token(address));
+                        rakrs_debug!(true, "[{}] [task: tick] Connection has been closed due to closer!", to_address_token(address));
                         break;
                     }
                     _ = sleep(Duration::from_millis(50)).fuse() => {
@@ -252,7 +252,7 @@ impl Connection {
                 #[cfg(feature = "async_tokio")]
                 select! {
                     _ = closer.wait() => {
-                        rakrs_debug!(true, "[{}] [TICK TASK] Connection has been closed due to closer!", to_address_token(address));
+                        rakrs_debug!(true, "[{}] [task: tick] Connection has been closed due to closer!", to_address_token(address));
                         break;
                     }
                     _ = sleep(Duration::from_millis(50)) => {
@@ -261,9 +261,38 @@ impl Connection {
                 }
             }
 
+            #[cfg(feature = "async_std")]
+            if let Ok(_) = notifier.send(address).await {
+                rakrs_debug!(
+                    true,
+                    "[{}] [task: tick] Connection has been closed due to closer!",
+                    to_address_token(address)
+                );
+            } else {
+                rakrs_debug!(
+                    true,
+                    "[{}] [task: tick] Connection has been closed due to closer!",
+                    to_address_token(address)
+                );
+            }
+
+            #[cfg(feature = "async_tokio")]
+            if let Ok(_) = notifier.send(address).await {
+                rakrs_debug!(
+                    true,
+                    "[{}] [task: tick] Connection has been closed due to closer!",
+                    to_address_token(address)
+                );
+            } else {
+                rakrs_debug!(
+                    true,
+                    "[{}] [task: tick] Connection has been closed due to closer!",
+                    to_address_token(address)
+                );
+            }
             rakrs_debug!(
                 true,
-                "[{}] Connection has been closed due to end of tick!",
+                "[{}] Connection has been cleaned up!",
                 to_address_token(address)
             );
         });
@@ -305,12 +334,11 @@ impl Connection {
                         drop(cstate);
 
                         let id = $payload[0];
-                        let mut reader = ByteReader::from(&$payload[..]);
                         match id {
                             // This is a frame packet.
                             // This packet will be handled by the recv_queue
                             0x80..=0x8d => {
-                                if let Ok(pk) = FramePacket::read(&mut reader) {
+                                if let Ok(pk) = FramePacket::read_from_slice(&$payload[..]) {
                                     let mut rq = recv_q.lock().await;
 
                                     if let Err(e) = rq.insert(pk) {
@@ -326,7 +354,7 @@ impl Connection {
 
                                     for buffer in buffers {
                                         let res = Connection::process_packet(
-                                            ByteReader::from(buffer), &address, &sender, &send_q, &state,
+                                            &buffer, &address, &sender, &send_q, &state,
                                         )
                                         .await;
                                         if let Ok(v) = res {
@@ -358,7 +386,7 @@ impl Connection {
                             }
                             NACK => {
                                 // Validate this is a nack packet
-                                if let Ok(nack) = Ack::read(&mut reader) {
+                                if let Ok(nack) = Ack::read_from_slice(&$payload[..]) {
                                     // The client acknowledges it did not recieve these packets
                                     // We should resend them.
                                     let mut sq = send_q.write().await;
@@ -387,7 +415,7 @@ impl Connection {
                             }
                             ACK => {
                                 // first lets validate this is an ack packet
-                                if let Ok(ack) = Ack::read(&mut reader) {
+                                if let Ok(ack) = Ack::read_from_slice(&$payload[..]) {
                                     // The client acknowledges it recieved these packets
                                     // We should remove them from the queue.
                                     let mut sq = send_q.write().await;
@@ -409,7 +437,7 @@ impl Connection {
                 #[cfg(feature = "async_std")]
                 select! {
                     _ = disconnect.wait().fuse() => {
-                        rakrs_debug!(true, "[{}] [RECV TASK] Connection has been closed due to closer!", to_address_token(address));
+                        rakrs_debug!(true, "[{}] [task: net_recv] Connection has been closed due to closer!", to_address_token(address));
                         break;
                     }
                     res = net.recv().fuse() => {
@@ -425,7 +453,7 @@ impl Connection {
                 #[cfg(feature = "async_tokio")]
                 select! {
                     _ = disconnect.wait() => {
-                        rakrs_debug!(true, "[{}] [RECV TASK] Connection has been closed due to closer!", to_address_token(address));
+                        rakrs_debug!(true, "[{}] [task: net_recv] Connection has been closed due to closer!", to_address_token(address));
                         break;
                     }
                     res = net.recv() => {
@@ -442,15 +470,13 @@ impl Connection {
     }
 
     pub async fn process_packet(
-        mut buffer: ByteReader,
+        buffer: &[u8],
         address: &SocketAddr,
         sender: &Sender<Vec<u8>>,
         send_q: &Arc<RwLock<SendQueue>>,
         state: &Arc<Mutex<ConnectionState>>,
     ) -> Result<bool, ()> {
-        let raw = buffer.clone();
-        let raw = raw.as_slice();
-        if let Ok(online_packet) = OnlinePacket::read(&mut buffer.clone()) {
+        if let Ok(online_packet) = OnlinePacket::read_from_slice(&buffer) {
             match online_packet {
                 OnlinePacket::ConnectedPing(pk) => {
                     let response = ConnectedPong {
@@ -527,9 +553,9 @@ impl Connection {
                         true,
                         "[{}] Forwarding packet to socket!\n{:?}",
                         to_address_token(*address),
-                        buffer.as_slice()
+                        buffer
                     );
-                    if let Err(_) = sender.send(raw.to_vec()).await {
+                    if let Err(_) = sender.send(buffer.to_vec()).await {
                         rakrs_debug!(
                             "[{}] Failed to to forward packet to recv channel...",
                             to_address_token(*address)
@@ -539,7 +565,7 @@ impl Connection {
                     return Ok(false);
                 }
             }
-        } else if let Ok(_) = OfflinePacket::read(&mut buffer) {
+        } else if let Ok(_) = OfflinePacket::read_from_slice(&buffer) {
             *state.lock().await = ConnectionState::Disconnecting;
             rakrs_debug!(
                 true,
@@ -554,7 +580,7 @@ impl Connection {
             "[{}] Either Game-packet or unknown packet, sending buffer to client...",
             to_address_token(*address)
         );
-        if let Err(_) = sender.send(raw.to_vec()).await {
+        if let Err(_) = sender.send(buffer.to_vec()).await {
             rakrs_debug!(
                 "[{}] Failed to to forward packet to recv channel...",
                 to_address_token(*address)

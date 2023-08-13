@@ -309,10 +309,10 @@ impl Ackable for SendQueue {
         for record in ack.records.iter() {
             match record {
                 Record::Single(SingleRecord { sequence }) => {
-                    if let Ok(_) = self.ack.remove(*sequence) {};
+                    if let Ok(_) = self.ack.remove(*sequence.0) {};
                 }
                 Record::Range(ranged) => {
-                    for i in ranged.start..ranged.end {
+                    for i in *ranged.start.0..*ranged.end.0 {
                         if let Ok(_) = self.ack.remove(i) {};
                     }
                 }
@@ -331,12 +331,12 @@ impl Ackable for SendQueue {
         for record in nack.records.iter() {
             match record {
                 Record::Single(single) => {
-                    if let Ok(packet) = self.ack.get(single.sequence) {
+                    if let Ok(packet) = self.ack.get(*single.sequence.0) {
                         resend_queue.push(packet.clone());
                     }
                 }
                 Record::Range(ranged) => {
-                    for i in ranged.start..ranged.end {
+                    for i in *ranged.start.0..*ranged.end.0 {
                         if let Ok(packet) = self.ack.get(i) {
                             resend_queue.push(packet.clone());
                         }

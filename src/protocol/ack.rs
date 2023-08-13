@@ -3,7 +3,7 @@ pub const NACK: u8 = 0xa0;
 
 use std::ops::Range;
 
-use binary_util::BinaryIo;
+use binary_util::{BinaryIo, types::{u24, LE}};
 
 pub(crate) trait Ackable {
     type NackItem;
@@ -32,13 +32,13 @@ pub enum Record {
 
 #[derive(Debug, Clone, BinaryIo)]
 pub struct SingleRecord {
-    pub sequence: u32,
+    pub sequence: LE<u24>,
 }
 
 #[derive(Debug, Clone, BinaryIo)]
 pub struct RangeRecord {
-    pub start: u32,
-    pub end: u32,
+    pub start: LE<u24>,
+    pub end: LE<u24>,
 }
 
 #[allow(dead_code)]
@@ -76,42 +76,36 @@ impl Ack {
         let mut current: Range<u32> = 0..0;
         missing.sort();
 
-        for m in missing {
-            // if the current range is empty, set the start to the current missing
-            if m > current.start && current.start == 0 {
+        for m in missing.clone() {
+            if current.start == 0 {
                 current.start = m;
                 current.end = m;
-                continue;
-            }
-            if m == current.end + 1 {
+            } else if m == current.end + 1 {
                 current.end = m;
-                continue;
             } else {
                 // end of range
-                records.push(Record::Range(RangeRecord {
-                    start: current.start,
-                    end: current.end,
-                }));
-                current.start = 0;
-                current.end = 0;
+                if current.start == current.end {
+                    records.push(
+                        Record::Single(
+                            SingleRecord {
+                                sequence: LE(current.start.into()),
+                            }
+                        )
+                    );
+                } else {
+                    records.push(
+                        Record::Range(
+                            RangeRecord {
+                                start: LE(current.start.into()),
+                                end: LE(current.end.into()),
+                            }
+                        )
+                    );
+                }
 
-                // we also need to add the current missing to the records
-                records.push(Record::Single(SingleRecord { sequence: m }));
+                current.start = m;
+                current.end = m;
             }
-        }
-
-        if current.start == current.end {
-            if current.start == 0 {
-                return Self::new(0, false);
-            }
-            records.push(Record::Single(SingleRecord {
-                sequence: current.start,
-            }));
-        } else if current.start != 0 && current.end != 0 {
-            records.push(Record::Range(RangeRecord {
-                start: current.start,
-                end: current.end,
-            }));
         }
 
         let mut nack = Self::new(records.len().try_into().unwrap(), nack);

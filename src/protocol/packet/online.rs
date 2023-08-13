@@ -75,7 +75,7 @@ pub struct ConnectionAccept {
 
 impl Reader<ConnectionAccept> for ConnectionAccept {
     fn read(buf: &mut ByteReader) -> std::io::Result<Self> {
-        let client_address = buf.read_struct::<SocketAddr>()?;
+        let client_address = buf.read_type::<SocketAddr>()?;
 
         // read the system index, this is
         let system_index = buf.read_i16()?;
@@ -86,7 +86,7 @@ impl Reader<ConnectionAccept> for ConnectionAccept {
             if buf.as_slice().len() < 16 {
                 break;
             }
-            internal_ids.push(buf.read_struct::<SocketAddr>()?);
+            internal_ids.push(buf.read_type::<SocketAddr>()?);
         }
 
         let request_time = buf.read_i64()?;
@@ -141,7 +141,7 @@ pub struct NewConnection {
 
 impl Reader<NewConnection> for NewConnection {
     fn read(buf: &mut ByteReader) -> std::io::Result<Self> {
-        let server_address = buf.read_struct::<SocketAddr>()?;
+        let server_address = buf.read_type::<SocketAddr>()?;
 
         let mut system_address = Vec::<SocketAddr>::new();
 
@@ -150,7 +150,7 @@ impl Reader<NewConnection> for NewConnection {
             if buf.as_slice().len() < 16 {
                 break;
             }
-            system_address.push(buf.read_struct::<SocketAddr>()?);
+            system_address.push(buf.read_type::<SocketAddr>()?);
         }
 
         let request_time = buf.read_i64()?;

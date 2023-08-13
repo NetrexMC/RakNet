@@ -62,7 +62,7 @@ pub struct OpenConnectRequest {
 impl Reader<OpenConnectRequest> for OpenConnectRequest {
     fn read(buf: &mut ByteReader) -> Result<OpenConnectRequest, std::io::Error> {
         let len = buf.as_slice().len();
-        buf.read_struct::<Magic>()?;
+        buf.read_type::<Magic>()?;
         Ok(OpenConnectRequest {
             protocol: buf.read_u8()?,
             mtu_size: (len + 1 + 28) as u16,

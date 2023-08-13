@@ -43,7 +43,7 @@ impl Reader<FramePacket> for FramePacket {
         let sequence = buf.read_u24_le()?;
 
         loop {
-            let frame_pos = buf.read_struct::<Frame>();
+            let frame_pos = buf.read_type::<Frame>();
             if let Ok(frame) = frame_pos {
                 frames.push(frame);
             } else {

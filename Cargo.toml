@@ -15,7 +15,7 @@ async_tokio = [ "tokio" ]
 
 [dependencies]
 rand = "0.8.3"
-binary-util = "0.3.0"
+binary-util = "0.3.4"
 tokio = { version = "1.28.2", features = ["full"], optional = true }
 byteorder = "1.4.3"
 futures = "0.3.19"

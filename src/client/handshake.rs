@@ -53,7 +53,7 @@ macro_rules! match_ids {
                 }
 
                 let len: usize;
-                let send_result = timeout(Duration::from_secs(5), $socket.recv(&mut recv_buf)).await;
+                let send_result = timeout(Duration::from_secs(2), $socket.recv(&mut recv_buf)).await;
 
                 if (send_result.is_err()) {
                     rakrs_debug!(true, "[CLIENT] Failed to receive packet from server! Is it offline?");
@@ -93,7 +93,7 @@ macro_rules! expect_reply {
             }
 
             let len: usize;
-            let send_result = timeout(Duration::from_secs(10), $socket.recv(&mut recv_buf)).await;
+            let send_result = timeout(Duration::from_secs(4), $socket.recv(&mut recv_buf)).await;
 
             if (send_result.is_err()) {
                 rakrs_debug!(
