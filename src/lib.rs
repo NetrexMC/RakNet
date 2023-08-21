@@ -4,7 +4,7 @@
 //!
 //! ## Getting Started
 //!
-//! RakNet (rak-rs) is available on [crates.io](), to use it, add the following to your `Cargo.toml`:
+//! RakNet (rak-rs) is available on [crates.io](https://crates.io/crates/rak-rs), to use it, add the following to your `Cargo.toml`:
 //!
 //! ```toml
 //! [dependencies]
