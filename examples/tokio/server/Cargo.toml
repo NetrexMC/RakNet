@@ -1,0 +1,12 @@
+[package]
+name = "raknet-test"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+async-std = { version = "1.12.0", features = [ "attributes" ] }
+console-subscriber = "0.1.8"
+rak-rs = { path = "../../../", features = [ "debug", "debug_all", "mcpe", "async_tokio" ], default-features = false }
+tokio = "1.23.0"

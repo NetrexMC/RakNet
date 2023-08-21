@@ -1,6 +1,8 @@
 /// Connection States
-/// These are all possible states of a raknet session.
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
+/// These are all possible states of a raknet session, and while accessible externally
+/// Please note that these are not states relied on within the original implementation of
+/// raknet, which preserve both "Unconnected" and "Connected"
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 pub enum ConnectionState {
     /// The Session is not yet connected, but is actively trying to connect.
     /// Clients in this state are considered to be actively trying to connect.
@@ -27,12 +29,18 @@ pub enum ConnectionState {
     Disconnected,
 
     /// The session is replying to the server but is not actually connected. This is
-    /// the state where ping and pong packets are being sent.
+    /// the state where ping and pong packets are being sent. Similarly, this is
+    /// the "Unconnected" state, hence "UnconnectedPing"
     Unidentified,
+
+    /// The session has been identified and is ready to be connected.
+    /// This is the state after a connection has been established.
+    Identified,
 
     /// The session is not connected and is not trying to connect.
     /// During this state the session will be dropped. This state occurs when a client
     /// has completely stopped responding to packets or their socket is destroyed.
+    /// This is not the same as the [Disconnected](rak_rs::conn::state::Disconnected) state.
     Offline,
 }
 
@@ -83,6 +91,7 @@ impl std::fmt::Display for ConnectionState {
             Self::Disconnecting => write!(f, "Disconnecting"),
             Self::Disconnected => write!(f, "Disconnected"),
             Self::Unidentified => write!(f, "Unidentified"),
+            Self::Identified => write!(f, "Identified"),
             Self::Offline => write!(f, "Offline"),
         }
     }

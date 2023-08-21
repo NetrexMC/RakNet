@@ -1,6 +1,8 @@
+.DS_Store
 target
 
 # Ignore lock files
 Cargo.lock
 
 *.old/
+*.profraw

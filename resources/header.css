@@ -1,0 +1,20 @@
+
+.warning-2 {
+    background: rgba(255,240,76,0.34) !important;
+    padding: 0.75em;
+    border-left: 2px solid #fce811;
+}
+
+.warning-2 code {
+    background: rgba(211,201,88,0.64) !important;
+}
+
+.notice-2 {
+    background: rgba(76, 240, 255, 0.629) !important;
+    padding: 0.75em;
+    border-left: 2px solid #4c96ff;
+}
+
+.notice-2 code {
+    background: rgba(88, 211, 255, 0.64) !important;
+}

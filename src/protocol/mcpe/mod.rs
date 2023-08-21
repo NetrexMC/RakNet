@@ -1,12 +1,18 @@
-/// Minecrafts specific protocol for the `UnconnectedPong` packet.
+/// Minecraft has specific protocol for the `UnconnectedPong` packet.
 /// This data is attached to the Unconnect Pong packet and is used to
 /// display information about the server.
-///
-/// EG:
-/// ```markdown
-/// Netrex Server v1.18.0 - 1/1 players online
-/// ```
 pub mod motd;
 
-/// Packet specific data for Minecraft, for now it's just the `UnconnectedPong` packet.
-pub mod packet;
+use binary_util::BinaryIo;
+
+use self::motd::Motd;
+
+use super::Magic;
+
+#[derive(Debug, Clone, BinaryIo)]
+pub struct UnconnectedPong {
+    pub timestamp: u64,
+    pub server_id: u64,
+    pub magic: Magic,
+    pub motd: Motd,
+}

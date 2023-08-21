@@ -1,22 +1,26 @@
 [package]
-name = "rakrs"
-version = "0.3.0-rc.2"
+name = "rak-rs"
+version = "0.1.0"
 authors = ["Bavfalcon9 <olybear9@gmail.com>"]
 edition = "2021"
 
+[package.metadata.docs.rs]
+rustdoc-args = ["--html-in-header", "./resources/header.html"]
+
 [features]
-default = [ "async_tokio" ]
+default = [ "async_std" ]
+# default = ["async_tokio" ]
 mcpe = []
 debug = []
+debug_all = []
 async_std = [ "async-std" ]
 async_tokio = [ "tokio" ]
 
 [dependencies]
 rand = "0.8.3"
-binary_utils = { git = "https://github.com/NetrexMC/BinaryUtil", tag = "v0.2.2" }
-netrex_events = { git = "https://github.com/NetrexMC/Events", branch = "master" }
-tokio = { version = "1.15.0", features = ["full"], optional = true }
+binary-util = "0.3.4"
+tokio = { version = "1.28.2", features = ["full"], optional = true }
 byteorder = "1.4.3"
 futures = "0.3.19"
 futures-executor = "0.3.19"
-async-std = { version = "1.10.0", optional = true }
+async-std = { version = "1.12.0", optional = true, features = [ "unstable" ] }

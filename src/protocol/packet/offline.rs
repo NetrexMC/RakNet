@@ -1,35 +1,45 @@
-use std::io::Write;
+//!  Offline packets are packets that are sent before a connection is established.
+//! In rak-rs, these packets consist of:
+//! - [`UnconnectedPing`]
+//! - [`UnconnectedPong`]
+//! - [`OpenConnectRequest`]
+//! - [`OpenConnectReply`]
+//! - [`SessionInfoRequest`]
+//! - [`SessionInfoReply`]
+//! - [`IncompatibleProtocolVersion`]
+//!
+//! During this stage, the client and server are exchanging information about each other, such as
+//! the server id, the client id, the mtu size, etc, to prepare for the connection handshake.
 use std::net::SocketAddr;
 
-use binary_utils::error::BinaryError;
-use binary_utils::*;
-use byteorder::WriteBytesExt;
-
+use super::RakPacket;
 #[cfg(feature = "mcpe")]
-pub use crate::protocol::mcpe::packet::UnconnectedPong;
+pub use crate::protocol::mcpe::UnconnectedPong;
+use crate::protocol::Magic;
+use crate::protocol::RAKNET_HEADER_OVERHEAD;
+use crate::register_packets;
 
-use super::Packet;
-use super::PacketId;
-use super::Payload;
-use crate::protocol::util::Magic;
-use crate::{packet_id, register_packets};
+use binary_util::interfaces::{Reader, Writer};
+use binary_util::io::{ByteReader, ByteWriter};
+use binary_util::BinaryIo;
 
-/// A enum that represents all offline packets.
-#[derive(Clone, Debug)]
+/// This is an enum of all offline packets.
+///
+/// You can use this to read and write offline packets,
+/// with the `binary_util` traits `Reader` and `Writer`.
+#[derive(Clone, Debug, BinaryIo)]
+#[repr(u8)]
 pub enum OfflinePacket {
-    UnconnectedPing(UnconnectedPing),
-    OpenConnectRequest(OpenConnectRequest),
-    OpenConnectReply(OpenConnectReply),
-    SessionInfoRequest(SessionInfoRequest),
-    SessionInfoReply(SessionInfoReply),
-    #[cfg(feature = "mcpe")]
-    UnconnectedPong(UnconnectedPong),
-    #[cfg(not(feature = "mcpe"))]
-    UnconnectedPong(UnconnectedPong),
-    IncompatibleProtocolVersion(IncompatibleProtocolVersion),
+    UnconnectedPing(UnconnectedPing) = 0x01,
+    UnconnectedPong(UnconnectedPong) = 0x1c,
+    OpenConnectRequest(OpenConnectRequest) = 0x05,
+    OpenConnectReply(OpenConnectReply) = 0x06,
+    SessionInfoRequest(SessionInfoRequest) = 0x07,
+    SessionInfoReply(SessionInfoReply) = 0x08,
+    IncompatibleProtocolVersion(IncompatibleProtocolVersion) = 0x19,
 }
 
-register_packets![
+register_packets! {
     Offline is OfflinePacket,
     UnconnectedPing,
     UnconnectedPong,
@@ -38,83 +48,182 @@ register_packets![
     SessionInfoRequest,
     SessionInfoReply,
     IncompatibleProtocolVersion
-];
+}
 
-/// Unconnected Ping
-#[derive(Debug, Clone, BinaryStream)]
+/// Send to the other peer expecting a [`UnconnectedPong`] packet,
+/// this is used to determine the latency between the client and the server,
+/// and to determine if the server is online.
+///
+/// If the peer does not respond with a [`UnconnectedPong`] packet, the iniatior should
+/// expect that the server is offline.
+#[derive(Debug, Clone, BinaryIo)]
 pub struct UnconnectedPing {
     pub timestamp: u64,
     pub magic: Magic,
     pub client_id: i64,
 }
-packet_id!(UnconnectedPing, 0x01);
 
-/// Unconnected Pong
+/// Sent in response to a [`UnconnectedPing`] packet.
+/// This is used to determine the latency between the client and the server, and to determine
+/// that the peer is online.
+///
+/// <style>
+/// .warning-2 {
+///     background: rgba(255,240,76,0.34) !important;
+///     padding: 0.75em;
+///     border-left: 2px solid #fce811;
+///     font-family: "Source Serif 4", NanumBarunGothic, serif;
+///  }
+///
+/// .warning-2 code {
+///     background: rgba(211,201,88,0.64) !important;
+/// }
+///
+/// .notice-2 {
+///     background: rgba(88, 211, 255, 0.34) !important;
+///     padding: 0.75em;
+///     border-left: 2px solid #4c96ff;
+///     font-family: "Source Serif 4", NanumBarunGothic, serif;
+/// }
+///
+/// .notice-2 code {
+///     background: rgba(88, 211, 255, 0.64) !important;
+/// }
+/// </style>
+/// <div class="notice-2">
+///     <strong> Note: </strong>
+///    <p>
+///         If the client is a Minecraft: Bedrock Edition client, this packet is not sent
+///         and the
+///         <a
+///             href="/rak-rs/latest/protocol/mcpe/struct.UnconnectedPong.html"
+///             title="struct rak_rs::protocol::mcpe::UnconnectedPing">
+///             UnconnectedPong
+///         </a>
+///         from the <code>mcpe</code> module is sent instead.
+///   </p>
+/// </div>
+///
+/// [`UnconnectedPong`]: crate::protocol::packet::offline::UnconnectedPong
 #[cfg(not(feature = "mcpe"))]
-#[derive(Debug, Clone, BinaryStream)]
+#[derive(Debug, Clone, BinaryIo)]
 pub struct UnconnectedPong {
     pub timestamp: u64,
     pub server_id: u64,
     pub magic: Magic,
 }
-#[cfg(not(feature = "mcpe"))]
-packet_id!(UnconnectedPong, 0x1c);
 
 /// This packet is the equivelant of the `OpenConnectRequest` packet in RakNet.
+///
+/// This packet is sent by the peer to a server to request a connection.
+/// It contains information about the client, such as the protocol version, and the mtu size.
+/// The peer should expect a [`OpenConnectReply`] packet in response to this packet, if the
+/// server accepts the connection. Otherwise, the peer should expect a [`IncompatibleProtocolVersion`]
+/// packet to be sent to indicate that the server does not support the protocol version.
+///
+/// <style>
+/// .warning-2 {
+///     background: rgba(255,240,76,0.34) !important;
+///     padding: 0.75em;
+///     border-left: 2px solid #fce811;
+///     font-family: "Source Serif 4", NanumBarunGothic, serif;
+///  }
+///
+/// .warning-2 code {
+///     background: rgba(211,201,88,0.64) !important;
+/// }
+///
+/// .notice-2 {
+///     background: rgba(88, 211, 255, 0.34) !important;
+///     padding: 0.75em;
+///     border-left: 2px solid #4c96ff;
+///     font-family: "Source Serif 4", NanumBarunGothic, serif;
+/// }
+///
+/// .notice-2 code {
+///     background: rgba(88, 211, 255, 0.64) !important;
+/// }
+/// </style>
+/// <div class="notice-2">
+///     <strong> Note: </strong>
+///    <p>
+///         Internally this packet is padded by the given
+///         <code>mtu_size</code> in the packet. This is done by appending null bytes
+///         to the current buffer of the packet which is calculated by adding the difference
+///         between the <code>mtu_size</code> and the current length.
+///   </p>
+/// </div>
 #[derive(Debug, Clone)]
 pub struct OpenConnectRequest {
-    pub magic: Magic,
-    pub protocol: u8,
-    pub mtu_size: u16,
+    pub protocol: u8,  // 9
+    pub mtu_size: u16, // 500
 }
-impl Streamable for OpenConnectRequest {
-    fn compose(source: &[u8], position: &mut usize) -> Result<Self, BinaryError> {
-        Ok(Self {
-            magic: Magic::compose(source, position)?,
-            protocol: u8::compose(source, position)?,
-            mtu_size: (source.len() + 1 + 28) as u16,
+
+impl Reader<OpenConnectRequest> for OpenConnectRequest {
+    fn read(buf: &mut ByteReader) -> Result<OpenConnectRequest, std::io::Error> {
+        let len = buf.as_slice().len();
+        buf.read_type::<Magic>()?;
+        Ok(OpenConnectRequest {
+            protocol: buf.read_u8()?,
+            mtu_size: (len + 1 + 28) as u16,
         })
     }
+}
 
-    fn parse(&self) -> Result<Vec<u8>, BinaryError> {
-        let mut stream = Vec::<u8>::new();
-        stream
-            .write(&self.magic.parse()?[..])
-            .expect("Failed to parse open connect request");
-        stream.write_u8(self.protocol)?;
+impl Writer for OpenConnectRequest {
+    fn write(&self, buf: &mut ByteWriter) -> Result<(), std::io::Error> {
+        buf.write_type::<Magic>(&Magic::new())?;
+        buf.write_u8(self.protocol)?;
         // padding
-        for _ in 0..self.mtu_size {
-            stream.write_u8(0)?;
+        // remove 28 bytes from the mtu size
+        let mtu_size = self.mtu_size - buf.as_slice().len() as u16 - RAKNET_HEADER_OVERHEAD as u16;
+        for _ in 0..mtu_size {
+            buf.write_u8(0)?;
         }
-        Ok(stream)
+        Ok(())
     }
 }
-packet_id!(OpenConnectRequest, 0x05);
 
 // Open Connection Reply
-/// Sent to the client when the server accepts a client.
-/// This packet is the equivalent of the `Open Connect Reply 1` packet.
-#[derive(Debug, Clone, BinaryStream)]
+/// This packet is sent in response to a [`OpenConnectRequest`] packet, and confirms
+/// the information sent by the peer in the [`OpenConnectRequest`] packet.
+///
+/// This packet is the equivalent of the `Open Connect Reply 1` within the original RakNet implementation.
+///
+/// If the server chooses to deny the connection, it should send a [`IncompatibleProtocolVersion`]
+/// or ignore the packet.
+#[derive(Debug, Clone, BinaryIo)]
 pub struct OpenConnectReply {
     pub magic: Magic,
     pub server_id: u64,
     pub security: bool,
     pub mtu_size: u16,
 }
-packet_id!(OpenConnectReply, 0x06);
 
-/// Session info, also known as Open Connect Request 2
-#[derive(Debug, Clone, BinaryStream)]
+/// This packet is sent after receiving a [`OpenConnectReply`] packet, and confirms
+/// that the peer wishes to proceed with the connection. The information within this packet
+/// is primarily used to get the external address of the peer.
+///
+/// This packet is the equivalent of the `Open Connect Request 2` within the original RakNet implementation.
+#[derive(Debug, Clone, BinaryIo)]
 pub struct SessionInfoRequest {
     pub magic: Magic,
+    /// The socket address of the peer you are sending
+    /// this packet to.
     pub address: SocketAddr,
+    /// The mtu size of the peer you are sending this packet to.
     pub mtu_size: u16,
+    /// Your internal client id.
     pub client_id: i64,
 }
-packet_id!(SessionInfoRequest, 0x07);
 
-/// Session Info Reply, also known as Open Connect Reply 2
-#[derive(Debug, Clone, BinaryStream)]
+/// This packet is sent in response to a [`SessionInfoRequest`] packet, and confirms
+/// all the information sent by the peer in the [`SessionInfoRequest`] packet. This packet
+/// also specifies the external address of the peer, as well as whether or not
+/// encryption at the RakNet level is enabled on the server.
+///
+/// This packet is the equivalent of the `Open Connect Reply 2` within the original RakNet implementation.
+#[derive(Debug, Clone, BinaryIo)]
 pub struct SessionInfoReply {
     pub magic: Magic,
     pub server_id: u64,
@@ -122,12 +231,12 @@ pub struct SessionInfoReply {
     pub mtu_size: u16,
     pub security: bool,
 }
-packet_id!(SessionInfoReply, 0x08);
 
-#[derive(Debug, Clone, BinaryStream)]
+/// This packet is sent by the server to indicate that the server does not support the
+/// protocol version of the client.
+#[derive(Debug, Clone, BinaryIo)]
 pub struct IncompatibleProtocolVersion {
     pub protocol: u8,
     pub magic: Magic,
     pub server_id: u64,
 }
-packet_id!(IncompatibleProtocolVersion, 0x19);
