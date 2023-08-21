@@ -8,7 +8,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! rakrs = "0.1.0"
+//! rak-rs = "0.3.0"
 //! ```
 //!
 //! ## Features
@@ -19,7 +19,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! rak_rs = { version = "0.1.0", default-features = false, features = [ "async_tokio", "mcpe" ] }
+//! rak-rs = { version = "0.3.0", default-features = false, features = [ "async_tokio", "mcpe" ] }
 //! ```
 //!
 //!
