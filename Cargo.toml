@@ -1,8 +1,11 @@
 [package]
 name = "rak-rs"
 version = "0.3.0"
-authors = ["Bavfalcon9 <olybear9@gmail.com>"]
+authors = ["John Bergman <olybear9@gmail.com>"]
 edition = "2021"
+description = "A fully functional RakNet implementation in pure rust, asynchronously driven."
+license = "apache-2.0"
+repository = "https://github.com/NetrexMC/RakNet"
 
 [package.metadata.docs.rs]
 rustdoc-args = ["--html-in-header", "./resources/header.html"]
