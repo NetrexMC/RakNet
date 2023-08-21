@@ -2,6 +2,8 @@
 
 A fully functional RakNet implementation in pure rust, asynchronously driven.
 
+<a href="https://discord.gg/y4aWA5MQxK"><img src="https://img.shields.io/discord/846586369568800798.svg?label=&logo=discord&logoColor=ffffff&color=7389D8&labelColor=6A7EC2"></a>
+
 ## Getting Started
 
 RakNet (rak-rs) is available on [crates.io](), to use it, add the following to your `Cargo.toml`:
