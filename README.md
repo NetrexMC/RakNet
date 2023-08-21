@@ -8,7 +8,7 @@ RakNet (rak-rs) is available on [crates.io](), to use it, add the following to y
 
 ```toml
 [dependencies]
-rakrs = "0.3.0"
+rakrs = "0.1.0"
 ```
 
 ## Features
@@ -31,7 +31,7 @@ rak-rs also provides the following modules:
 - [`rak_rs::error`](https://docs.rs/rak-rs/latest/rak-rs/error) - A module with errors that both the Client and Server can respond with.
 - [`rak_rs::protocol`](https://docs.rs/rak-rs/latest/rak-rs/protocol) - A lower level implementation of RakNet, responsible for encoding and decoding packets.
 - [`rak_rs::server`](https://docs.rs/rak-rs/latest/rak-rs/server) - The base server implementation of RakNet.
-- [`rak_rs::utils`](https://docs.rs/rak-rs/latest/rak-rs/utils)  - General utilities used within `rak-rs`.
+- [`rak_rs::util`](https://docs.rs/rak-rs/latest/rak-rs/utils)  - General utilities used within `rak-rs`.
 
 # Client
 

@@ -1,3 +1,39 @@
+//! This module contains the client implementation of RakNet.
+//! This module allows you to connect to a RakNet server, and
+//! send and receive packets. This is the bare-bones implementation
+//! for a RakNet client.
+//!
+//! # Getting Started
+//! Connecting to a server is extremely easy with `rak-rs`, and can be done in a few lines of code.
+//! In the following example we connect to `my_server.net:19132` and send a small packet, then wait
+//! for a response, then close the connection when we're done.
+//!
+//! ```rust ignore
+//! use rak_rs::client::{Client, DEFAULT_MTU};
+//!
+//! #[async_std::main]
+//! async fn main() {
+//!     let version: u8 = 10;
+//!     let mut client = Client::new(version, DEFAULT_MTU);
+//!
+//!     if let Err(_) = client.connect("my_server.net:19132").await {
+//!         println!("Failed to connect to server!");
+//!         return;
+//!     }
+//!
+//!     println!("Connected to server!");
+//!
+//!     client.send_ord(vec![254, 0, 1, 1], Some(1));
+//!
+//!     loop {
+//!         let packet = client.recv().await.unwrap();
+//!         println!("Received a packet! {:?}", packet);
+//!         break;
+//!     }
+//!
+//!     client.close().await;
+//! }
+//! ```
 pub mod discovery;
 pub mod handshake;
 
@@ -68,8 +104,63 @@ pub const DEFAULT_MTU: u16 = 1400;
 
 use self::handshake::{ClientHandshake, HandshakeStatus};
 
-/// This struct is used to connect to RakNet servers.
-/// To start a connection, use `Client::connect()`.
+/// This is the client implementation of RakNet.
+/// This struct includes a few designated methods for sending and receiving packets.
+/// - [`Client::send_ord()`] - Sends a packet with the [`Reliability::ReliableOrd`] reliability.
+/// - [`Client::send_seq()`] - Sends a packet with the [`Reliability::ReliableSeq`] reliability.
+/// - [`Client::send()`] - Sends a packet with a custom reliability.
+///
+/// # Ping Example
+/// This is a simple example of how to use the client, this example will ping a server and print the latency.
+/// ```rust ignore
+/// use rak_rs::client::{Client, DEFAULT_MTU};
+/// use std::net::UdpSocket;
+/// use std::sync::Arc;
+///
+/// #[async_std::main]
+/// async fn main() {
+///     let mut socket = UdpSocket::bind("my_cool_server.net:19193").unwrap();
+///     let socket_arc = Arc::new(socket);
+///     if let Ok(pong) = Client::ping(socket).await {
+///         println!("Latency: {}ms", pong.pong_time - pong.ping_time);
+///     }
+/// }
+/// ```
+///
+/// # Implementation Example
+/// In the following example we connect to `my_server.net:19132` and send a small packet, then wait
+/// for a response, then close the connection when we're done.
+///
+/// ```rust ignore
+/// use rak_rs::client::{Client, DEFAULT_MTU};
+///
+/// #[async_std::main]
+/// async fn main() {
+///     let version: u8 = 10;
+///     let mut client = Client::new(version, DEFAULT_MTU);
+///
+///     if let Err(_) = client.connect("my_server.net:19132").await {
+///         println!("Failed to connect to server!");
+///         return;
+///     }
+///
+///     println!("Connected to server!");
+///
+///     client.send_ord(vec![254, 0, 1, 1], Some(1));
+///
+///     loop {
+///         let packet = client.recv().await.unwrap();
+///         println!("Received a packet! {:?}", packet);
+///         break;
+///     }
+///
+///     client.close().await;
+/// }
+/// ```
+///
+/// [`Client::send_ord()`]: crate::client::Client::send_ord
+/// [`Client::send_seq()`]: crate::client::Client::send_seq
+/// [`Client::send()`]: crate::client::Client::send
 pub struct Client {
     /// The connection state of the client.
     pub(crate) state: Arc<Mutex<ConnectionState>>,
@@ -99,7 +190,16 @@ pub struct Client {
 
 impl Client {
     /// Creates a new client.
-    /// > Note: This does not start a connection. You must use `Client::connect()` to start a connection.
+    /// > Note: This does not start a connection. You must use [Client::connect()] to start a connection.
+    ///
+    /// # Example
+    /// ```rust ignore
+    /// use rak_rs::client::Client;
+    ///
+    /// let mut client = Client::new(10, 1400);
+    /// ```
+    ///
+    /// [Client::connect()]: crate::client::Client::connect
     pub fn new(version: u8, mtu: u16) -> Self {
         let (internal_send, internal_recv) = bounded::<Vec<u8>>(10);
         Self {
@@ -118,8 +218,24 @@ impl Client {
         }
     }
 
-    /// Connects to a RakNet server.
-    /// > Note: This is an async function. You must await it.
+    /// This method should be used after [`Client::new()`] to start the connection.
+    /// This method will start the connection, and will return a [`ClientError`] if the connection fails.
+    ///
+    /// # Example
+    /// ```rust ignore
+    /// use rak_rs::client::Client;
+    ///
+    /// #[async_std::main]
+    /// async fn main() {
+    ///     let mut client = Client::new(10, 1400);
+    ///     if let Err(_) = client.connect("my_server.net:19132").await {
+    ///         println!("Failed to connect to server!");
+    ///         return;
+    ///     }
+    /// }
+    /// ```
+    ///
+    /// [`Client::new()`]: crate::client::Client::new
     pub async fn connect<Addr: for<'a> Into<PossiblySocketAddr<'a>>>(
         &mut self,
         addr: Addr,
@@ -808,6 +924,7 @@ impl Client {
 
 impl Drop for Client {
     fn drop(&mut self) {
+        // todo: There is DEFINITELY a better way to do this...
         futures_executor::block_on(async move { self.close_notifier.lock().await.notify().await });
     }
 }

@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 #[cfg(feature = "async_std")]
 use async_std::task::sleep as async_sleep;
 use std::net::{SocketAddr, ToSocketAddrs};
@@ -50,7 +51,48 @@ impl_gen!(usize);
 /// old and un-used values. Key serves as a `packet_id` in
 /// rakrs, but this could be used else-where.
 ///
-/// ## Deprecated in favor of `RecoveryQueue<T>`
+/// <style>
+/// .warning-2 {
+///     background: rgba(255,240,76,0.34) !important;
+///     padding: 0.75em;
+///     border-left: 2px solid #fce811;
+///     font-family: "Source Serif 4", NanumBarunGothic, serif;
+///  }
+///
+/// .warning-2 code {
+///     background: rgba(211,201,88,0.64) !important;
+/// }
+///
+/// .alert-2 {
+///     background: rgba(255, 76, 76, 0.34) !important;
+///     padding: 0.75em;
+///     border-left: 2px solid #ff4c4c;
+///     font-family: "Source Serif 4", NanumBarunGothic, serif;
+/// }
+///
+/// .alert-2 code {
+///     background: rgba(255, 76, 76, 0.64) !important;
+/// }
+///
+/// .notice-2 {
+///     background: rgba(88, 211, 255, 0.34) !important;
+///     padding: 0.75em;
+///     border-left: 2px solid #4c96ff;
+///     font-family: "Source Serif 4", NanumBarunGothic, serif;
+/// }
+///
+/// .notice-2 code {
+///     background: rgba(88, 211, 255, 0.64) !important;
+/// }
+/// </style>
+///
+/// <div class="alert-2">
+///     <strong>Warning:</strong>
+///     <p>
+///         This struct will be removed in <code>0.2.0</code> in favor of <code>RecoveryQueue</code>.
+///     </p>
+/// </div>
+///
 ///
 /// Usage example:
 /// ```rust
@@ -63,6 +105,10 @@ impl_gen!(usize);
 /// myStore.flush();
 /// ```
 #[derive(Debug, Clone)]
+#[deprecated(
+    since = "0.0.1",
+    note = "This is deprecated in favor of `RecoveryQueue<T>`"
+)]
 pub struct CacheStore<K, V> {
     pub(crate) store: HashMap<K, (SystemTime, Vec<V>)>,
 }

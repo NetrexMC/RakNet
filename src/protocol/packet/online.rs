@@ -1,3 +1,17 @@
+//! Online packets are packets that are sent when the client is connected to the server
+//! and are used to keep the connection alive, and to send game packets to the server.
+//!
+//! The following module provides the following packets:
+//! - [`ConnectedPing`]
+//! - [`ConnectedPong`]
+//! - [`LostConnection`]
+//! - [`ConnectionRequest`]
+//! - [`ConnectionAccept`]
+//! - [`NewConnection`]
+//! - [`Disconnect`]
+//!
+//! During this stage, the client and server are exchanging information about each other,
+//! to initialize the connection within raknet, and completing the connection handshake.
 use std::net::SocketAddr;
 
 use super::RakPacket;
@@ -7,6 +21,10 @@ use binary_util::interfaces::{Reader, Writer};
 use binary_util::io::{ByteReader, ByteWriter};
 use binary_util::BinaryIo;
 
+/// An enum of all Online packets.
+///
+/// You can use this to read and write online packets,
+/// with the `binary_util` traits `Reader` and `Writer`.
 #[derive(BinaryIo, Clone, Debug)]
 #[repr(u8)]
 pub enum OnlinePacket {
@@ -30,19 +48,29 @@ register_packets! {
     Disconnect
 }
 
-/// Connected Ping Packet
-/// This packet is sent by the client to the server.
-/// The server should respond with a `ConnectedPong` packet.
+/// This packet is sent by either the client or the server to the other peer.
+/// The other peer should respond with a [`ConnectedPong`] packet. In general
+/// you should be sending this packet every 5 seconds to keep the connection alive.
+/// <br />
+/// <br />
+/// If you do not continue to send this packet, the connection will be closed after
+/// the other peer does not receive a [`ConnectedPong`] packet for the configured timeout option.
 #[derive(Clone, Debug, BinaryIo)]
 pub struct ConnectedPing {
+    /// The time you sent the packet to the peer.
     pub time: i64,
 }
 
-/// Connected Pong Packet
-/// This packet is sent by the server to the client in response to a `ConnectedPing` packet.
+/// Sent in response to a [`ConnectedPing`] packet.
+///
+/// This packet is sent by the other peer in response to a [`ConnectedPing`] packet as
+/// an acknowledgement that the connection is still alive. It contains the time of the
+/// round trip from the time that the initiator sent the [`ConnectedPing`] packet.
 #[derive(Clone, Debug, BinaryIo)]
 pub struct ConnectedPong {
+    /// The time that the peer sent the [`ConnectedPing`] packet.
     pub ping_time: i64,
+    /// The time that you sent the [`ConnectedPong`] packet to the peer.
     pub pong_time: i64,
 }
 

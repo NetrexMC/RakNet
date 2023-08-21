@@ -1,3 +1,47 @@
+//! This module contains the logic to handle a connection or "peer" to the server.
+//! This is used internally by the server, and is not intended to be used by the end user outside
+//! of the server.
+//!
+//! This module contains the following:
+//! - [`Connection`]: The connection struct, which is used to hold the connection state.
+//! - [`ConnectionState`]: The connection state enum, which is used to hold the state of the connection.
+//! - [`ConnectionMeta`]: The connection meta struct, which is used to hold the meta information of the connection.
+//!
+//! This module also contains the following submodules:
+//! - [`controller`]: The controller submodule, which is used to handle relability of the connection.
+//! - [`queue`]: The queue submodule, which is used to handle the connection queues.
+//! - [`state`]: The state submodule, which is used to handle the connection state.
+//!
+//! # Example
+//! This is a snippet of code you would use after you've accepted a connection from the server with
+//! [`Listener::accept()`].
+//!
+//! ```ignore
+//! use rakrs::connection::Connection;
+//!
+//! async fn handle(mut conn: Connection) {
+//!     loop {
+//!         // get a packet sent from the client
+//!         if let Ok(pk) = conn.recv().await {
+//!             println!("Got a connection packet {:?} ", pk);
+//!         }
+//!
+//!         if !conn.state.lock().await.unwrap().is_available() {
+//!             conn.disconnect("Client disconnected.", false);
+//!             println!("Client disconnected!");
+//!             break;
+//!         }
+//!     }
+//! }
+//! ```
+//!
+//! [`Listener::accept()`]: crate::server::Listener::accept
+//! [`Connection`]: crate::connection::Connection
+//! [`ConnectionState`]: crate::connection::state::ConnectionState
+//! [`ConnectionMeta`]: crate::connection::ConnectionMeta
+//! [`controller`]: crate::connection::controller
+//! [`queue`]: crate::connection::queue
+//! [`state`]: crate::connection::state
 pub mod controller;
 /// Necessary queues for the connection.
 pub mod queue;
@@ -44,7 +88,7 @@ use crate::{
         frame::FramePacket,
         packet::{
             offline::OfflinePacket,
-            online::{ConnectedPing, ConnectedPong, ConnectionAccept, OnlinePacket},
+            online::{ConnectedPing, ConnectedPong, ConnectionAccept, Disconnect, OnlinePacket},
         },
         reliability::Reliability,
     },
@@ -77,19 +121,52 @@ impl ConnMeta {
     }
 }
 
-/// This struct is utilized internally and represented
-/// as per each "connection" or "socket" to the server.
-/// This is **NOT** a struct that supports connecting TO
-/// a RakNet instance, but rather a struct that HOLDS a
-/// inbound connection connecting to a `Listener` instance.
+/// The connection struct contains the logic for a connection to the server.
+/// The following methods are the most important:
+/// - [`Connection::recv()`]: This is used to recieve packets from the client.
+/// - [`Connection::send()`]: This is used to send packets to the client.
+/// - [`Connection::close()`]: This is used to disconnect the client.
 ///
-/// Each Connection has it's own channel for recieving
-/// buffers that come from this address.
+/// <style>
+/// .warning-2 {
+///     background: rgba(255,240,76,0.34) !important;
+///     padding: 0.75em;
+///     border-left: 2px solid #fce811;
+///     font-family: "Source Serif 4", NanumBarunGothic, serif;
+///  }
+///
+/// .warning-2 code {
+///     background: rgba(211,201,88,0.64) !important;
+/// }
+///
+/// .notice-2 {
+///     background: rgba(88, 211, 255, 0.34) !important;
+///     padding: 0.75em;
+///     border-left: 2px solid #4c96ff;
+///     font-family: "Source Serif 4", NanumBarunGothic, serif;
+/// }
+///
+/// .notice-2 code {
+///     background: rgba(88, 211, 255, 0.64) !important;
+/// }
+/// </style>
+///
+/// <div class="warning-2">
+///     <strong>Warning:</strong>
+///     <p>
+///         This struct does not provide an API for connecting to other peers, for that
+///         you should use the
+///         <a href="/rak-rs/latest/client/struct.Client.html">
+///          Client
+///         </a>
+///         struct.
+///     </p>
+/// </div>
 pub struct Connection {
     /// The address of the connection
     /// This is internally tokenized by rak-rs
     pub address: SocketAddr,
-    pub(crate) state: Arc<Mutex<ConnectionState>>,
+    pub state: Arc<Mutex<ConnectionState>>,
     /// The queue used to send packets back to the connection.
     send_queue: Arc<RwLock<SendQueue>>,
     /// The queue used to recieve packets, this is read from by the server.
@@ -145,13 +222,13 @@ impl Connection {
         let tk = c.tasks.clone();
         let mut tasks = tk.lock().await;
         tasks.push(c.init_tick(notifier));
-        tasks.push(c.init_net_recv(net, net_sender).await);
+        tasks.push(c.init_net_recv(net, net_sender));
 
         return c;
     }
 
     /// Initializes the client ticking process!
-    pub fn init_tick(&self, notifier: Arc<Sender<SocketAddr>>) -> task::JoinHandle<()> {
+    pub(crate) fn init_tick(&self, notifier: Arc<Sender<SocketAddr>>) -> task::JoinHandle<()> {
         let address = self.address;
         let closer = self.disconnect.clone();
         let last_recv = self.recv_time.clone();
@@ -300,7 +377,7 @@ impl Connection {
 
     /// This function initializes the raw internal packet handling task!
     ///
-    pub async fn init_net_recv(
+    pub(crate) fn init_net_recv(
         &self,
         // THIS IS ONLY ACTIVATED ON STD
         #[cfg(feature = "async_std")] net: Receiver<Vec<u8>>,
@@ -469,7 +546,7 @@ impl Connection {
         });
     }
 
-    pub async fn process_packet(
+    pub(crate) async fn process_packet(
         buffer: &[u8],
         address: &SocketAddr,
         sender: &Sender<Vec<u8>>,
@@ -590,7 +667,28 @@ impl Connection {
         Ok(false)
     }
 
-    /// Recieve a packet from the client.
+    /// This method is used to recieve packets from the client connection.
+    /// Packets that are recieved here are packets sent by the peer expected
+    /// to be handled by the server.
+    ///
+    /// This is where you would handle your packets from the client.
+    ///
+    /// # Example
+    /// This is a snippet of code you would use after you've accepted a connection from the server with
+    /// [`Listener::accept()`].
+    ///
+    /// ```ignore
+    /// use rakrs::connection::Connection;
+    ///
+    /// async fn handle(mut conn: Connection) {
+    ///     loop {
+    ///         // get a packet sent from the client
+    ///         if let Ok(pk) = conn.recv().await {
+    ///             println!("Got a connection packet {:?} ", pk);
+    ///         }
+    ///     }
+    /// }
+    /// ```
     pub async fn recv(&mut self) -> Result<Vec<u8>, RecvError> {
         #[allow(unused_mut)]
         let mut q = self.internal_net_recv.as_ref().lock().await;
@@ -641,8 +739,18 @@ impl Connection {
         !self.state.lock().await.is_available()
     }
 
-    /// Send a packet to the client.
-    /// These will be sent next tick unless otherwise specified.
+    /// This method is used to send payloads to the connection. This method internally
+    /// will encode your payload into a RakNet packet, and send it to the client.
+    ///
+    /// # Example
+    /// This is a snippet of code you would use when you need to send a payload to the client.
+    /// ```ignore
+    /// use rakrs::connection::Connection;
+    ///
+    /// async fn send_payload(mut conn: Connection) {
+    ///     conn.send(&[0x01, 0x02, 0x03], true).await.unwrap();
+    /// }
+    /// ```
     pub async fn send(&self, buffer: &[u8], immediate: bool) -> Result<(), SendQueueError> {
         let mut q = self.send_queue.write().await;
         if let Err(e) = q
@@ -654,12 +762,31 @@ impl Connection {
         Ok(())
     }
 
+    /// This method should be used when you are ready to disconnect the client.
+    /// this method will attempt to send a disconnect packet to the client, and
+    /// then close the connection.
     pub async fn close(&mut self) {
         rakrs_debug!(
             true,
             "[{}] Dropping connection!",
             to_address_token(self.address)
         );
+        if let Err(_) = self
+            .send(
+                &OnlinePacket::Disconnect(Disconnect {})
+                    .write_to_bytes()
+                    .unwrap()
+                    .as_slice(),
+                true,
+            )
+            .await
+        {
+            rakrs_debug!(
+                true,
+                "[{}] Failed to send disconnect packet when closing!",
+                to_address_token(self.address)
+            );
+        }
         let tasks = self.tasks.clone();
 
         for task in tasks.lock().await.drain(..) {

@@ -1,3 +1,9 @@
+//! This is the server implementation of RakNet, allowing you to create a RakNet server.
+//!
+//! This module provides a [`Listener`] struct, which is responsible for listening to connections,
+//! and dispatching them to a handler, as well as some other utilities.
+//!
+//! [`Listener`]: struct.Listener.html
 #[allow(unused)]
 /// Server events module. Handles things like updating the MOTD
 /// for certain connections. This is a notifier channel.
@@ -16,17 +22,17 @@ use async_std::{
 #[cfg(feature = "async_std")]
 use futures::{select, FutureExt};
 
-use binary_util::ByteReader;
 use binary_util::interfaces::{Reader, Writer};
+use binary_util::ByteReader;
 
 #[cfg(feature = "async_tokio")]
 use tokio::{
     net::UdpSocket,
+    select,
     sync::mpsc::channel as bounded,
     sync::mpsc::{Receiver, Sender},
     sync::Mutex,
     task::{self},
-    select
 };
 
 use crate::connection::{ConnMeta, Connection};
@@ -41,9 +47,15 @@ use crate::protocol::Magic;
 use crate::rakrs_debug;
 use crate::util::to_address_token;
 
-pub type Session = (ConnMeta, Sender<Vec<u8>>);
+pub(crate) type Session = (ConnMeta, Sender<Vec<u8>>);
 
-// stupid hack for easier syntax :)
+/// This is a helper enum that allows you to pass in a `SocketAddr` or a `&str` to the `Listener::bind` function.
+/// This is useful for when you want to bind to a specific address, but you don't want to parse it yourself.
+///
+/// This Trait will successfully parse the following:
+/// - `SocketAddr::new("127.0.0.1:19132")`
+/// - `"127.0.0.1:19132"`
+/// - `String::from("127.0.0.1:19132")`
 pub enum PossiblySocketAddr<'a> {
     SocketAddr(SocketAddr),
     Str(&'a str),
@@ -97,6 +109,98 @@ impl std::fmt::Display for PossiblySocketAddr<'_> {
     }
 }
 
+/// The main server struct, this is responsible for listening to connections, and dispatching them to a handler.
+/// > If you are having problems with debugging, you can use the rak-rs debug feature, which will print out
+/// > all packets that are sent and recieved.
+///
+/// <style>
+/// .warning-2 {
+///     background: rgba(255,240,76,0.34) !important;
+///     padding: 0.75em;
+///     border-left: 2px solid #fce811;
+///     font-family: "Source Serif 4", NanumBarunGothic, serif;
+///  }
+///
+/// .warning-2 code {
+///     background: rgba(211,201,88,0.64) !important;
+/// }
+///
+/// .notice-2 {
+///     background: rgba(88, 211, 255, 0.34) !important;
+///     padding: 0.75em;
+///     border-left: 2px solid #4c96ff;
+///     font-family: "Source Serif 4", NanumBarunGothic, serif;
+/// }
+///
+/// .notice-2 code {
+///     background: rgba(88, 211, 255, 0.64) !important;
+/// }
+/// </style>
+///
+/// <div class="notice-2">
+///     <strong>Notice:</strong>
+///     <p>
+///         Currently, the <code>Listener</code> does not support encryption, plugins, or any feature to allow you to
+///         hijack the RakNet connection sequence. Currently rak_rs is a pure, bare-bones RakNet implementation. <br /><br />
+///         There is currently an <a href="https://github.com/NetrexMC/RakNet/issues/48">open issue</a>
+///         to add support for plugins but this is not a priority, instead you should use the <code>Connection</code> struct
+///         to handle your own packets with the <code>recv</code> method.
+///     </p>
+/// </div>
+///
+/// ## A generic example
+/// ```rust ignore
+/// use rak_rs::server::Listener;
+///
+/// #[async_std::main]
+/// async fn main() {
+///     // Bind the server to the specified address, but do not start it.
+///     let mut server = Listener::bind("0.0.0.0:19132").await.unwrap();
+///
+///     // Begins listening to connections
+///     server.start().await.unwrap();
+///
+///     // Start recieving connections
+///     loop {
+///         let conn = server.accept().await;
+///         async_std::task::spawn(handle(conn.unwrap()));
+///     }
+/// }
+///
+/// // This is a function that handles the connection, this is where you would handle the connection.
+/// async fn handle(mut conn: Connection) {
+///     loop {
+///         // this is used to cleanup the connection
+///         if conn.get_state().await.is_closed() {
+///             println!("Connection closed!");
+///             break;
+///         }
+///
+///         if let Ok(pk) = conn.recv().await {
+///             println!("Got a connection packet {:?} ", pk);
+///         }
+///     }
+/// }
+/// ```
+///
+/// ## Accepting other protocols
+/// This struct allows support for other raknet protocols, however this is not recommended, because occasionally
+/// the protocol may change and the Listener may not be updated to support it. This was mainly added for MCPE.
+///
+/// ```rust ignore
+/// use rak_rs::server::Listener;
+///
+/// #[async_std::main]
+/// async fn main() {
+///     let mut server = Listener::bind("0.0.0.0:19132").await.unwrap();
+///     server.versions = &[10, 11];
+///     server.start().await.unwrap();
+///
+///     loop {
+///         // .. same loop as above
+///     }
+/// }
+/// ```
 pub struct Listener {
     /// If mcpe is true, this is the default MOTD, this is
     /// the default MOTD to send to the client. You can change this later by setting
@@ -130,7 +234,20 @@ pub struct Listener {
 }
 
 impl Listener {
-    /// Binds a socket to the specified addres and starts listening.
+    /// Binds a new listener to the specified address provided, this will error if the address is invalid or already in use.
+    /// This will not start the listener, you must call [`Listener::start`] to start listening to connections.
+    ///
+    /// ## Example
+    /// ```ignore
+    /// use rak_rs::server::Listener;
+    ///
+    /// async fn start() {
+    ///     let mut server = Listener::bind("").await.unwrap();
+    /// }
+    /// ```
+    ///
+    /// [`PossiblySocketAddr`]: enum.PossiblySocketAddr.html
+    /// [`Listener::start`]: struct.Listener.html#method.start
     pub async fn bind<I: for<'a> Into<PossiblySocketAddr<'a>>>(
         address: I,
     ) -> Result<Self, ServerError> {
@@ -147,6 +264,8 @@ impl Listener {
             Ok(s) => s,
             Err(_) => return Err(ServerError::AddrBindErr),
         };
+
+        rakrs_debug!(true, "listener: Bound to {}", address);
 
         let server_id: u64 = rand::random();
         let motd = Motd::new(server_id, format!("{}", address.port()));
@@ -179,8 +298,11 @@ impl Listener {
         return Ok(listener);
     }
 
-    /// Starts the listener!
-    /// TODO
+    /// This method is required to be called before the server can begin listening to connections.
+    /// However, you must call [`Listener::bind`] before you can call this method, as that method
+    /// is responsible for creating the socket and initializing the server.
+    ///
+    /// ## Example
     /// ```ignore
     /// use rak_rs::server::Listener;
     /// async fn start() {
@@ -190,6 +312,8 @@ impl Listener {
     ///     server.start().await;
     /// }
     /// ```
+    ///
+    /// [`Listener::bind`]: struct.Listener.html#method.bind
     pub async fn start(&mut self) -> Result<(), ServerError> {
         if self.serving {
             return Err(ServerError::AlreadyOnline);
@@ -464,7 +588,9 @@ impl Listener {
                     addr = client_close_recv.recv().fuse() => {
                         if let Ok(addr) = addr {
                             rakrs_debug!(true, "[SERVER] [Cleanup] Removing connection for {}", to_address_token(addr));
-                            connections2.lock().await.remove(&addr);
+                            let mut c = connections2.lock().await;
+                            c.remove(&addr);
+                            drop(c);
                         }
                     }
                 }
@@ -478,7 +604,9 @@ impl Listener {
                     addr = client_close_recv.recv() => {
                         if let Some(addr) = addr {
                             rakrs_debug!(true, "[SERVER] [Cleanup] Removing connection for {}", to_address_token(addr));
-                            connections2.lock().await.remove(&addr);
+                            let mut c = connections2.lock().await;
+                            c.remove(&addr);
+                            drop(c);
                         }
                     }
                 }
@@ -507,9 +635,45 @@ impl Listener {
     //     }
     // }
 
-    /// Must be called in after both `Listener::bind` AND `Listener::start`. This function
+    /// This method is used to accept a connection, this will block until a connection is available.
+    /// You can only call this method once both [`Listener::bind`] AND [`Listener::start`] have. This function
     /// is used to recieve and accept connections. Alternatively, you can refuse a connection
     /// by dropping it when you accept it.
+    ///
+    /// [`Listener::bind`]: struct.Listener.html#method.bind
+    /// [`Listener::start`]: struct.Listener.html#method.start
+    ///
+    /// <div class="warning-2">
+    ///     <strong>Warning:</strong>
+    ///     <p>
+    ///         This method will block until a connection is available, this is not recommended to be used
+    ///         in the main thread, instead you should use a task or future to handle connections.
+    ///     </p>
+    /// </div>
+    ///
+    /// ## Example
+    /// ```rust ignore
+    /// use rak_rs::server::Listener;
+    /// use rak_rs::Connection;
+    ///
+    /// #[async_std::main]
+    /// async fn main() {
+    ///     let mut server = Listener::bind("0.0.0.0:19132").await.unwrap();
+    ///     server.start().await.unwrap();
+    ///
+    ///     loop {
+    ///         let conn = server.accept().await;
+    ///         async_std::task::spawn(handle(conn.unwrap()));
+    ///     }
+    /// }
+    ///
+    /// async fn handle(mut conn: Connection) {
+    ///    loop {
+    ///         let packet = conn.recv().await;
+    ///         println!("Received a packet! {:?}", packet);
+    ///    }
+    /// }
+    /// ```
     pub async fn accept(&mut self) -> Result<Connection, ServerError> {
         if !self.serving {
             Err(ServerError::NotListening)
@@ -528,7 +692,11 @@ impl Listener {
         }
     }
 
-    /// Stops the listener and frees the socket.
+    /// Stops the Listener, effectively closing the socket and stopping the server.
+    /// This will also close all connections, and prevent any new connections from being accepted,
+    /// until [`Listener::start`] is called again.
+    ///
+    /// [`Listener::start`]: struct.Listener.html#method.start
     pub async fn stop(&mut self) -> Result<(), ServerError> {
         self.closed.notify().await;
         // self.cleanup.notified().await;

@@ -3,7 +3,10 @@ pub const NACK: u8 = 0xa0;
 
 use std::ops::Range;
 
-use binary_util::{BinaryIo, types::{u24, LE}};
+use binary_util::{
+    types::{u24, LE},
+    BinaryIo,
+};
 
 pub(crate) trait Ackable {
     type NackItem;
@@ -85,22 +88,14 @@ impl Ack {
             } else {
                 // end of range
                 if current.start == current.end {
-                    records.push(
-                        Record::Single(
-                            SingleRecord {
-                                sequence: LE(current.start.into()),
-                            }
-                        )
-                    );
+                    records.push(Record::Single(SingleRecord {
+                        sequence: LE(current.start.into()),
+                    }));
                 } else {
-                    records.push(
-                        Record::Range(
-                            RangeRecord {
-                                start: LE(current.start.into()),
-                                end: LE(current.end.into()),
-                            }
-                        )
-                    );
+                    records.push(Record::Range(RangeRecord {
+                        start: LE(current.start.into()),
+                        end: LE(current.end.into()),
+                    }));
                 }
 
                 current.start = m;

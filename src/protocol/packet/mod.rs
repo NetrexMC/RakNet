@@ -1,20 +1,27 @@
+//! This module contains all the packets that are used by the RakNet protocol.
+//! This module is split into two submodules:
+//! - [`offline`]: Any packet that is not sent within a [`Frame`].
+//! - [`online`]: Any packet considered to be online, which is sent within a [`Frame`].
+//!
+//! [`offline`]: crate::protocol::packet::offline
+//! [`online`]: crate::protocol::packet::online
 // /// Handlers for both online & offline packets!
 // /// This is used by the connection struct to handle packets.
 // pub(crate) mod handler;
 
-/// The protocol that is used when a client is considered "Online".
-/// Sessions in this state are usually: Connected or Connecting
-pub mod online;
-
-/// The protocol that is used when a client is considered "Unidentified".
-/// This module is used for Pong and connection requests.
 pub mod offline;
+pub mod online;
 
 use binary_util::interfaces::{Reader, Writer};
 
 use self::offline::OfflinePacket;
 use self::online::OnlinePacket;
 
+/// A wrapper or helper for both online and offline packets.
+/// This allows for a single type to be read with `Reader` and written with `Writer`,
+/// traits provided by `binary_util`.
+///
+/// All packets sent are wrapped in this type, and can be unwrapped with the `get_offline` or `get_online`
 #[derive(Debug, Clone)]
 pub enum RakPacket {
     Offline(OfflinePacket),

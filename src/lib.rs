@@ -8,7 +8,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! rakrs = "0.3.0"
+//! rakrs = "0.1.0"
 //! ```
 //!
 //! ## Features
@@ -19,19 +19,19 @@
 //!
 //! ```toml
 //! [dependencies]
-//! rak_rs = { version = "0.3.0", default-features = false, features = [ "async_tokio", "mcpe" ] }
+//! rak_rs = { version = "0.1.0", default-features = false, features = [ "async_tokio", "mcpe" ] }
 //! ```
 //!
 //!
 //!
 //! rak-rs also provides the following modules:
 //!
-//! - [`rak_rs::client`](https://docs.rs/rak-rs/latest/rak-rs/client) - A client implementation of RakNet, allowing you to connect to a RakNet server.
-//! - [`rak_rs::connection`](https://docs.rs/rak-rs/latest/rak-rs/client) - A bare-bones implementation of a Raknet peer, this is mainly used for types.
-//! - [`rak_rs::error`](https://docs.rs/rak-rs/latest/rak-rs/error) - A module with errors that both the Client and Server can respond with.
-//! - [`rak_rs::protocol`](https://docs.rs/rak-rs/latest/rak-rs/protocol) - A lower level implementation of RakNet, responsible for encoding and decoding packets.
-//! - [`rak_rs::server`](https://docs.rs/rak-rs/latest/rak-rs/server) - The base server implementation of RakNet.
-//! - [`rak_rs::utils`](https://docs.rs/rak-rs/latest/rak-rs/utils)  - General utilities used within `rak-rs`.
+//! - [`rak_rs::client`](crate::client) - A client implementation of RakNet, allowing you to connect to a RakNet server.
+//! - [`rak_rs::connection`](crate::connection) - A bare-bones implementation of a Raknet peer, this is mainly used for types.
+//! - [`rak_rs::error`](crate::error) - A module with errors that both the Client and Server can respond with.
+//! - [`rak_rs::protocol`](crate::protocol) - A lower level implementation of RakNet, responsible for encoding and decoding packets.
+//! - [`rak_rs::server`](crate::server) - The base server implementation of RakNet.
+//! - [`rak_rs::util`](crate::util)  - General utilities used within `rak-rs`.
 //!
 //! # Client
 //!
@@ -48,15 +48,15 @@
 //!     let version: u8 = 10;
 //!     let addr = "my_server.net:19132".to_socket_addrs().unwrap();
 //!     let mut client = Client::new(version, DEFAULT_MTU);
-//!     
+//!
 //!     client.connect(addr.next().unwrap()).await.unwrap();
-//!     
+//!
 //!     // receive packets
 //!     loop {
 //!         let packet = client.recv().await.unwrap();
-//!         
+//!
 //!         println!("Received a packet! {:?}", packet);
-//!         
+//!
 //!         client.send_ord(vec![254, 0, 1, 1], Some(1));
 //!     }
 //! }
