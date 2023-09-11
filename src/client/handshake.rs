@@ -1,7 +1,17 @@
-use std::sync::Arc;
-use std::sync::Mutex;
-use std::time::Duration;
-
+use crate::client::discovery;
+use crate::client::discovery::DiscoveryStatus;
+use crate::client::discovery::MtuDiscovery;
+use crate::client::util::send_packet;
+use crate::connection::queue::send::SendQueue;
+use crate::connection::queue::RecvQueue;
+use crate::protocol::frame::FramePacket;
+use crate::protocol::packet::offline::{SessionInfoReply, SessionInfoRequest};
+use crate::protocol::packet::online::ConnectedPong;
+use crate::protocol::packet::online::{ConnectionRequest, NewConnection, OnlinePacket};
+use crate::protocol::reliability::Reliability;
+use crate::protocol::Magic;
+use crate::rakrs_debug;
+use crate::server::current_epoch;
 #[cfg(feature = "async_std")]
 use async_std::{
     future::timeout,
@@ -9,14 +19,15 @@ use async_std::{
     net::UdpSocket,
     task::{self, Context, Poll, Waker},
 };
-
-use binary_util::interfaces::{Reader, Writer};
+use binary_util::interfaces::Reader;
 use binary_util::io::ByteReader;
-
 #[cfg(feature = "async_tokio")]
 use std::future::Future;
+use std::sync::Arc;
+use std::sync::Mutex;
 #[cfg(feature = "async_tokio")]
 use std::task::{Context, Poll, Waker};
+use std::time::Duration;
 #[cfg(feature = "async_tokio")]
 use tokio::{
     net::UdpSocket,
@@ -24,21 +35,7 @@ use tokio::{
     time::timeout,
 };
 
-use crate::connection::queue::send::SendQueue;
-use crate::connection::queue::RecvQueue;
-use crate::protocol::frame::FramePacket;
-use crate::protocol::packet::offline::{
-    IncompatibleProtocolVersion, OpenConnectReply, OpenConnectRequest, SessionInfoReply,
-    SessionInfoRequest,
-};
-use crate::protocol::packet::online::ConnectedPong;
-use crate::protocol::packet::online::{ConnectionRequest, NewConnection, OnlinePacket};
-use crate::protocol::packet::RakPacket;
-use crate::protocol::reliability::Reliability;
-use crate::protocol::Magic;
-use crate::rakrs_debug;
-use crate::server::current_epoch;
-
+#[macro_export]
 macro_rules! match_ids {
     ($socket: expr, $($ids: expr),*) => {
         {
@@ -167,7 +164,7 @@ pub struct ClientHandshake {
 }
 
 impl ClientHandshake {
-    pub fn new(socket: Arc<UdpSocket>, id: i64, version: u8, mtu: u16, attempts: u8) -> Self {
+    pub fn new(socket: Arc<UdpSocket>, id: i64, version: u8, mut mtu: u16, attempts: u8) -> Self {
         let state = Arc::new(Mutex::new(HandshakeState {
             done: false,
             status: HandshakeStatus::Created,
@@ -177,56 +174,22 @@ impl ClientHandshake {
         let shared_state = state.clone();
 
         task::spawn(async move {
-            // todo: continously send untill we get a reply
-            // todo: we also need to decrease the MTU until we get a reply
-            let connect_request = OpenConnectRequest {
-                protocol: version,
-                mtu_size: mtu,
-            };
-
             update_state!(shared_state, HandshakeStatus::Opening);
 
             rakrs_debug!(true, "[CLIENT] Sending OpenConnectRequest to server...");
 
-            if !send_packet(&socket, connect_request.into()).await {
-                rakrs_debug!(
-                    true,
-                    "[CLIENT] Failed sending OpenConnectRequest to server!"
-                );
-                update_state!(true, shared_state, HandshakeStatus::Failed);
-            };
-
-            let reply = match_ids!(
+            match MtuDiscovery::new(
                 socket.clone(),
-                // Open connect Reply
-                0x06,
-                // Incompatible protocol version
-                0x19
-            );
-
-            if reply.is_none() {
-                update_state!(true, shared_state, HandshakeStatus::Failed);
-            }
-
-            if let Ok(_) = IncompatibleProtocolVersion::read(&mut ByteReader::from(
-                &reply.clone().unwrap()[1..],
-            )) {
-                update_state!(true, shared_state, HandshakeStatus::IncompatibleVersion);
-            }
-
-            let open_reply = OpenConnectReply::read(&mut ByteReader::from(&reply.unwrap()[1..]));
-
-            if open_reply.is_err() {
-                let mut state = shared_state.lock().unwrap();
-                state.status = HandshakeStatus::Failed;
-                state.done = true;
-                if let Some(waker) = state.waker.take() {
-                    waker.wake();
+                discovery::MtuDiscoveryMeta { id, version, mtu },
+            )
+            .await
+            {
+                DiscoveryStatus::Discovered(m) => {
+                    rakrs_debug!(true, "[CLIENT] Discovered MTU size: {}", m);
+                    mtu = m;
                 }
-                return;
+                _ => update_state!(true, shared_state, HandshakeStatus::Failed),
             }
-
-            rakrs_debug!(true, "[CLIENT] Received OpenConnectReply from server!");
 
             let session_info = SessionInfoRequest {
                 magic: Magic::new(),
@@ -404,25 +367,5 @@ impl Future for ClientHandshake {
             state.waker = Some(cx.waker().clone());
             return Poll::Pending;
         }
-    }
-}
-
-async fn send_packet(socket: &Arc<UdpSocket>, packet: RakPacket) -> bool {
-    if let Ok(buf) = packet.write_to_bytes() {
-        if let Err(e) = socket
-            .send_to(buf.as_slice(), socket.peer_addr().unwrap())
-            .await
-        {
-            rakrs_debug!("[CLIENT] Failed sending payload to server! {}", e);
-            rakrs_debug!(true, " -> PAYLOAD: {:?}", buf);
-            rakrs_debug!(true, " -> PACKET: {:?}", packet);
-            return false;
-        } else {
-            rakrs_debug!(true, "[CLIENT] Sent payload to server!");
-            return true;
-        }
-    } else {
-        rakrs_debug!("[CLIENT] Failed writing payload to bytes!");
-        return false;
     }
 }

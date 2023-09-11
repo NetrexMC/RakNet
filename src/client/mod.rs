@@ -36,6 +36,7 @@
 //! ```
 pub mod discovery;
 pub mod handshake;
+pub(crate) mod util;
 
 use std::{
     net::SocketAddr,
@@ -620,6 +621,8 @@ impl Client {
                         }
 
                         recv_time.store(current_epoch(), std::sync::atomic::Ordering::Relaxed);
+
+                        rakrs_debug!(true, "[CLIENT] (recv_task) Recieved packet!");
 
                         let mut client_state = state.lock().await;
 

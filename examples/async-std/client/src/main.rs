@@ -11,6 +11,8 @@ async fn main() {
         return;
     }
 
+    client.send_ord(&[254, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00 ], 0).await.unwrap();
+
     loop {
         let pk = client.recv().await.unwrap();
         println!("Received packet: {:?}", pk);
