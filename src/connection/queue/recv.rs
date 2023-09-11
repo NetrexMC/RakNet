@@ -43,7 +43,6 @@ impl RecvQueue {
 
     pub fn insert(&mut self, packet: FramePacket) -> Result<(), RecvQueueError> {
         if !self.window.insert(packet.sequence) {
-            println!("Old packet: {}", packet.sequence);
             return Err(RecvQueueError::OldSeq);
         }
 
