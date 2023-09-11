@@ -43,6 +43,7 @@ impl RecvQueue {
 
     pub fn insert(&mut self, packet: FramePacket) -> Result<(), RecvQueueError> {
         if !self.window.insert(packet.sequence) {
+            println!("Old packet: {}", packet.sequence);
             return Err(RecvQueueError::OldSeq);
         }
 
@@ -143,7 +144,7 @@ impl Ackable for RecvQueue {
                     self.nack.remove(&sequence);
                 }
                 Record::Range(ranged) => {
-                    for i in *ranged.start.0..*ranged.end.0 {
+                    for i in ranged.start.0..ranged.end.0 {
                         self.nack.remove(&i);
                     }
                 }

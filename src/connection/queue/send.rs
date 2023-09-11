@@ -145,8 +145,6 @@ impl SendQueue {
                     .order_channels
                     .entry(channel.unwrap_or(0))
                     .or_insert((0, 0));
-                *ord_index = ord_index.wrapping_add(1);
-                *ord_seq = ord_seq.wrapping_add(1);
 
                 for frame in frames.iter_mut() {
                     frame.reliability = reliability;
@@ -158,6 +156,9 @@ impl SendQueue {
                         frame.reliable_index = Some(self.reliable_seq.next());
                     }
                 }
+
+                *ord_index = ord_index.wrapping_add(1);
+                *ord_seq = ord_seq.wrapping_add(1);
 
                 // Add this frame packet to the recovery queue.
                 if let Ok(p) = pk.write_to_bytes() {
@@ -185,9 +186,9 @@ impl SendQueue {
                     .order_channels
                     .entry(channel.unwrap_or(0))
                     .or_insert((0, 0));
-                *ord_index = ord_index.wrapping_add(1);
                 frame.order_index = Some(*ord_index);
                 frame.sequence_index = Some(self.send_seq.get());
+                *ord_index = ord_index.wrapping_add(1);
             } else if frame.reliability.is_sequenced() {
                 let (seq_index, ord_index) = self
                     .order_channels
@@ -309,10 +310,10 @@ impl Ackable for SendQueue {
         for record in ack.records.iter() {
             match record {
                 Record::Single(SingleRecord { sequence }) => {
-                    if let Ok(_) = self.ack.remove(*sequence.0) {};
+                    if let Ok(_) = self.ack.remove(sequence.0) {};
                 }
                 Record::Range(ranged) => {
-                    for i in *ranged.start.0..*ranged.end.0 {
+                    for i in ranged.start.0..ranged.end.0 {
                         if let Ok(_) = self.ack.remove(i) {};
                     }
                 }
@@ -331,12 +332,12 @@ impl Ackable for SendQueue {
         for record in nack.records.iter() {
             match record {
                 Record::Single(single) => {
-                    if let Ok(packet) = self.ack.get(*single.sequence.0) {
+                    if let Ok(packet) = self.ack.get(single.sequence.0) {
                         resend_queue.push(packet.clone());
                     }
                 }
                 Record::Range(ranged) => {
-                    for i in *ranged.start.0..*ranged.end.0 {
+                    for i in ranged.start.0..ranged.end.0 {
                         if let Ok(packet) = self.ack.get(i) {
                             resend_queue.push(packet.clone());
                         }

@@ -30,7 +30,8 @@ pub(crate) mod ack;
 /// RakNet. This is also called the "Datagram" or "Encapsulated" packet in different implementations.
 ///
 /// You can find the original implementation from RakNet [here](https://github.com/facebookarchive/RakNet/blob/1a169895a900c9fc4841c556e16514182b75faf8/Source/ReliabilityLayer.cpp#L110-L231)
-pub(crate) mod frame;
+// pub(crate) mod frame;
+pub mod frame;
 /// This is the constant added to all offline packets to identify them as RakNet packets.
 pub(crate) mod magic;
 /// This module contains the MCPE specific packets that are used within RakNet, this is guarded

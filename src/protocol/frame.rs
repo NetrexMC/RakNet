@@ -12,6 +12,8 @@ pub struct FragmentMeta {
     pub(crate) index: u32,
 }
 
+use crate::rakrs_debug;
+
 use super::reliability::Reliability;
 
 /// Frames are a encapsulation of a packet or packets.
@@ -37,7 +39,16 @@ impl FramePacket {
 impl Reader<FramePacket> for FramePacket {
     fn read(buf: &mut binary_util::ByteReader) -> Result<FramePacket, std::io::Error> {
         // FRAME PACKET HEADER
-        buf.read_u8()?;
+        let id = buf.read_u8()?;
+        match id {
+            0x80..=0x8d => {}
+            _ => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "Invalid Frame Packet ID",
+                ))
+            }
+        }
         let mut frames: Vec<Frame> = Vec::new();
 
         let sequence = buf.read_u24_le()?;
@@ -61,7 +72,7 @@ impl Reader<FramePacket> for FramePacket {
 
 impl Writer for FramePacket {
     fn write(&self, buf: &mut binary_util::ByteWriter) -> Result<(), std::io::Error> {
-        buf.write_u8(0x80)?;
+        buf.write_u8(0x84)?;
         buf.write_u24_le(self.sequence)?;
 
         for frame in &self.frames {
@@ -183,8 +194,19 @@ impl Reader<Frame> for Frame {
 
         let mut body = vec![0; frame.size as usize];
 
-        if let Ok(_) = buf.read(&mut body) {
-            frame.body = body.to_vec();
+        // if let Ok(_) = buf.read(&mut body) {
+        //     frame.body = body.to_vec();
+        //     println!("Frame body is: {:?}", frame.body);
+        // }
+
+        match buf.read(&mut body) {
+            Ok(_) => {
+                frame.body = body.to_vec();
+                // println!("Frame body is: {:?}", frame.body);
+            }
+            Err(e) => {
+                rakrs_debug!(true, "[DECODE_ERR] Error reading frame body: {:?}", e);
+            }
         }
 
         Ok(frame)
