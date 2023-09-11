@@ -30,7 +30,7 @@ pub enum DiscoveryStatus {
 pub struct MtuDiscoveryMeta {
     pub id: i64,
     pub version: u8,
-    pub mtu: u16
+    pub mtu: u16,
 }
 
 struct DiscoveryState {
@@ -53,11 +53,9 @@ impl MtuDiscovery {
 
         task::spawn(async move {
             let mut buf = [0u8; 1024];
-            
+
             // try to use the mtu provided by the user
-            loop {
-                
-            }
+            loop {}
         });
 
         Self { state }
