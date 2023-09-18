@@ -13,10 +13,10 @@
 use std::net::SocketAddr;
 
 use super::RakPacket;
-use crate::protocol::RAKNET_HEADER_FRAME_OVERHEAD;
 #[cfg(feature = "mcpe")]
 pub use crate::protocol::mcpe::UnconnectedPong;
 use crate::protocol::Magic;
+use crate::protocol::RAKNET_HEADER_FRAME_OVERHEAD;
 use crate::register_packets;
 
 use binary_util::interfaces::{Reader, Writer};
