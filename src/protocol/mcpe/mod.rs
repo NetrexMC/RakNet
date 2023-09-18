@@ -9,6 +9,8 @@ use self::motd::Motd;
 
 use super::Magic;
 
+/// This is the MCPE specific implementation of the `UnconnectedPong` packet.
+/// The only difference here is the attached motd.
 #[derive(Debug, Clone, BinaryIo)]
 pub struct UnconnectedPong {
     pub timestamp: u64,

@@ -1,6 +1,9 @@
 //! Client errors are errors that can occur when using the [`Client`](crate::client::Client) api.
 use crate::connection::queue::SendQueueError;
 
+/// These are errors that can occur when using the [`Client`](crate::client::Client) api.
+/// These are returned for a variety of reasons, but is commonly used to indicate
+/// that something went wrong, and you should either clean up or retry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum ClientError {
     /// The client is already connected to the peer on this address.
