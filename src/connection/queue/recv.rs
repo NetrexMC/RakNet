@@ -143,7 +143,7 @@ impl Ackable for RecvQueue {
                     self.nack.remove(&sequence);
                 }
                 Record::Range(ranged) => {
-                    for i in *ranged.start.0..*ranged.end.0 {
+                    for i in ranged.start.0..ranged.end.0 {
                         self.nack.remove(&i);
                     }
                 }

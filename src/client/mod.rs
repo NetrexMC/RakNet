@@ -36,6 +36,7 @@
 //! ```
 pub mod discovery;
 pub mod handshake;
+pub(crate) mod util;
 
 use std::{
     net::SocketAddr,
@@ -621,6 +622,8 @@ impl Client {
 
                         recv_time.store(current_epoch(), std::sync::atomic::Ordering::Relaxed);
 
+                        rakrs_debug!(true, "[CLIENT] (recv_task) Recieved packet!");
+
                         let mut client_state = state.lock().await;
 
                         if *client_state == ConnectionState::TimingOut {
@@ -840,7 +843,7 @@ impl Client {
                             continue;
                         }
 
-                        if recv + 20000 <= current_epoch() {
+                        if (recv + 20000) <= current_epoch() {
                             *state = ConnectionState::Disconnected;
                             rakrs_debug!(true, "[CLIENT] Client timed out. Closing connection...");
                             closer.notify().await;

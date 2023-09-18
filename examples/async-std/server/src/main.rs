@@ -28,6 +28,7 @@ async fn handle(mut conn: Connection) {
         }
         if let Ok(pk) = conn.recv().await {
             println!("(RAKNET RECIEVE SIDE) Got a connection packet {:?} ", pk);
+            conn.send(&[254, 12, 143, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0], true).await.unwrap();
         }
     }
 }

@@ -463,6 +463,7 @@ impl Connection {
                             }
                             NACK => {
                                 // Validate this is a nack packet
+
                                 if let Ok(nack) = Ack::read_from_slice(&$payload[..]) {
                                     // The client acknowledges it did not recieve these packets
                                     // We should resend them.
@@ -622,6 +623,16 @@ impl Connection {
                     return Ok(true);
                 }
                 OnlinePacket::NewConnection(_) => {
+                    // if we are already connected, disconnect the client.
+                    if *state.lock().await == ConnectionState::Connected {
+                        rakrs_debug!(
+                            true,
+                            "[{}] Client is already connected, disconnecting client!",
+                            to_address_token(*address)
+                        );
+                        return Ok(true);
+                    }
+
                     *state.lock().await = ConnectionState::Connected;
                     return Ok(false);
                 }
