@@ -843,7 +843,7 @@ impl Client {
                             continue;
                         }
 
-                        if recv + 20000 <= current_epoch() {
+                        if (recv + 20000) <= current_epoch() {
                             *state = ConnectionState::Disconnected;
                             rakrs_debug!(true, "[CLIENT] Client timed out. Closing connection...");
                             closer.notify().await;

@@ -93,7 +93,7 @@ impl MtuDiscovery {
 
         task::spawn(async move {
             // try to use the mtu provided by the user
-            let valid_mtus: Vec<u16> = vec![discovery_info.mtu, 1492, 1400, 1200, 576];
+            let valid_mtus: Vec<u16> = vec![discovery_info.mtu, 1506, 1492, 1400, 1200, 576];
             for mtu in valid_mtus.iter() {
                 // send a connection request
                 let request = OpenConnectRequest {
@@ -106,8 +106,9 @@ impl MtuDiscovery {
                         true,
                         "[CLIENT] Failed sending OpenConnectRequest to server!"
                     );
-                    update_state!(shared_state, DiscoveryStatus::Failed);
-                    break;
+                    update_state!(shared_state, DiscoveryStatus::Undiscovered);
+                    // this is ok! we'll just try the next mtu
+                    continue;
                 };
 
                 let reply = match_ids!(
@@ -119,8 +120,9 @@ impl MtuDiscovery {
                 );
 
                 if reply.is_none() {
-                    update_state!(shared_state, DiscoveryStatus::Failed);
-                    break;
+                    update_state!(shared_state, DiscoveryStatus::Undiscovered);
+                    // break;
+                    continue;
                 }
 
                 if let Ok(_) = IncompatibleProtocolVersion::read(&mut ByteReader::from(
@@ -141,11 +143,13 @@ impl MtuDiscovery {
                 if let Ok(response) = open_reply {
                     rakrs_debug!(true, "[CLIENT] Received OpenConnectReply from server!");
                     update_state!(shared_state, DiscoveryStatus::Discovered(response.mtu_size));
-                    break;
+                    return;
                 } else {
                     update_state!(shared_state, DiscoveryStatus::Undiscovered);
                 }
             }
+
+            update_state!(shared_state, DiscoveryStatus::Failed);
         });
 
         Self { state }

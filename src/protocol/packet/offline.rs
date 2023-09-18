@@ -13,10 +13,10 @@
 use std::net::SocketAddr;
 
 use super::RakPacket;
+use crate::protocol::RAKNET_HEADER_FRAME_OVERHEAD;
 #[cfg(feature = "mcpe")]
 pub use crate::protocol::mcpe::UnconnectedPong;
 use crate::protocol::Magic;
-use crate::protocol::RAKNET_HEADER_OVERHEAD;
 use crate::register_packets;
 
 use binary_util::interfaces::{Reader, Writer};
@@ -165,7 +165,7 @@ impl Reader<OpenConnectRequest> for OpenConnectRequest {
         buf.read_type::<Magic>()?;
         Ok(OpenConnectRequest {
             protocol: buf.read_u8()?,
-            mtu_size: (len + 1 + 28) as u16,
+            mtu_size: (len + RAKNET_HEADER_FRAME_OVERHEAD as usize) as u16,
         })
     }
 }
@@ -176,7 +176,7 @@ impl Writer for OpenConnectRequest {
         buf.write_u8(self.protocol)?;
         // padding
         // remove 28 bytes from the mtu size
-        let mtu_size = self.mtu_size - buf.as_slice().len() as u16 - RAKNET_HEADER_OVERHEAD as u16;
+        let mtu_size = self.mtu_size - RAKNET_HEADER_FRAME_OVERHEAD as u16;
         for _ in 0..mtu_size {
             buf.write_u8(0)?;
         }

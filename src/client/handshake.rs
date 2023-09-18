@@ -44,17 +44,20 @@ macro_rules! match_ids {
             let ids = vec![$($ids),*];
             let mut pk: Option<Vec<u8>> = None;
 
-            loop {
+            'try_conn: loop {
                 if (tries >= 5) {
                     break;
                 }
 
                 let len: usize;
-                let send_result = timeout(Duration::from_secs(2), $socket.recv(&mut recv_buf)).await;
+                let send_result = timeout(
+                    Duration::from_secs(2),
+                    $socket.recv(&mut recv_buf)
+                ).await;
 
                 if (send_result.is_err()) {
                     rakrs_debug!(true, "[CLIENT] Failed to receive packet from server! Is it offline?");
-                    break;
+                    break 'try_conn;
                 }
 
                 match send_result.unwrap() {
@@ -69,7 +72,7 @@ macro_rules! match_ids {
 
                 if ids.contains(&recv_buf[0]) {
                     pk = Some(recv_buf[..len].to_vec());
-                    break;
+                    break 'try_conn;
                 }
             }
 
