@@ -369,16 +369,38 @@ impl Client {
             }
         });
 
-        let recv_task = self.init_recv_task().await?;
-        let tick_task = self.init_connect_tick(send_queue.clone()).await?;
+        let recv_task = self.init_recv_task();
+        let tisk_task = self.init_connect_tick(send_queue.clone());
+
+        if let Err(e) = recv_task {
+            rakrs_debug!(true, "[CLIENT] Failed to start recv task: {:?}", e);
+            return Err(ClientError::Killed);
+        }
+
+        if let Err(e) = tisk_task {
+            rakrs_debug!(true, "[CLIENT] Failed to start connect tick task: {:?}", e);
+            return Err(ClientError::Killed);
+        }
+
+        let recv_task = recv_task.unwrap();
+        let tisk_task = tisk_task.unwrap();
+
+        if *self.state.lock().await != ConnectionState::Identified {
+            return Err(ClientError::AlreadyOnline);
+        }
+
+        self.update_state(ConnectionState::Connected).await;
+
+        let mut tasks = self.tasks.lock().await;
 
         // Responsible for the raw socket
-        self.push_task(socket_task).await;
+        tasks.push(socket_task);
         // Responsible for digesting messages from the network
-        self.push_task(recv_task).await;
+        tasks.push(recv_task);
         // Responsible for sending packets to the server and keeping the connection alive
-        self.push_task(tick_task).await;
+        tasks.push(tisk_task);
 
+        rakrs_debug!("[CLIENT] Client is now connected!");
         Ok(())
     }
 
@@ -571,11 +593,7 @@ impl Client {
         }
     }
 
-    async fn push_task(&self, task: JoinHandle<()>) {
-        self.tasks.lock().await.push(task);
-    }
-
-    async fn init_recv_task(&self) -> Result<JoinHandle<()>, ClientError> {
+    fn init_recv_task(&self) -> Result<JoinHandle<()>, ClientError> {
         let net_recv = match self.network_recv {
             Some(ref n) => n.clone(),
             None => {
@@ -598,7 +616,7 @@ impl Client {
         let state = self.state.clone();
         let recv_time = self.recv_time.clone();
 
-        let r = task::spawn(async move {
+        return Ok(task::spawn(async move {
             'task_loop: loop {
                 #[cfg(feature = "async_std")]
                 let net_dispatch = net_recv.lock().await;
@@ -795,34 +813,29 @@ impl Client {
                     }
                 }
             }
-        });
-        Ok(r)
+        }));
     }
 
     /// This is an internal function that initializes the client connection.
     /// This is called by `Client::connect()`.
-    async fn init_connect_tick(
+    fn init_connect_tick(
         &self,
         send_queue: Arc<RwLock<SendQueue>>,
     ) -> Result<task::JoinHandle<()>, ClientError> {
         // verify that the client is offline
-        if *self.state.lock().await != ConnectionState::Identified {
-            return Err(ClientError::AlreadyOnline);
-        }
-        self.update_state(ConnectionState::Connected).await;
-
         let closer_dispatch = self.close_notifier.clone();
         let recv_queue = self.recv_queue.clone();
         let state = self.state.clone();
         let last_recv = self.recv_time.clone();
         let mut last_ping: u16 = 0;
 
-        let t = task::spawn(async move {
+        return Ok(task::spawn(async move {
             loop {
                 let closer = closer_dispatch.lock().await;
 
                 macro_rules! tick_body {
                     () => {
+                        rakrs_debug!(true, "[CLIENT] Running connect tick task");
                         let recv = last_recv.load(std::sync::atomic::Ordering::Relaxed);
                         let mut state = state.lock().await;
 
@@ -843,25 +856,32 @@ impl Client {
                             continue;
                         }
 
-                        if (recv + 20000) <= current_epoch() {
+                        if (recv + 20) <= current_epoch() {
                             *state = ConnectionState::Disconnected;
                             rakrs_debug!(true, "[CLIENT] Client timed out. Closing connection...");
                             closer.notify().await;
                             break;
                         }
 
-                        if recv + 15000 <= current_epoch() && state.is_reliable() {
+                        let mut send_q = send_queue.write().await;
+                        let mut recv_q = recv_queue.lock().await;
+
+                        if recv + 10 <= current_epoch() && state.is_reliable() {
                             *state = ConnectionState::TimingOut;
                             rakrs_debug!(
                                 true,
                                 "[CLIENT] Connection is timing out, sending a ping!",
                             );
+                            let ping = ConnectedPing {
+                                time: current_epoch() as i64,
+                            };
+                            if let Ok(_) = send_q
+                                .send_packet(ping.into(), Reliability::Reliable, true)
+                                .await
+                            {}
                         }
 
-                        let mut send_q = send_queue.write().await;
-                        let mut recv_q = recv_queue.lock().await;
-
-                        if last_ping >= 3000 {
+                        if last_ping >= 500 {
                             let ping = ConnectedPing {
                                 time: current_epoch() as i64,
                             };
@@ -920,8 +940,7 @@ impl Client {
                     }
                 }
             }
-        });
-        Ok(t)
+        }));
     }
 }
 

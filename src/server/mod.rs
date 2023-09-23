@@ -344,7 +344,6 @@ impl Listener {
             let mut buf: [u8; 2048] = [0; 2048];
             #[cfg(feature = "mcpe")]
             let motd_default = default_motd.clone();
-
             loop {
                 let length: usize;
                 let origin: SocketAddr;
@@ -357,8 +356,15 @@ impl Listener {
                                 origin = o;
                             }
                             Err(e) => {
-                                rakrs_debug!(true, "Error: {:?}", e);
-                                continue;
+                                match e.kind() {
+                                    std::io::ErrorKind::ConnectionReset => {
+                                        continue;
+                                    },
+                                    _ => {
+                                        rakrs_debug!(true, "[SERVER-SOCKET] Failed to recieve packet! {}", e);
+                                        continue;
+                                    }
+                                }
                             }
                         }
 

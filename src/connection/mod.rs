@@ -258,7 +258,7 @@ impl Connection {
                             break;
                         }
 
-                        if recv + 20000 <= current_epoch() {
+                        if recv + 15 <= current_epoch() {
                             *cstate = ConnectionState::Disconnected;
                             rakrs_debug!(
                                 true,
@@ -270,7 +270,7 @@ impl Connection {
                             break;
                         }
 
-                        if recv + 15000 <= current_epoch() && cstate.is_reliable() {
+                        if recv + 10 <= current_epoch() && cstate.is_reliable() {
                             *cstate = ConnectionState::TimingOut;
                             rakrs_debug!(
                                 true,
