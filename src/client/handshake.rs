@@ -251,7 +251,10 @@ impl ClientHandshake {
                 if (send_time + 2) <= current_epoch() as i64 {
                     send_time = current_epoch() as i64;
 
-                    rakrs_debug!(true, "[CLIENT] Server did not reply with ConnectAccept, sending another...");
+                    rakrs_debug!(
+                        true,
+                        "[CLIENT] Server did not reply with ConnectAccept, sending another..."
+                    );
 
                     if let Err(_) = Self::send_connection_request(&mut send_q, id).await {
                         update_state!(true, shared_state, HandshakeStatus::Failed);
@@ -372,7 +375,10 @@ impl ClientHandshake {
         Self { status: state }
     }
 
-    pub(crate) async fn send_connection_request(send_q: &mut SendQueue, id: i64) -> std::io::Result<()> {
+    pub(crate) async fn send_connection_request(
+        send_q: &mut SendQueue,
+        id: i64,
+    ) -> std::io::Result<()> {
         let connect_request = ConnectionRequest {
             time: current_epoch() as i64,
             client_id: id,
