@@ -10,7 +10,7 @@ RakNet (rak-rs) is available on [crates.io](https://crates.io/crates/rak-rs), to
 
 ```toml
 [dependencies]
-rak-rs = "0.3.0"
+rak-rs = "0.3.2"
 ```
 
 ## Features
@@ -21,7 +21,7 @@ If you wish to use these features, add them to your `Cargo.toml` as seen below:
 
 ```toml
 [dependencies]
-rak-rs = { version = "0.3.0", default-features = false, features = [ "async_tokio", "mcpe" ] }
+rak-rs = { version = "0.3.2", default-features = false, features = [ "async_tokio", "mcpe" ] }
 ```
 
 
