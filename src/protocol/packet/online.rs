@@ -111,7 +111,7 @@ impl Reader<ConnectionAccept> for ConnectionAccept {
 
         for _ in 0..20 {
             // we only have the request time and timestamp left...
-            if buf.as_slice().len() < 16 {
+            if buf.as_slice().len() <= 16 {
                 break;
             }
             internal_ids.push(buf.read_type::<SocketAddr>()?);

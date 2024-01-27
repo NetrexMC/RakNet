@@ -156,7 +156,7 @@ pub enum HandshakeStatus {
     Completed,
 }
 
-struct HandshakeState {
+pub(crate) struct HandshakeState {
     status: HandshakeStatus,
     done: bool,
     waker: Option<Waker>,
@@ -233,26 +233,38 @@ impl ClientHandshake {
             );
             let mut recv_q = RecvQueue::new();
 
-            let connect_request = ConnectionRequest {
-                time: current_epoch() as i64,
-                client_id: id,
-                security: false,
-            };
-
-            if let Err(_) = send_q
-                .send_packet(connect_request.into(), Reliability::Reliable, true)
-                .await
-            {
+            if let Err(_) = Self::send_connection_request(&mut send_q, id).await {
                 update_state!(true, shared_state, HandshakeStatus::Failed);
             }
 
             rakrs_debug!(true, "[CLIENT] Sent ConnectionRequest to server!");
+
+            let mut send_time = current_epoch() as i64;
+            let mut tries = 0_u8;
 
             let mut buf: [u8; 2048] = [0; 2048];
 
             loop {
                 let len: usize;
                 let rec = socket.recv_from(&mut buf).await;
+
+                if (send_time + 2) <= current_epoch() as i64 {
+                    send_time = current_epoch() as i64;
+
+                    rakrs_debug!(
+                        true,
+                        "[CLIENT] Server did not reply with ConnectAccept, sending another..."
+                    );
+
+                    if let Err(_) = Self::send_connection_request(&mut send_q, id).await {
+                        update_state!(true, shared_state, HandshakeStatus::Failed);
+                    }
+
+                    tries += 1;
+                    if tries >= 5 {
+                        update_state!(true, shared_state, HandshakeStatus::Failed);
+                    }
+                }
 
                 match rec {
                     Err(_) => {
@@ -267,7 +279,9 @@ impl ClientHandshake {
                 match buf[0] {
                     0x80..=0x8d => {
                         if let Ok(pk) = FramePacket::read(&mut reader) {
-                            recv_q.insert(pk).unwrap();
+                            if let Err(_) = recv_q.insert(pk) {
+                                continue;
+                            }
 
                             let raw_packets = recv_q.flush();
 
@@ -342,7 +356,12 @@ impl ClientHandshake {
                                                 );
                                             }
                                         }
-                                        _ => {}
+                                        _ => {
+                                            rakrs_debug!(
+                                                true,
+                                                "[CLIENT] Received unknown packet from server!"
+                                            );
+                                        }
                                     }
                                 }
                             }
@@ -354,6 +373,28 @@ impl ClientHandshake {
         });
 
         Self { status: state }
+    }
+
+    pub(crate) async fn send_connection_request(
+        send_q: &mut SendQueue,
+        id: i64,
+    ) -> std::io::Result<()> {
+        let connect_request = ConnectionRequest {
+            time: current_epoch() as i64,
+            client_id: id,
+            security: false,
+        };
+
+        if let Err(_) = send_q
+            .send_packet(connect_request.into(), Reliability::Reliable, true)
+            .await
+        {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "Failed to send ConnectionRequest!",
+            ));
+        }
+        return Ok(());
     }
 }
 

@@ -267,6 +267,8 @@ impl FragmentQueue {
         if let Some(meta) = fragment.fragment_meta.clone() {
             if let Some((size, frames)) = self.fragments.get_mut(&meta.id) {
                 // check if the frame index is out of bounds
+                // todo: Check if == or >, I think it's > but I'm not sure.
+                // todo: This is because the index starts at 0 and the size starts at 1.
                 if meta.index >= *size {
                     return Err(FragmentQueueError::FrameIndexOutOfBounds);
                 }
@@ -299,13 +301,14 @@ impl FragmentQueue {
     pub fn collect(&mut self, id: u16) -> Result<Vec<u8>, FragmentQueueError> {
         if let Some((size, frames)) = self.fragments.get_mut(&id) {
             if *size == frames.len() as u32 {
-                // we have all the frames!
+                // sort all frames by id,
+                // because we now have all frames.
                 frames.sort_by(|a, b| {
                     a.fragment_meta
                         .as_ref()
                         .unwrap()
-                        .id
-                        .cmp(&b.fragment_meta.as_ref().unwrap().id)
+                        .index
+                        .cmp(&b.fragment_meta.as_ref().unwrap().index)
                 });
 
                 let mut buffer = Vec::<u8>::new();

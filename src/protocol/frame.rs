@@ -12,6 +12,13 @@ pub struct FragmentMeta {
     pub(crate) index: u32,
 }
 
+impl FragmentMeta {
+    /// Creates a new fragment meta with the given size, id, and index.
+    pub fn new(size: u32, id: u16, index: u32) -> Self {
+        Self { size, id, index }
+    }
+}
+
 use crate::rakrs_debug;
 
 use super::reliability::Reliability;
@@ -159,6 +166,11 @@ impl Frame {
     /// Whether or not the frame is sequenced and reliable.
     pub fn is_sequenced(&self) -> bool {
         self.reliability.is_sequenced()
+    }
+
+    pub fn with_meta(mut self, meta: FragmentMeta) -> Self {
+        self.fragment_meta = Some(meta);
+        self
     }
 }
 
