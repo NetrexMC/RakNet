@@ -1,4 +1,4 @@
-//! Client errors are errors that can occur when using the [`Client`](crate::client::Client) api.
+s//! Client errors are errors that can occur when using the [`Client`](crate::client::Client) api.
 use crate::connection::queue::SendQueueError;
 
 /// These are errors that can occur when using the [`Client`](crate::client::Client) api.
@@ -28,7 +28,7 @@ pub enum ClientError {
 
 
 impl std::fmt::Display for ClientError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", match self {
             ClientError::AddrBindErr => "Failed to bind to address",
             ClientError::AlreadyOnline => "Already online",
