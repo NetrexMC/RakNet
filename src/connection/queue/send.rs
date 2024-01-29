@@ -42,7 +42,7 @@ impl std::fmt::Display for SendQueueError {
     }
 }
 
-impl std::error::Error for SendQueueError {
+impl std::error::Error for SendQueueError { }
 
 /// This queue is used to prioritize packets being sent out
 /// Packets that are old, are either dropped or requested again.
