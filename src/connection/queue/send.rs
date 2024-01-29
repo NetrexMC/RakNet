@@ -31,6 +31,19 @@ pub enum SendQueueError {
     SendError,
 }
 
+impl std::fmt::Display for SendQueueError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", match self {
+            SendQueueError::PacketTooLarge => "Packet too large",
+            SendQueueError::ParseError => "Parse error",
+            SendQueueError::FragmentError(e) => format!("Fragment error: {}", e),
+            SendQueueError::SendError => "Send error",
+        })
+    }
+}
+
+impl std::error::Error for SendQueueError {
+
 /// This queue is used to prioritize packets being sent out
 /// Packets that are old, are either dropped or requested again.
 /// You can define this behavior with the `timeout` property.
