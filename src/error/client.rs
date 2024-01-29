@@ -25,3 +25,22 @@ pub enum ClientError {
     /// The client failed to process a packet you sent.
     SendQueueError(SendQueueError),
 }
+
+
+impl std::fmt::Display for ClientError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", match self {
+            ClientError::AddrBindErr => "Failed to bind to address",
+            ClientError::AlreadyOnline => "Already online",
+            ClientError::NotListening => "Not listening",
+            ClientError::Unavailable => "Unavailable",
+            ClientError::IncompatibleProtocolVersion => "Incompatible protocol version",
+            ClientError::Killed => "Killed",
+            ClientError::Reset => "Reset",
+            ClientError::ServerOffline => "Server offline",
+            ClientError::SendQueueError(e) => return e.fmt(f),
+        })
+    }
+}
+
+impl std::error::Error for ClientError {}
