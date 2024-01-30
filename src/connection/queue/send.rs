@@ -34,10 +34,10 @@ pub enum SendQueueError {
 impl std::fmt::Display for SendQueueError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", match self {
-            SendQueueError::PacketTooLarge => "Packet too large",
-            SendQueueError::ParseError => "Parse error",
+            SendQueueError::PacketTooLarge => "Packet too large".to_string(),
+            SendQueueError::ParseError => "Parse error".to_string(),
             SendQueueError::FragmentError(e) => format!("Fragment error: {}", e),
-            SendQueueError::SendError => "Send error",
+            SendQueueError::SendError => "Send error".to_string(),
         })
     }
 }
