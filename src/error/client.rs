@@ -1,4 +1,4 @@
-s//! Client errors are errors that can occur when using the [`Client`](crate::client::Client) api.
+//! Client errors are errors that can occur when using the [`Client`](crate::client::Client) api.
 use crate::connection::queue::SendQueueError;
 
 /// These are errors that can occur when using the [`Client`](crate::client::Client) api.
