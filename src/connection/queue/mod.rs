@@ -414,14 +414,18 @@ pub enum FragmentQueueError {
 
 impl std::fmt::Display for FragmentQueueError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", match self {
-            FragmentQueueError::FrameExists => "Frame already exists",
-            FragmentQueueError::FrameNotFragmented => "Frame is not fragmented",
-            FragmentQueueError::DoesNotNeedSplit => "Frame does not need to be split",
-            FragmentQueueError::FragmentInvalid => "Fragment is invalid",
-            FragmentQueueError::FragmentsMissing => "Fragments are missing",
-            FragmentQueueError::FrameIndexOutOfBounds => "Frame index is out of bounds",
-        })
+        write!(
+            f,
+            "{}",
+            match self {
+                FragmentQueueError::FrameExists => "Frame already exists",
+                FragmentQueueError::FrameNotFragmented => "Frame is not fragmented",
+                FragmentQueueError::DoesNotNeedSplit => "Frame does not need to be split",
+                FragmentQueueError::FragmentInvalid => "Fragment is invalid",
+                FragmentQueueError::FragmentsMissing => "Fragments are missing",
+                FragmentQueueError::FrameIndexOutOfBounds => "Frame index is out of bounds",
+            }
+        )
     }
 }
 
