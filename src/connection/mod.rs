@@ -76,10 +76,23 @@ use tokio::{
     time::sleep,
 };
 #[cfg(feature = "async_tokio")]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RecvError {
     Closed,
     Timeout,
 }
+#[cfg(feature = "async_tokio")]
+impl std::fmt::Display for RecvError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RecvError::Closed => write!(f, "RecvError: Channel is closed!"),
+            RecvError::Timeout => write!(f, "RecvError: Timeout!"),
+        }
+    }
+}
+
+#[cfg(feature = "async_tokio")]
+impl std::error::Error for RecvError {}
 
 use crate::{
     notify::Notify,
