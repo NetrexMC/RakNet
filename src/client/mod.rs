@@ -170,7 +170,7 @@ pub struct Client {
     /// The receive queue is used internally to receive packets from the server.
     /// This is read from before sending
     recv_queue: Arc<Mutex<RecvQueue>>,
-    /// The network recieve channel is used to receive raw packets from the server.
+    /// The network receive channel is used to receive raw packets from the server.
     network_recv: Option<Arc<Mutex<Receiver<Vec<u8>>>>>,
     /// The internal channel that is used to dispatch packets to a higher level.
     internal_recv: Receiver<Vec<u8>>,
@@ -573,7 +573,7 @@ impl Client {
                         match packet {
                             RakPacket::Offline(offline) => match offline {
                                 OfflinePacket::UnconnectedPong(pong) => {
-                                    rakrs_debug!(true, "[CLIENT] Recieved pong packet!");
+                                    rakrs_debug!(true, "[CLIENT] Received pong packet!");
                                     return Ok(pong);
                                 }
                                 _ => {}
@@ -582,7 +582,7 @@ impl Client {
                         }
                     }
                     Err(_) => {
-                        rakrs_debug!(true, "[CLIENT] Failed to recieve anything on netowrk channel, is there a sender?");
+                        rakrs_debug!(true, "[CLIENT] Failed to receive anything on network channel, is there a sender?");
                         continue;
                     }
                 }
@@ -628,19 +628,19 @@ impl Client {
                     ($pk_recv: expr) => {
                         #[cfg(feature = "async_std")]
                         if let Err(_) = $pk_recv {
-                            rakrs_debug!(true, "[CLIENT] (recv_task) Failed to recieve anything on netowrk channel, is there a sender?");
+                            rakrs_debug!(true, "[CLIENT] (recv_task) Failed to receive anything on network channel, is there a sender?");
                             continue;
                         }
 
                         #[cfg(feature = "async_tokio")]
                         if let None = $pk_recv {
-                            rakrs_debug!(true, "[CLIENT] (recv_task) Failed to recieve anything on netowrk channel, is there a sender?");
+                            rakrs_debug!(true, "[CLIENT] (recv_task) Failed to receive anything on network channel, is there a sender?");
                             continue;
                         }
 
                         recv_time.store(current_epoch(), std::sync::atomic::Ordering::Relaxed);
 
-                        rakrs_debug!(true, "[CLIENT] (recv_task) Recieved packet!");
+                        rakrs_debug!(true, "[CLIENT] (recv_task) Received packet!");
 
                         let mut client_state = state.lock().await;
 
@@ -703,13 +703,13 @@ impl Client {
                                                             // todo: add ping time to client
                                                             rakrs_debug!(
                                                                 true,
-                                                                "[CLIENT] Recieved pong packet!"
+                                                                "[CLIENT] Received pong packet!"
                                                             );
                                                         }
                                                         OnlinePacket::Disconnect(_) => {
                                                             rakrs_debug!(
                                                                 true,
-                                                                "[CLIENT] Recieved disconnect packet!"
+                                                                "[CLIENT] Received disconnect packet!"
                                                             );
                                                             break 'task_loop;
                                                         }
@@ -727,7 +727,7 @@ impl Client {
                                                     }
                                                 },
                                                 RakPacket::Offline(_) => {
-                                                    rakrs_debug!("[CLIENT] Recieved offline packet after handshake! In future versions this will kill the client.");
+                                                    rakrs_debug!("[CLIENT] Received offline packet after handshake! In future versions this will kill the client.");
                                                 }
                                             }
                                         } else {
