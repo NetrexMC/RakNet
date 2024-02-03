@@ -1,5 +1,6 @@
 use binary_util::interfaces::{Reader, Writer};
 use binary_util::io::{ByteReader, ByteWriter};
+use std::str::FromStr;
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,12 +34,30 @@ impl std::fmt::Display for Gamemode {
     }
 }
 
+impl FromStr for Gamemode {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Survival" => Ok(Gamemode::Survival),
+            "Creative" => Ok(Gamemode::Creative),
+            "Adventure" => Ok(Gamemode::Adventure),
+            "Spectator" => Ok(Gamemode::Spectator),
+            _ => Err(format!("Invalid gamemode {}", s)),
+        }
+    }
+}
+
 /// Protocol wise, motd is just a string
 /// However we're using this struct to represent the motd
 #[derive(Debug, Clone)]
 pub struct Motd {
+    /// The edition of the server (MCPE or MCEE)
+    pub edition: String,
     /// The name of the server
     pub name: String,
+    /// The second line of the server MOTD
+    pub sub_name: String,
     /// The protocol version
     pub protocol: u16,
     /// The version of the server
@@ -51,17 +70,21 @@ pub struct Motd {
     pub gamemode: Gamemode,
     /// The server's GUID
     pub server_guid: u64,
-    /// The server's port
+    /// The server's IPv4 port
     pub port: String,
     /// The IPv6 port
     // TODO: Implement this
     pub ipv6_port: String,
+    /// Is Nintendo limited
+    pub nintendo_limited: bool,
 }
 
 impl Motd {
     pub fn new<S: Into<String>>(server_guid: u64, port: S) -> Self {
         Self {
+            edition: "MCPE".into(),
             name: "Netrex Server".into(),
+            sub_name: "Netrex".into(),
             player_count: 10,
             player_max: 100,
             protocol: 448,
@@ -70,6 +93,7 @@ impl Motd {
             server_guid,
             port: port.into(),
             ipv6_port: "19133".into(),
+            nintendo_limited: false,
         }
     }
 
@@ -77,16 +101,20 @@ impl Motd {
     /// MOTD buffer.
     pub fn write(&self) -> String {
         let props: Vec<String> = vec![
-            "MCPE".into(),
+            self.edition.clone(),
             self.name.clone(),
             self.protocol.to_string(),
             self.version.clone(),
             self.player_count.to_string(),
             self.player_max.to_string(),
             self.server_guid.to_string(),
-            "Netrex".to_string(),
+            self.sub_name.clone(),
             self.gamemode.as_str().to_string(),
-            "1".to_string(),
+            if self.nintendo_limited {
+                "0".into()
+            } else {
+                "1".into()
+            },
             // TODO: Figure out why this is not working
             // self.gamemode.to_string(),
             self.port.to_string(),
@@ -109,6 +137,14 @@ impl Reader<Motd> for Motd {
             .split(";")
             .map(|c| c.to_string())
             .collect::<Vec<String>>();
+
+        let edition = parts
+            .get(0)
+            .ok_or(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Invalid motd edition",
+            ))?
+            .clone();
 
         let name = parts
             .get(1)
@@ -158,11 +194,27 @@ impl Reader<Motd> for Motd {
             ))?
             .clone();
 
+        let sub_name = parts
+            .get(7)
+            .ok_or(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Invalid motd sub name",
+            ))?
+            .clone();
+
         let gamemode = parts
             .get(8)
             .ok_or(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 "Invalid motd gamemode",
+            ))?
+            .clone();
+
+        let nintendo_limited = parts
+            .get(9)
+            .ok_or(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Invalid motd nintendo limited",
             ))?
             .clone();
 
@@ -183,23 +235,16 @@ impl Reader<Motd> for Motd {
             .clone();
 
         Ok(Motd {
+            edition,
             name,
             protocol: protocol.as_str().parse().unwrap(),
             version,
             player_count: player_count.parse().unwrap(),
             player_max: player_max.parse().unwrap(),
             server_guid: server_guid.parse().unwrap(),
-            gamemode: match gamemode
-                .as_str()
-                .parse::<u8>()
-                .expect("Gamemode is not a byte")
-            {
-                0 => Gamemode::Survival,
-                1 => Gamemode::Creative,
-                2 => Gamemode::Adventure,
-                3 => Gamemode::Spectator,
-                _ => Gamemode::Survival,
-            },
+            sub_name,
+            gamemode: Gamemode::from_str(&gamemode).unwrap_or(Gamemode::Survival),
+            nintendo_limited: if nintendo_limited == "0" { true } else { false },
             port,
             ipv6_port,
         })
