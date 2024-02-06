@@ -96,7 +96,8 @@ macro_rules! expect_reply {
             }
 
             let len: usize;
-            let send_result = timeout(Duration::from_secs($timeout), $socket.recv(&mut recv_buf)).await;
+            let send_result =
+                timeout(Duration::from_secs($timeout), $socket.recv(&mut recv_buf)).await;
 
             if (send_result.is_err()) {
                 rakrs_debug!(
@@ -192,7 +193,14 @@ pub struct ClientHandshake {
 }
 
 impl ClientHandshake {
-    pub fn new(socket: Arc<UdpSocket>, id: i64, version: u8, mut mtu: u16, attempts: u8, timeout: u16) -> Self {
+    pub fn new(
+        socket: Arc<UdpSocket>,
+        id: i64,
+        version: u8,
+        mut mtu: u16,
+        attempts: u8,
+        timeout: u16,
+    ) -> Self {
         let state = Arc::new(Mutex::new(HandshakeState {
             done: false,
             status: HandshakeStatus::Created,
@@ -208,7 +216,12 @@ impl ClientHandshake {
 
             match MtuDiscovery::new(
                 socket.clone(),
-                discovery::MtuDiscoveryMeta { id, version, mtu, timeout }
+                discovery::MtuDiscoveryMeta {
+                    id,
+                    version,
+                    mtu,
+                    timeout,
+                },
             )
             .await
             {

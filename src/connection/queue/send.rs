@@ -122,7 +122,11 @@ impl SendQueue {
         immediate: bool,
         channel: Option<u8>,
     ) -> Result<(), SendQueueError> {
-        rakrs_debug!(true, "Inserting packet into send queue: {} bytes", packet.len());
+        rakrs_debug!(
+            true,
+            "Inserting packet into send queue: {} bytes",
+            packet.len()
+        );
         let reliable = if packet.len() > (self.mtu_size + RAKNET_HEADER_FRAME_OVERHEAD) as usize {
             Reliability::ReliableOrd
         } else {

@@ -222,7 +222,7 @@ impl Client {
             id: rand::random::<u64>(),
             timeout: 5000,
             handshake_timeout: 5000,
-            handshake_attempts: 5
+            handshake_attempts: 5,
         }
     }
 
@@ -326,8 +326,15 @@ impl Client {
         self.update_state(ConnectionState::Unidentified).await;
         rakrs_debug!(true, "[CLIENT] Starting connection handshake");
         // before we even start the connection, we need to complete the handshake
-        let handshake =
-            ClientHandshake::new(socket.clone(), self.id as i64, self.version, self.mtu, self.handshake_attempts, self.handshake_timeout).await;
+        let handshake = ClientHandshake::new(
+            socket.clone(),
+            self.id as i64,
+            self.version,
+            self.mtu,
+            self.handshake_attempts,
+            self.handshake_timeout,
+        )
+        .await;
 
         if handshake != HandshakeStatus::Completed {
             rakrs_debug!("Failed to complete handshake: {:?}", handshake);
