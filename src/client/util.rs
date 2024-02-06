@@ -1,5 +1,5 @@
 use crate::protocol::packet::RakPacket;
-use crate::rakrs_debug;
+use crate::{rakrs_debug, rakrs_debug_buffers};
 #[cfg(feature = "async_std")]
 use async_std::net::UdpSocket;
 use binary_util::interfaces::Writer;
@@ -16,6 +16,7 @@ pub async fn send_packet(socket: &Arc<UdpSocket>, packet: RakPacket) -> bool {
             rakrs_debug!("[CLIENT] Failed sending payload to server! {}", e);
             return false;
         } else {
+            rakrs_debug_buffers!(false, "[annon]\n{:?}", buf.as_slice());
             return true;
         }
     } else {

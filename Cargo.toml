@@ -11,11 +11,12 @@ repository = "https://github.com/NetrexMC/RakNet"
 rustdoc-args = ["--html-in-header", "./resources/header.html"]
 
 [features]
-default = [ "async_std" ]
+default = [ "async_tokio" ]
 # default = ["async_tokio" ]
 mcpe = []
 debug = []
 debug_all = []
+debug_buffers = []
 async_std = [ "async-std" ]
 async_tokio = [ "tokio" ]
 

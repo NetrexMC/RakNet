@@ -13,3 +13,13 @@ macro_rules! rakrs_debug {
         }
     };
 }
+
+#[macro_export]
+macro_rules! rakrs_debug_buffers {
+    ($server: literal, $($t: tt)*) => {
+        if cfg!(feature="debug_buffers") {
+            let x = if $server == true { "S -> C" } else { "C -> S" };
+            println!("[rakrs] DBG [{}]: {}", x, format!($($t)*));
+        }
+    };
+}

@@ -5,8 +5,8 @@ use crate::protocol::ack::{Ack, Ackable, Record, SingleRecord};
 use crate::protocol::frame::{Frame, FramePacket};
 use crate::protocol::reliability::Reliability;
 use crate::protocol::MAX_FRAGS;
-use crate::rakrs_debug;
 use crate::server::current_epoch;
+use crate::{rakrs_debug, rakrs_debug_buffers};
 
 use super::{FragmentQueue, OrderedQueue};
 
@@ -100,6 +100,13 @@ impl RecvQueue {
             }
             return;
         }
+
+        rakrs_debug_buffers!(
+            true,
+            "RecvQueue: {}\n{:?}\n",
+            frame.body.len(),
+            frame.body.clone()
+        );
 
         match frame.reliability {
             Reliability::Unreliable => {

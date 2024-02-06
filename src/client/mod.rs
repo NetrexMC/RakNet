@@ -170,8 +170,6 @@ pub struct Client {
     /// The receive queue is used internally to receive packets from the server.
     /// This is read from before sending
     recv_queue: Arc<Mutex<RecvQueue>>,
-    /// The network receive channel is used to receive raw packets from the server.
-    network_recv: Option<Arc<Mutex<Receiver<Vec<u8>>>>>,
     /// The internal channel that is used to dispatch packets to a higher level.
     internal_recv: Receiver<Vec<u8>>,
     internal_send: Sender<Vec<u8>>,
@@ -207,7 +205,6 @@ impl Client {
             state: Arc::new(Mutex::new(ConnectionState::Offline)),
             send_queue: None,
             recv_queue: Arc::new(Mutex::new(RecvQueue::new())),
-            network_recv: None,
             mtu,
             version,
             tasks: Arc::new(Mutex::new(Vec::new())),
@@ -289,8 +286,6 @@ impl Client {
         self.send_queue = Some(send_queue.clone());
         let (net_send, net_recv) = bounded::<Vec<u8>>(10);
 
-        self.network_recv = Some(Arc::new(Mutex::new(net_recv)));
-
         let closer = self.close_notifier.clone();
 
         Self::ping(socket.clone()).await?;
@@ -369,7 +364,7 @@ impl Client {
             }
         });
 
-        let recv_task = self.init_recv_task();
+        let recv_task = self.init_recv_task(net_recv);
         let tisk_task = self.init_connect_tick(send_queue.clone());
 
         if let Err(e) = recv_task {
@@ -482,6 +477,25 @@ impl Client {
         }
     }
 
+    /// Sends a packet immediately, bypassing the send queue.
+    /// This is useful for things like player login and responses, however is discouraged
+    /// for general use, due to congestion control.
+    ///
+    /// # Example
+    /// ```rust ignore
+    /// use rak_rs::client::Client;
+    ///
+    /// #[async_std::main]
+    /// async fn main() {
+    ///    let mut client = Client::new(10, 1400);
+    ///    if let Err(e) = client.connect("my_server.net:19132").await {
+    ///        println!("Failed to connect! {}", e);
+    ///        return;
+    ///    }
+    ///    // Sent immediately.
+    ///    client.send_immediate(&[0, 1, 2, 3], Reliability::Reliable, 0).await.unwrap();
+    /// }
+    /// ```
     pub async fn send_immediate(
         &self,
         buffer: &[u8],
@@ -503,6 +517,9 @@ impl Client {
         }
     }
 
+    /// Attempts to flush the acknowledgement queue, this can be useful if you notice that
+    /// the client stops responding to packets, or you are handling large chunks of data
+    /// that is time sensitive.
     pub async fn flush_ack(&self) {
         let mut send_q = self.send_queue.as_ref().unwrap().write().await;
         let mut recv_q = self.recv_queue.lock().await;
@@ -541,6 +558,25 @@ impl Client {
         }
     }
 
+    /// Pings a server and returns the latency via [`UnconnectedPong`].
+    ///
+    /// [`UnconnectedPong`]: crate::protocol::packet::offline::UnconnectedPong
+    ///
+    /// # Example
+    /// ```rust ignore
+    /// use rak_rs::client::Client;
+    /// use std::sync::Arc;
+    /// use async_std::net::UdpSocket;
+    ///
+    /// #[async_std::main]
+    /// async fn main() {
+    ///     let mut socket = UdpSocket::bind("my_cool_server.net:19193").unwrap();
+    ///     let socket_arc = Arc::new(socket);
+    ///     if let Ok(pong) = Client::ping(socket).await {
+    ///         println!("Latency: {}ms", pong.pong_time - pong.ping_time);
+    ///     }
+    /// }
+    /// ```
     pub async fn ping(socket: Arc<UdpSocket>) -> Result<UnconnectedPong, ClientError> {
         let mut buf: [u8; 2048] = [0; 2048];
         let unconnected_ping = UnconnectedPing {
@@ -593,15 +629,16 @@ impl Client {
         }
     }
 
-    fn init_recv_task(&self) -> Result<JoinHandle<()>, ClientError> {
-        let net_recv = match self.network_recv {
-            Some(ref n) => n.clone(),
-            None => {
-                rakrs_debug!("[CLIENT] (recv_task) Network recv channel is not initialized");
-                return Err(ClientError::Killed);
-            }
-        };
-
+    /// Internal, this is the task that is responsible for receiving packets and dispatching
+    /// them to the user.
+    ///
+    /// This is responsible for the user api on [`Client::recv()`].
+    ///
+    /// [`Client::recv()`]: crate::client::Client::recv
+    fn init_recv_task(
+        &self,
+        mut net_recv: Receiver<Vec<u8>>,
+    ) -> Result<JoinHandle<()>, ClientError> {
         let send_queue = match self.send_queue {
             Some(ref s) => s.clone(),
             None => {
@@ -618,10 +655,7 @@ impl Client {
 
         return Ok(task::spawn(async move {
             'task_loop: loop {
-                #[cfg(feature = "async_std")]
-                let net_dispatch = net_recv.lock().await;
                 #[cfg(feature = "async_tokio")]
-                let mut net_dispatch = net_recv.lock().await;
                 let closed_dispatch = closed.clone();
 
                 macro_rules! recv_body {
@@ -639,8 +673,6 @@ impl Client {
                         }
 
                         recv_time.store(current_epoch(), std::sync::atomic::Ordering::Relaxed);
-
-                        rakrs_debug!(true, "[CLIENT] (recv_task) Received packet!");
 
                         let mut client_state = state.lock().await;
 
@@ -795,7 +827,7 @@ impl Client {
                             break;
                         }
                     }
-                    pk_recv = net_dispatch.recv().fuse() => {
+                    pk_recv = net_recv.recv().fuse() => {
                         recv_body!(pk_recv);
                     }
                 }
@@ -808,7 +840,7 @@ impl Client {
                             break;
                         }
                     }
-                    pk_recv = net_dispatch.recv() => {
+                    pk_recv = net_recv.recv() => {
                         recv_body!(pk_recv);
                     }
                 }
@@ -817,7 +849,9 @@ impl Client {
     }
 
     /// This is an internal function that initializes the client connection.
-    /// This is called by `Client::connect()`.
+    /// This is called by [`Client::connect()`].
+    ///
+    /// [`Client::connect()`]: crate::client::Client::connect
     fn init_connect_tick(
         &self,
         send_queue: Arc<RwLock<SendQueue>>,

@@ -14,8 +14,8 @@ use crate::protocol::frame::{Frame, FramePacket};
 use crate::protocol::packet::RakPacket;
 use crate::protocol::reliability::Reliability;
 use crate::protocol::RAKNET_HEADER_FRAME_OVERHEAD;
-use crate::rakrs_debug;
 use crate::util::{to_address_token, SafeGenerator};
+use crate::{rakrs_debug, rakrs_debug_buffers};
 
 use super::{FragmentQueue, FragmentQueueError, NetQueue, RecoveryQueue};
 
@@ -250,6 +250,8 @@ impl SendQueue {
     }
 
     pub(crate) async fn send_stream(&mut self, packet: &[u8]) {
+        rakrs_debug_buffers!(false, "SendQ: {}\n{:?}\n", packet.len(), packet);
+
         if let Err(e) = self.socket.send_to(packet, &self.address).await {
             // we couldn't sent the packet!
             rakrs_debug!(

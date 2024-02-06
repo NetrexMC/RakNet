@@ -10,6 +10,7 @@
 pub mod event;
 
 use std::collections::HashMap;
+use std::net::ToSocketAddrs;
 use std::{net::SocketAddr, sync::Arc};
 
 #[cfg(feature = "async_std")]
@@ -72,8 +73,20 @@ impl PossiblySocketAddr<'_> {
                 Some(addr.parse::<SocketAddr>().unwrap())
             }
             PossiblySocketAddr::String(addr) => {
-                // same as above, except less elegant >_<
-                Some(addr.clone().as_str().parse::<SocketAddr>().unwrap())
+                if let Ok(addr) = addr.parse::<SocketAddr>() {
+                    Some(addr.clone())
+                } else {
+                    // try to parse it as a socket addr then a string
+                    if let Ok(mut addr) = addr.to_socket_addrs() {
+                        if let Some(v) = addr.next() {
+                            Some(v)
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                }
             }
             _ => None,
         }

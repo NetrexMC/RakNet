@@ -68,6 +68,8 @@ macro_rules! match_ids {
                     Ok(l) => len = l
                 };
 
+                crate::rakrs_debug_buffers!(true, "[annon]: {:?}", &recv_buf[..len]);
+
                 // rakrs_debug!(true, "[CLIENT] Received packet from server: {:x?}", &recv_buf[..len]);
 
                 if ids.contains(&recv_buf[0]) {
@@ -112,6 +114,7 @@ macro_rules! expect_reply {
             };
 
             // rakrs_debug!(true, "[CLIENT] Received packet from server: {:x?}", &recv_buf[..len]);
+            crate::rakrs_debug_buffers!(true, "[annon]: {:?}", &recv_buf[..len]);
 
             let mut reader = ByteReader::from(&recv_buf[1..len]);
             if let Ok(packet) = <$reply>::read(&mut reader) {
