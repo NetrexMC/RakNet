@@ -197,7 +197,7 @@ pub struct OpenConnectReply {
     pub magic: Magic,
     pub server_id: u64,
     pub security: bool,
-    pub mtu_size: u16,
+    pub mtu_size: u16
 }
 
 /// This packet is sent after receiving a [`OpenConnectReply`] packet, and confirms

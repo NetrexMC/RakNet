@@ -179,6 +179,13 @@ pub struct Client {
     close_notifier: Arc<Notify>,
     /// A int for the last time a packet was received.
     recv_time: Arc<AtomicU64>,
+    /// The time it takes to timeout a client.
+    /// This is used to determine if a client is still connected.
+    timeout: u64,
+    /// This is the time it takes to timeout during handshaking.
+    handshake_timeout: u16,
+    /// The amount of handshake attempts to make before giving up.
+    handshake_attempts: u8,
     /// The maximum packet size that can be sent to the server.
     mtu: u16,
     /// The RakNet version of the client.
@@ -213,7 +220,31 @@ impl Client {
             internal_recv,
             internal_send,
             id: rand::random::<u64>(),
+            timeout: 5000,
+            handshake_timeout: 5000,
+            handshake_attempts: 5
         }
+    }
+
+    /// Changes the amount of time it takes to timeout a client. (in seconds)
+    /// This is set to 20s by default.
+    pub fn with_timeout(mut self, timeout: u64) -> Self {
+        self.timeout = timeout;
+        self
+    }
+
+    /// Changes the amount of time it takes to timeout during handshaking. (in seconds)
+    /// This is set to 5s by default.
+    pub fn with_handshake_timeout(mut self, timeout: u16) -> Self {
+        self.handshake_timeout = timeout;
+        self
+    }
+
+    /// Changes the amount of handshake attempts to make before giving up.
+    /// This is set to 5 by default.
+    pub fn with_handshake_attempts(mut self, attempts: u8) -> Self {
+        self.handshake_attempts = attempts;
+        self
     }
 
     /// This method should be used after [`Client::new()`] to start the connection.
@@ -247,6 +278,7 @@ impl Client {
             Some(a) => a,
             None => {
                 rakrs_debug!("Invalid address provided");
+                self.update_state(ConnectionState::Offline).await;
                 return Err(ClientError::AddrBindErr);
             }
         };
@@ -255,6 +287,7 @@ impl Client {
             Ok(s) => s,
             Err(e) => {
                 rakrs_debug!("Failed to bind to address: {}", e);
+                self.update_state(ConnectionState::Offline).await;
                 return Err(ClientError::Killed);
             }
         };
@@ -269,8 +302,8 @@ impl Client {
 
         if res.is_err() {
             rakrs_debug!("[CLIENT] Failed to connect to address");
-            // todo: properly handle lock.
             self.close_notifier.notify().await;
+            self.update_state(ConnectionState::Offline).await;
             return Err(ClientError::Killed);
         }
 
@@ -294,10 +327,11 @@ impl Client {
         rakrs_debug!(true, "[CLIENT] Starting connection handshake");
         // before we even start the connection, we need to complete the handshake
         let handshake =
-            ClientHandshake::new(socket.clone(), self.id as i64, self.version, self.mtu, 5).await;
+            ClientHandshake::new(socket.clone(), self.id as i64, self.version, self.mtu, self.handshake_attempts, self.handshake_timeout).await;
 
         if handshake != HandshakeStatus::Completed {
             rakrs_debug!("Failed to complete handshake: {:?}", handshake);
+            self.update_state(ConnectionState::Offline).await;
             return Err(ClientError::HandshakeError(handshake));
         }
         self.update_state(ConnectionState::Identified).await;
@@ -542,19 +576,31 @@ impl Client {
 
     #[cfg(feature = "async_std")]
     pub async fn recv(&self) -> Result<Vec<u8>, RecvError> {
-        match self.internal_recv.recv().await {
-            #[cfg(feature = "async_std")]
-            Ok(packet) => Ok(packet),
-            #[cfg(feature = "async_std")]
-            Err(e) => Err(e),
+        select! {
+            packet = self.internal_recv.recv().fuse() => {
+                match packet {
+                    Some(packet) => Ok(packet),
+                    None => Err(RecvError::Closed),
+                }
+            },
+            _ = self.close_notifier.wait().fuse() => {
+                Err(RecvError::Closed)
+            }
         }
     }
 
     #[cfg(feature = "async_tokio")]
     pub async fn recv(&mut self) -> Result<Vec<u8>, RecvError> {
-        match self.internal_recv.recv().await {
-            Some(packet) => Ok(packet),
-            None => Err(RecvError::Closed),
+        tokio::select! {
+            packet = self.internal_recv.recv() => {
+                match packet {
+                    Some(packet) => Ok(packet),
+                    None => Err(RecvError::Closed),
+                }
+            },
+            _ = self.close_notifier.wait() => {
+                Err(RecvError::Closed)
+            }
         }
     }
 
@@ -627,6 +673,20 @@ impl Client {
                 return Err(ClientError::ServerOffline);
             }
         }
+    }
+
+    /// This should only be used when you need to verify that the client is still connected.
+    /// Do not use this for anything else.
+    pub async fn is_connected(&self) -> bool {
+        self.state.lock().await.is_connected()
+    }
+
+    /// Returns the current state of the client.
+    /// Not to be confused with [`Client::is_connected()`].
+    ///
+    /// [`Client::is_connected()`]: crate::client::Client::is_connected
+    pub async fn get_state(&self) -> ConnectionState {
+        *self.state.lock().await
     }
 
     /// Internal, this is the task that is responsible for receiving packets and dispatching
@@ -824,7 +884,7 @@ impl Client {
                     killed = closed_dispatch.wait().fuse() => {
                         if killed {
                             rakrs_debug!(true, "[CLIENT] Recv task closed");
-                            break;
+                            break 'task_loop;
                         }
                     }
                     pk_recv = net_recv.recv().fuse() => {
@@ -837,7 +897,7 @@ impl Client {
                     killed = closed_dispatch.wait() => {
                         if killed {
                             rakrs_debug!(true, "[CLIENT] Recv task closed");
-                            break;
+                            break 'task_loop;
                         }
                     }
                     pk_recv = net_recv.recv() => {
@@ -861,13 +921,13 @@ impl Client {
         let recv_queue = self.recv_queue.clone();
         let state = self.state.clone();
         let last_recv = self.recv_time.clone();
+        let timeout_time = self.timeout;
         let mut last_ping: u16 = 0;
 
         return Ok(task::spawn(async move {
             loop {
                 macro_rules! tick_body {
                     () => {
-                        rakrs_debug!(true, "[CLIENT] Running connect tick task");
                         let recv = last_recv.load(std::sync::atomic::Ordering::Relaxed);
                         let mut state = state.lock().await;
 
@@ -888,9 +948,9 @@ impl Client {
                             continue;
                         }
 
-                        if (recv + 20) <= current_epoch() {
+                        if ((recv + timeout_time) <= current_epoch()) && recv != 0 {
                             *state = ConnectionState::Disconnected;
-                            rakrs_debug!(true, "[CLIENT] Client timed out. Closing connection...");
+                            rakrs_debug!(true, "[CLIENT] Client timed out. Closing connection... last={}, current={}", recv, current_epoch());
                             closer.notify().await;
                             break;
                         }
@@ -898,7 +958,7 @@ impl Client {
                         let mut send_q = send_queue.write().await;
                         let mut recv_q = recv_queue.lock().await;
 
-                        if recv + 10 <= current_epoch() && state.is_reliable() {
+                        if (recv + (timeout_time / 2)) <= current_epoch() && state.is_reliable() {
                             *state = ConnectionState::TimingOut;
                             rakrs_debug!(
                                 true,

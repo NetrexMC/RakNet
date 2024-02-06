@@ -89,6 +89,7 @@ pub struct MtuDiscoveryMeta {
     pub id: i64,
     pub version: u8,
     pub mtu: u16,
+    pub timeout: u16
 }
 
 struct DiscoveryState {
@@ -131,6 +132,7 @@ impl MtuDiscovery {
 
                 let reply = match_ids!(
                     socket.clone(),
+                    discovery_info.timeout.into(),
                     // Open connect Reply
                     0x06,
                     // Incompatible protocol version
@@ -166,7 +168,7 @@ impl MtuDiscovery {
                 }
 
                 if let Ok(response) = open_reply {
-                    rakrs_debug!(true, "[CLIENT] Received OpenConnectReply from server!");
+                    rakrs_debug!(true, "[CLIENT] Received OpenConnectReply from server! mtu={}", response.mtu_size);
                     update_state!(shared_state, DiscoveryStatus::Discovered(response.mtu_size));
                     return;
                 } else {

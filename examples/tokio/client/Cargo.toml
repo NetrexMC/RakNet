@@ -6,6 +6,6 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-rak-rs = { path = "../../../", features = [ "async_tokio", "debug_buffers" ]}
+rak-rs = { path = "../../../", features = [ "async_tokio", "debug", "debug_all" ]}
 binary-util = "0.3.4"
 tokio = { version= "1.36.0", features = [ "full" ] }

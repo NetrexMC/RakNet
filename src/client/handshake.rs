@@ -37,7 +37,7 @@ use tokio::{
 
 #[macro_export]
 macro_rules! match_ids {
-    ($socket: expr, $($ids: expr),*) => {
+    ($socket: expr, $timeout: expr, $($ids: expr),*) => {
         {
             let mut recv_buf: [u8; 2048] = [0; 2048];
             let mut tries: u8 = 0;
@@ -51,7 +51,7 @@ macro_rules! match_ids {
 
                 let len: usize;
                 let send_result = timeout(
-                    Duration::from_secs(2),
+                    Duration::from_secs($timeout),
                     $socket.recv(&mut recv_buf)
                 ).await;
 
@@ -61,14 +61,15 @@ macro_rules! match_ids {
                 }
 
                 match send_result.unwrap() {
-                    Err(_) => {
+                    Err(e) => {
                         tries += 1;
+                        rakrs_debug!(true, "[CLIENT] Failed to receive packet from server! {}", e);
                         continue;
                     },
                     Ok(l) => len = l
                 };
 
-                crate::rakrs_debug_buffers!(true, "[annon]: {:?}", &recv_buf[..len]);
+                crate::rakrs_debug_buffers!(true, "[annon]\n {:?}", &recv_buf[..len]);
 
                 // rakrs_debug!(true, "[CLIENT] Received packet from server: {:x?}", &recv_buf[..len]);
 
@@ -84,7 +85,7 @@ macro_rules! match_ids {
 }
 
 macro_rules! expect_reply {
-    ($socket: expr, $reply: ty) => {{
+    ($socket: expr, $reply: ty, $timeout: expr) => {{
         let mut recv_buf: [u8; 2048] = [0; 2048];
         let mut tries: u8 = 0;
         let mut pk: Option<$reply> = None;
@@ -95,7 +96,7 @@ macro_rules! expect_reply {
             }
 
             let len: usize;
-            let send_result = timeout(Duration::from_secs(4), $socket.recv(&mut recv_buf)).await;
+            let send_result = timeout(Duration::from_secs($timeout), $socket.recv(&mut recv_buf)).await;
 
             if (send_result.is_err()) {
                 rakrs_debug!(
@@ -114,7 +115,7 @@ macro_rules! expect_reply {
             };
 
             // rakrs_debug!(true, "[CLIENT] Received packet from server: {:x?}", &recv_buf[..len]);
-            crate::rakrs_debug_buffers!(true, "[annon]: {:?}", &recv_buf[..len]);
+            crate::rakrs_debug_buffers!(true, "[annon]\n {:?}", &recv_buf[..len]);
 
             let mut reader = ByteReader::from(&recv_buf[1..len]);
             if let Ok(packet) = <$reply>::read(&mut reader) {
@@ -191,7 +192,7 @@ pub struct ClientHandshake {
 }
 
 impl ClientHandshake {
-    pub fn new(socket: Arc<UdpSocket>, id: i64, version: u8, mut mtu: u16, attempts: u8) -> Self {
+    pub fn new(socket: Arc<UdpSocket>, id: i64, version: u8, mut mtu: u16, attempts: u8, timeout: u16) -> Self {
         let state = Arc::new(Mutex::new(HandshakeState {
             done: false,
             status: HandshakeStatus::Created,
@@ -207,7 +208,7 @@ impl ClientHandshake {
 
             match MtuDiscovery::new(
                 socket.clone(),
-                discovery::MtuDiscoveryMeta { id, version, mtu },
+                discovery::MtuDiscoveryMeta { id, version, mtu, timeout }
             )
             .await
             {
@@ -246,7 +247,7 @@ impl ClientHandshake {
                 update_state!(true, shared_state, HandshakeStatus::Failed);
             }
 
-            let session_reply = expect_reply!(socket, SessionInfoReply);
+            let session_reply = expect_reply!(socket, SessionInfoReply, timeout.into());
 
             if session_reply.is_none() {
                 rakrs_debug!(true, "[CLIENT] Server did not reply with SessionInfoReply!");
@@ -270,7 +271,7 @@ impl ClientHandshake {
             // create a temporary sendq
             let mut send_q = SendQueue::new(
                 mtu,
-                5000,
+                timeout,
                 attempts.clone().into(),
                 socket.clone(),
                 socket.peer_addr().unwrap(),

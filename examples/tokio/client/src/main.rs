@@ -1,14 +1,23 @@
 use rak_rs::{
-    client::{Client, DEFAULT_MTU},
-    protocol::reliability::Reliability,
+    client::{Client, DEFAULT_MTU}
 };
 
 #[tokio::main]
 async fn main() {
-    let mut client = Client::new(10, DEFAULT_MTU);
+    let mut client = Client::new(11, DEFAULT_MTU)
+        .with_timeout(10)
+        .with_handshake_timeout(1);
 
-    if let Err(e) = client.connect("zeqa.net:19132").await {
-        println!("Failed to connect: {}", e);
+    for _ in 0..3 {
+        if let Err(e) = client.connect("zeqa.net:19132").await {
+            println!("Failed to connect: {}, trying again...", e);
+        } else {
+            break;
+        }
+    }
+
+    if !client.is_connected().await {
+        println!("Failed to connect to server after 3 attempts. Exiting...");
         return;
     }
 
