@@ -5,8 +5,8 @@ use rak_rs::{
 #[tokio::main]
 async fn main() {
     let mut client = Client::new(11, DEFAULT_MTU)
-        .with_timeout(10)
-        .with_handshake_timeout(1);
+        .with_timeout(20)
+        .with_handshake_timeout(3);
 
     for _ in 0..3 {
         if let Err(e) = client.connect("zeqa.net:19132").await {

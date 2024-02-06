@@ -113,6 +113,11 @@ impl MtuDiscovery {
         task::spawn(async move {
             // try to use the mtu provided by the user
             let valid_mtus: Vec<u16> = vec![discovery_info.mtu, 1506, 1492, 1400, 1200, 576];
+            // remove any mtu size that is larger than discovery_info.mtu
+            // let valid_mtus: Vec<u16> = valid_mtus
+            //     .into_iter()
+            //     .filter(|mtu| *mtu <= discovery_info.mtu)
+            //     .collect();
             for mtu in valid_mtus.iter() {
                 // send a connection request
                 let request = OpenConnectRequest {
@@ -173,7 +178,8 @@ impl MtuDiscovery {
                         "[CLIENT] Received OpenConnectReply from server! mtu={}",
                         response.mtu_size
                     );
-                    update_state!(shared_state, DiscoveryStatus::Discovered(response.mtu_size));
+                    let mtu = response.mtu_size;
+                    update_state!(shared_state, DiscoveryStatus::Discovered(mtu));
                     return;
                 } else {
                     update_state!(shared_state, DiscoveryStatus::Undiscovered);
