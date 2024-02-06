@@ -178,7 +178,7 @@ pub struct Client {
     /// A list of tasks that are killed when the connection drops.
     tasks: Arc<Mutex<Vec<JoinHandle<()>>>>,
     /// A notifier for when the client should kill threads.
-    close_notifier: Arc<Mutex<Notify>>,
+    close_notifier: Arc<Notify>,
     /// A int for the last time a packet was received.
     recv_time: Arc<AtomicU64>,
     /// The maximum packet size that can be sent to the server.
@@ -211,7 +211,7 @@ impl Client {
             mtu,
             version,
             tasks: Arc::new(Mutex::new(Vec::new())),
-            close_notifier: Arc::new(Mutex::new(Notify::new())),
+            close_notifier: Arc::new(Notify::new()),
             recv_time: Arc::new(AtomicU64::new(0)),
             internal_recv,
             internal_send,
@@ -273,7 +273,7 @@ impl Client {
         if res.is_err() {
             rakrs_debug!("[CLIENT] Failed to connect to address");
             // todo: properly handle lock.
-            self.close_notifier.lock().await.notify().await;
+            self.close_notifier.notify().await;
             return Err(ClientError::Killed);
         }
 
@@ -303,7 +303,7 @@ impl Client {
 
         if handshake != HandshakeStatus::Completed {
             rakrs_debug!("Failed to complete handshake: {:?}", handshake);
-            return Err(ClientError::Killed);
+            return Err(ClientError::HandshakeError(handshake));
         }
         self.update_state(ConnectionState::Identified).await;
 
@@ -311,7 +311,7 @@ impl Client {
 
         let socket_task = task::spawn(async move {
             let mut buf: [u8; 2048] = [0; 2048];
-            let notifier = closer.lock().await;
+            let notifier = closer.clone();
 
             loop {
                 let length: usize;
@@ -414,7 +414,7 @@ impl Client {
     pub async fn close(&self) {
         self.update_state(ConnectionState::Disconnecting).await;
         let notifier = self.close_notifier.clone();
-        notifier.lock().await.notify().await;
+        notifier.notify().await;
         let mut tasks = self.tasks.lock().await;
         for task in tasks.drain(..) {
             #[cfg(feature = "async_std")]
@@ -582,7 +582,7 @@ impl Client {
                         }
                     }
                     Err(_) => {
-                        rakrs_debug!(true, "[CLIENT] Failed to receive anything on network channel, is there a sender?");
+                        rakrs_debug!(true, "[CLIENT] Failed to recieve anything on netowrk channel, is there a sender?");
                         continue;
                     }
                 }
@@ -622,8 +622,8 @@ impl Client {
                 let net_dispatch = net_recv.lock().await;
                 #[cfg(feature = "async_tokio")]
                 let mut net_dispatch = net_recv.lock().await;
+                let closed_dispatch = closed.clone();
 
-                let closed_dispatch = closed.lock().await;
                 macro_rules! recv_body {
                     ($pk_recv: expr) => {
                         #[cfg(feature = "async_std")]
@@ -823,7 +823,7 @@ impl Client {
         send_queue: Arc<RwLock<SendQueue>>,
     ) -> Result<task::JoinHandle<()>, ClientError> {
         // verify that the client is offline
-        let closer_dispatch = self.close_notifier.clone();
+        let closer = self.close_notifier.clone();
         let recv_queue = self.recv_queue.clone();
         let state = self.state.clone();
         let last_recv = self.recv_time.clone();
@@ -831,8 +831,6 @@ impl Client {
 
         return Ok(task::spawn(async move {
             loop {
-                let closer = closer_dispatch.lock().await;
-
                 macro_rules! tick_body {
                     () => {
                         rakrs_debug!(true, "[CLIENT] Running connect tick task");
@@ -947,6 +945,6 @@ impl Client {
 impl Drop for Client {
     fn drop(&mut self) {
         // todo: There is DEFINITELY a better way to do this...
-        futures_executor::block_on(async move { self.close_notifier.lock().await.notify().await });
+        futures_executor::block_on(async move { self.close_notifier.notify().await });
     }
 }

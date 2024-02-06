@@ -3,11 +3,11 @@ use std::{net::ToSocketAddrs, vec};
 
 #[async_std::main]
 async fn main() {
-    let mut client = Client::new(10, DEFAULT_MTU);
+    let mut client = Client::new(11, DEFAULT_MTU);
     let mut addr = "zeqa.net:19132".to_socket_addrs().unwrap();
     if let Err(e) = client.connect(addr.next().unwrap()).await {
         // here you could attempt to retry, but in this case, we'll just exit
-        println!("Failed to connect to server: {:?}", e);
+        println!("Failed to connect to server: {}", e);
         return;
     }
 

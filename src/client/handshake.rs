@@ -146,14 +146,35 @@ macro_rules! update_state {
     }};
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum HandshakeStatus {
     Created,
     Opening,
     SessionOpen,
     Failed,
+    FailedMtuDiscovery,
+    FailedNoSessionReply,
     IncompatibleVersion,
     Completed,
+}
+
+impl std::fmt::Display for HandshakeStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                HandshakeStatus::Created => "Handshake created",
+                HandshakeStatus::Opening => "Opening handshake",
+                HandshakeStatus::SessionOpen => "Session open",
+                HandshakeStatus::Failed => "Handshake failed",
+                HandshakeStatus::FailedMtuDiscovery => "MTU discovery failed",
+                HandshakeStatus::FailedNoSessionReply => "No session reply",
+                HandshakeStatus::IncompatibleVersion => "Incompatible version",
+                HandshakeStatus::Completed => "Handshake completed",
+            }
+        )
+    }
 }
 
 pub(crate) struct HandshakeState {
@@ -191,7 +212,16 @@ impl ClientHandshake {
                     rakrs_debug!(true, "[CLIENT] Discovered MTU size: {}", m);
                     mtu = m;
                 }
-                _ => update_state!(true, shared_state, HandshakeStatus::Failed),
+                DiscoveryStatus::IncompatibleVersion => {
+                    rakrs_debug!(
+                        true,
+                        "[CLIENT] Client is using incompatible protocol version."
+                    );
+                    update_state!(true, shared_state, HandshakeStatus::IncompatibleVersion);
+                }
+                _ => {
+                    update_state!(true, shared_state, HandshakeStatus::FailedMtuDiscovery);
+                }
             }
 
             let session_info = SessionInfoRequest {
@@ -206,18 +236,29 @@ impl ClientHandshake {
             update_state!(shared_state, HandshakeStatus::SessionOpen);
 
             if !send_packet(&socket, session_info.into()).await {
+                rakrs_debug!(
+                    true,
+                    "[CLIENT] Failed to send SessionInfoRequest to server."
+                );
                 update_state!(true, shared_state, HandshakeStatus::Failed);
             }
 
             let session_reply = expect_reply!(socket, SessionInfoReply);
 
             if session_reply.is_none() {
-                update_state!(true, shared_state, HandshakeStatus::Failed);
+                rakrs_debug!(true, "[CLIENT] Server did not reply with SessionInfoReply!");
+                update_state!(true, shared_state, HandshakeStatus::FailedNoSessionReply);
             }
 
             let session_reply = session_reply.unwrap();
 
             if session_reply.mtu_size != mtu {
+                rakrs_debug!(
+                    true,
+                    "[CLIENT] Server replied with incompatible MTU size! ({} != {})",
+                    session_reply.mtu_size,
+                    mtu
+                );
                 update_state!(true, shared_state, HandshakeStatus::Failed);
             }
 

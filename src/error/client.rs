@@ -1,5 +1,5 @@
 //! Client errors are errors that can occur when using the [`Client`](crate::client::Client) api.
-use crate::connection::queue::SendQueueError;
+use crate::{client::handshake::HandshakeStatus, connection::queue::SendQueueError};
 
 /// These are errors that can occur when using the [`Client`](crate::client::Client) api.
 /// These are returned for a variety of reasons, but is commonly used to indicate
@@ -24,6 +24,8 @@ pub enum ClientError {
     ServerOffline,
     /// The client failed to process a packet you sent.
     SendQueueError(SendQueueError),
+    /// The client errored during handshake.
+    HandshakeError(HandshakeStatus),
 }
 
 impl std::fmt::Display for ClientError {
@@ -41,6 +43,7 @@ impl std::fmt::Display for ClientError {
                 ClientError::Reset => "Reset",
                 ClientError::ServerOffline => "Server offline",
                 ClientError::SendQueueError(e) => return e.fmt(f),
+                ClientError::HandshakeError(e) => return e.fmt(f),
             }
         )
     }
