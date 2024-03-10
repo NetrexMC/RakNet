@@ -95,8 +95,7 @@ impl std::fmt::Display for RecvError {
 impl std::error::Error for RecvError {}
 
 use crate::{
-    notify::Notify,
-    protocol::{
+    notify::Notify, protocol::{
         ack::{Ack, Ackable, ACK, NACK},
         frame::FramePacket,
         packet::{
@@ -104,10 +103,7 @@ use crate::{
             online::{ConnectedPing, ConnectedPong, ConnectionAccept, Disconnect, OnlinePacket},
         },
         reliability::Reliability,
-    },
-    rakrs_debug,
-    server::current_epoch,
-    util::to_address_token,
+    }, rakrs_debug, rakrs_debug_buffers, server::current_epoch, util::to_address_token
 };
 
 use self::{
@@ -777,6 +773,7 @@ impl Connection {
     /// ```
     pub async fn send(&self, buffer: &[u8], immediate: bool) -> Result<(), SendQueueError> {
         let mut q = self.send_queue.write().await;
+        rakrs_debug!("Send call, sending to write");
         if let Err(e) = q
             .insert(buffer, Reliability::ReliableOrd, immediate, Some(0))
             .await
@@ -789,7 +786,7 @@ impl Connection {
     /// This method should be used when you are ready to disconnect the client.
     /// this method will attempt to send a disconnect packet to the client, and
     /// then close the connection.
-    pub async fn close(&mut self) {
+    pub async fn close(&self) {
         rakrs_debug!(
             true,
             "[{}] Dropping connection!",

@@ -140,8 +140,11 @@ impl Ackable for RecvQueue {
 
     fn ack(&mut self, ack: Ack) {
         if ack.is_nack() {
+            rakrs_debug!(true, "Invalid ack: {:?}", ack.clone());
             return;
         }
+
+        rakrs_debug!(true, "Got ack item: {:?}", ack.clone());
 
         // these packets are acknowledged, so we can remove them from the queue.
         for record in ack.records.iter() {

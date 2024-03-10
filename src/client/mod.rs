@@ -321,7 +321,7 @@ impl Client {
 
         let closer = self.close_notifier.clone();
 
-        Self::ping(socket.clone()).await?;
+        Self::internal_ping(socket.clone()).await?;
 
         self.update_state(ConnectionState::Unidentified).await;
         rakrs_debug!(true, "[CLIENT] Starting connection handshake");
@@ -585,13 +585,10 @@ impl Client {
     pub async fn recv(&self) -> Result<Vec<u8>, RecvError> {
         select! {
             packet = self.internal_recv.recv().fuse() => {
-                match packet {
-                    Some(packet) => Ok(packet),
-                    None => Err(RecvError::Closed),
-                }
-            },
+                packet
+            }
             _ = self.close_notifier.wait().fuse() => {
-                Err(RecvError::Closed)
+                Err(RecvError)
             }
         }
     }
@@ -619,6 +616,47 @@ impl Client {
     /// ```rust ignore
     /// use rak_rs::client::Client;
     /// use std::sync::Arc;
+    ///
+    /// #[async_std::main]
+    /// async fn main() {
+    ///     if let Ok(pong) = Client::ping("zeqa.net:19132").await {
+    ///         println!("Latency: {}ms", pong.pong_time - pong.ping_time);
+    ///     }
+    /// }
+    /// ```
+    pub async fn ping<I: for<'a> Into<PossiblySocketAddr<'a>>>(
+        address: I
+    ) -> Result<UnconnectedPong, ClientError> {
+        let a: PossiblySocketAddr = address.into();
+        let address_r: Option<SocketAddr> = a.to_socket_addr();
+
+        if address_r.is_none() {
+            return Err(ClientError::AddrBindErr);
+        }
+
+        let socket = match UdpSocket::bind("0.0.0.0:0").await {
+            Ok(s) => s,
+            Err(_) => return Err(ClientError::AddrBindErr)
+        };
+
+        if let Err(e) = socket.connect(address_r.unwrap()).await {
+            rakrs_debug!(true, "[CLIENT] Failed to connect to ({}): {}", address_r.unwrap(), e);
+            return Err(ClientError::Reset);
+        }
+
+        let socket_arc = Arc::new(socket);
+
+        return Self::internal_ping(socket_arc).await;
+    }
+
+    /// Pings a server and returns the latency via [`UnconnectedPong`].
+    ///
+    /// [`UnconnectedPong`]: crate::protocol::packet::offline::UnconnectedPong
+    ///
+    /// # Example
+    /// ```rust ignore
+    /// use rak_rs::client::Client;
+    /// use std::sync::Arc;
     /// use async_std::net::UdpSocket;
     ///
     /// #[async_std::main]
@@ -630,7 +668,7 @@ impl Client {
     ///     }
     /// }
     /// ```
-    pub async fn ping(socket: Arc<UdpSocket>) -> Result<UnconnectedPong, ClientError> {
+    pub(crate) async fn internal_ping(socket: Arc<UdpSocket>) -> Result<UnconnectedPong, ClientError> {
         let mut buf: [u8; 2048] = [0; 2048];
         let unconnected_ping = UnconnectedPing {
             timestamp: current_epoch(),
@@ -638,7 +676,7 @@ impl Client {
             client_id: rand::random::<i64>(),
         };
 
-        if let Err(_) = socket
+        if let Err(e) = socket
             .send(
                 RakPacket::from(unconnected_ping)
                     .write_to_bytes()
@@ -648,6 +686,7 @@ impl Client {
             .await
         {
             rakrs_debug!(true, "[CLIENT] Failed to send ping packet!");
+            rakrs_debug!(true, "[CLIENT] Failed to send ping packet: {}", e);
             return Err(ClientError::ServerOffline);
         }
 
@@ -722,7 +761,7 @@ impl Client {
 
         return Ok(task::spawn(async move {
             'task_loop: loop {
-                #[cfg(feature = "async_tokio")]
+                // #[cfg(feature = "async_tokio")]
                 let closed_dispatch = closed.clone();
 
                 macro_rules! recv_body {

@@ -127,11 +127,14 @@ impl SendQueue {
             "Inserting packet into send queue: {} bytes",
             packet.len()
         );
+        rakrs_debug!("Write is now processing packet");
         let reliable = if packet.len() > (self.mtu_size + RAKNET_HEADER_FRAME_OVERHEAD) as usize {
             Reliability::ReliableOrd
         } else {
             reliability
         };
+
+        rakrs_debug!("Write is now processing packet: {:?}", reliable);
 
         match reliability {
             Reliability::Unreliable => {
@@ -157,6 +160,8 @@ impl SendQueue {
             let mut pk = FramePacket::new();
             pk.sequence = self.send_seq.next();
             pk.reliability = reliability;
+
+            rakrs_debug!("Write is now splitting, too large: {:?}", reliability);
 
             let fragmented = self.fragment_queue.split_insert(&packet, self.mtu_size);
 
@@ -184,6 +189,8 @@ impl SendQueue {
 
                 // Add this frame packet to the recovery queue.
                 if let Ok(p) = pk.write_to_bytes() {
+                    rakrs_debug!("Write is sending stream: {:?}", reliability);
+
                     self.send_stream(p.as_slice()).await;
                     self.ack.insert_id(pk.sequence, pk);
                     return Ok(());
@@ -250,7 +257,10 @@ impl SendQueue {
         }
 
         if let Ok(buf) = pk.write_to_bytes() {
+            rakrs_debug!("[!] Write sent the packet.. {:?}", buf.as_slice());
             self.send_stream(buf.as_slice()).await;
+        } else {
+            rakrs_debug_buffers!(true, "SendQ: Failed to send frame: {:?}", pk);
         }
     }
 

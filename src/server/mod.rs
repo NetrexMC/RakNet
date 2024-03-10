@@ -342,7 +342,7 @@ impl Listener {
         let closer = self.closed.clone();
         let connections2 = self.connections.clone();
         let closer2 = self.closed.clone();
-        let versions = self.versions.clone();
+        let versions = self.versions;
 
         self.serving = true;
 
