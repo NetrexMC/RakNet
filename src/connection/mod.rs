@@ -95,7 +95,8 @@ impl std::fmt::Display for RecvError {
 impl std::error::Error for RecvError {}
 
 use crate::{
-    notify::Notify, protocol::{
+    notify::Notify,
+    protocol::{
         ack::{Ack, Ackable, ACK, NACK},
         frame::FramePacket,
         packet::{
@@ -103,7 +104,10 @@ use crate::{
             online::{ConnectedPing, ConnectedPong, ConnectionAccept, Disconnect, OnlinePacket},
         },
         reliability::Reliability,
-    }, rakrs_debug, rakrs_debug_buffers, server::current_epoch, util::to_address_token
+    },
+    rakrs_debug, rakrs_debug_buffers,
+    server::current_epoch,
+    util::to_address_token,
 };
 
 use self::{

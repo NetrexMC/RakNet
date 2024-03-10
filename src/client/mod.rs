@@ -625,7 +625,7 @@ impl Client {
     /// }
     /// ```
     pub async fn ping<I: for<'a> Into<PossiblySocketAddr<'a>>>(
-        address: I
+        address: I,
     ) -> Result<UnconnectedPong, ClientError> {
         let a: PossiblySocketAddr = address.into();
         let address_r: Option<SocketAddr> = a.to_socket_addr();
@@ -636,11 +636,16 @@ impl Client {
 
         let socket = match UdpSocket::bind("0.0.0.0:0").await {
             Ok(s) => s,
-            Err(_) => return Err(ClientError::AddrBindErr)
+            Err(_) => return Err(ClientError::AddrBindErr),
         };
 
         if let Err(e) = socket.connect(address_r.unwrap()).await {
-            rakrs_debug!(true, "[CLIENT] Failed to connect to ({}): {}", address_r.unwrap(), e);
+            rakrs_debug!(
+                true,
+                "[CLIENT] Failed to connect to ({}): {}",
+                address_r.unwrap(),
+                e
+            );
             return Err(ClientError::Reset);
         }
 
@@ -668,7 +673,9 @@ impl Client {
     ///     }
     /// }
     /// ```
-    pub(crate) async fn internal_ping(socket: Arc<UdpSocket>) -> Result<UnconnectedPong, ClientError> {
+    pub(crate) async fn internal_ping(
+        socket: Arc<UdpSocket>,
+    ) -> Result<UnconnectedPong, ClientError> {
         let mut buf: [u8; 2048] = [0; 2048];
         let unconnected_ping = UnconnectedPing {
             timestamp: current_epoch(),
