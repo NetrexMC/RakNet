@@ -750,8 +750,7 @@ impl Client {
     /// [`Client::recv()`]: crate::client::Client::recv
     fn init_recv_task(
         &self,
-        #[allow(unused_mut)]
-        mut net_recv: Receiver<Vec<u8>>,
+        #[allow(unused_mut)] mut net_recv: Receiver<Vec<u8>>,
     ) -> Result<JoinHandle<()>, ClientError> {
         let send_queue = match self.send_queue {
             Some(ref s) => s.clone(),

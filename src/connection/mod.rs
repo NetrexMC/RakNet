@@ -568,11 +568,7 @@ impl Connection {
         state: &Arc<Mutex<ConnectionState>>,
     ) -> Result<bool, ()> {
         if buffer.len() < 1 {
-            rakrs_debug!(
-                "[{}] Got packet: {}",
-                to_address_token(*address),
-                buffer[0]
-            );
+            rakrs_debug!("[{}] Got packet: {}", to_address_token(*address), buffer[0]);
         }
         if let Ok(online_packet) = OnlinePacket::read_from_slice(&buffer) {
             match online_packet {
