@@ -92,7 +92,7 @@ use crate::{
         reliability::Reliability,
         Magic,
     },
-    rakrs_debug,
+    rakrs_debug, rakrs_debug_buffers,
     server::{current_epoch, PossiblySocketAddr},
 };
 
@@ -518,6 +518,24 @@ impl Client {
         }
     }
 
+    /// ONLY USE IF YOU KNOW WHAT YOU ARE DOING
+    /// THIS WILL BREAK CONGESTION CONTROL
+    pub async fn send_raw(&self, buffer: &[u8]) -> Result<(), ClientError> {
+        if self.state.lock().await.is_available() {
+            let mut send_q = self.send_queue.as_ref().unwrap().write().await;
+            if let Err(send) = send_q
+                .insert(buffer, Reliability::Reliable, true, None)
+                .await
+            {
+                rakrs_debug!(true, "[CLIENT] Failed to insert packet into send queue!");
+                return Err(ClientError::SendQueueError(send));
+            }
+            Ok(())
+        } else {
+            Err(ClientError::Unavailable)
+        }
+    }
+
     /// Sends a packet immediately, bypassing the send queue.
     /// This is useful for things like player login and responses, however is discouraged
     /// for general use, due to congestion control.
@@ -685,44 +703,61 @@ impl Client {
 
         if let Err(e) = socket
             .send(
-                RakPacket::from(unconnected_ping)
+                RakPacket::from(unconnected_ping.clone())
                     .write_to_bytes()
                     .unwrap()
                     .as_slice(),
             )
             .await
         {
-            rakrs_debug!(true, "[CLIENT] Failed to send ping packet!");
-            rakrs_debug!(true, "[CLIENT] Failed to send ping packet: {}", e);
+            rakrs_debug!(true, "[CLIENT::PING]Failed to send ping packet!");
+            rakrs_debug!(true, "[CLIENT::PING] Failed to send ping packet: {}", e);
             return Err(ClientError::ServerOffline);
         }
 
         loop {
-            rakrs_debug!(true, "[CLIENT] Waiting for pong packet...");
+            rakrs_debug!(true, "[CLIENT::PING] Waiting for pong packet...");
             if let Ok(recvd) = timeout(Duration::from_millis(10000), socket.recv(&mut buf)).await {
                 match recvd {
                     Ok(l) => {
                         let mut reader = ByteReader::from(&buf[..l]);
-                        let packet = RakPacket::read(&mut reader).unwrap();
+                        let packet = match RakPacket::read(&mut reader) {
+                            Ok(p) => p,
+                            Err(e) => {
+                                continue;
+                            }
+                        };
 
                         match packet {
                             RakPacket::Offline(offline) => match offline {
                                 OfflinePacket::UnconnectedPong(pong) => {
-                                    rakrs_debug!(true, "[CLIENT] Received pong packet!");
+                                    rakrs_debug!(true, "[CLIENT::PING] Received pong packet!");
                                     return Ok(pong);
                                 }
-                                _ => {}
+                                _ => {
+                                    rakrs_debug!(
+                                        true,
+                                        "[CLIENT::PING] Received unknown packet: {:?}",
+                                        offline
+                                    );
+                                }
                             },
-                            _ => {}
+                            _ => {
+                                rakrs_debug!(
+                                    true,
+                                    "[CLIENT::PING] Received unknown packet: {:?}",
+                                    packet
+                                );
+                            }
                         }
                     }
                     Err(_) => {
-                        rakrs_debug!(true, "[CLIENT] Failed to recieve anything on netowrk channel, is there a sender?");
+                        rakrs_debug!(true, "[CLIENT::PING] Failed to recieve anything on netowrk channel, is there a sender?");
                         continue;
                     }
                 }
             } else {
-                rakrs_debug!(true, "[CLIENT] Ping Failed, server did not respond!");
+                rakrs_debug!(true, "[CLIENT::PING] Ping Failed, server did not respond!");
                 return Err(ClientError::ServerOffline);
             }
         }

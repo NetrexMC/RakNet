@@ -1,0 +1,10 @@
+[package]
+name = "proxy"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.81"
+async-std = { version = "1.12.0", features = [ "attributes" ] }
+rak-rs = { path = "../../../", features = [ "mcpe", "async_tokio" ], default-features = false }
+tokio = "1.23.0"
