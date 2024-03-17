@@ -92,7 +92,7 @@ use crate::{
         reliability::Reliability,
         Magic,
     },
-    rakrs_debug, rakrs_debug_buffers,
+    rakrs_debug,
     server::{current_epoch, PossiblySocketAddr},
 };
 
@@ -723,7 +723,7 @@ impl Client {
                         let mut reader = ByteReader::from(&buf[..l]);
                         let packet = match RakPacket::read(&mut reader) {
                             Ok(p) => p,
-                            Err(e) => {
+                            Err(_) => {
                                 continue;
                             }
                         };
