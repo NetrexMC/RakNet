@@ -1,5 +1,7 @@
-/// A wrapper for println that is enabled
-/// only when debug is enabled.
+/// A wrapper for println that is enabled only with the features `debug`, `debug_all`, or `debug_features`.
+/// - `debug` - Enables generic logging, purposeful for debugging things going wrong with your implementation
+/// - `debug_all` - Enables logging of all components, IE, connection, packets, etc.
+/// - `debug_buffers` - Enables logging of all buffers sent and received.
 #[macro_export]
 macro_rules! rakrs_debug {
     ($heavy: ident, $($t: tt)*) => {
