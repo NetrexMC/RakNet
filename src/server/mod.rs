@@ -727,6 +727,14 @@ impl Listener {
     }
 }
 
+impl Drop for Listener {
+    fn drop(&mut self) {
+        if self.serving {
+            futures_executor::block_on(self.stop()).unwrap();
+        }
+    }
+}
+
 async fn send_packet_to_socket(socket: &Arc<UdpSocket>, packet: RakPacket, origin: SocketAddr) {
     if let Err(e) = socket
         .send_to(&mut packet.write_to_bytes().unwrap().as_slice(), origin)

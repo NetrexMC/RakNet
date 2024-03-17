@@ -105,7 +105,7 @@ use crate::{
         },
         reliability::Reliability,
     },
-    rakrs_debug, rakrs_debug_buffers,
+    rakrs_debug,
     server::current_epoch,
     util::to_address_token,
 };
@@ -567,6 +567,13 @@ impl Connection {
         send_q: &Arc<RwLock<SendQueue>>,
         state: &Arc<Mutex<ConnectionState>>,
     ) -> Result<bool, ()> {
+        if buffer.len() < 1 {
+            rakrs_debug!(
+                "[{}] Got packet: {}",
+                to_address_token(*address),
+                buffer[0]
+            );
+        }
         if let Ok(online_packet) = OnlinePacket::read_from_slice(&buffer) {
             match online_packet {
                 OnlinePacket::ConnectedPing(pk) => {
@@ -633,6 +640,10 @@ impl Connection {
                 OnlinePacket::LostConnection(_) => {
                     // Disconnect the client immediately.
                     // connection.disconnect("Client disconnected.", false);
+                    rakrs_debug!(
+                        "[{}] Client has lost connection, disconnecting client!",
+                        to_address_token(*address)
+                    );
                     return Ok(true);
                 }
                 OnlinePacket::NewConnection(_) => {
@@ -820,5 +831,16 @@ impl Connection {
             #[cfg(feature = "async_tokio")]
             task.abort();
         }
+    }
+}
+
+impl Drop for Connection {
+    fn drop(&mut self) {
+        futures_executor::block_on(async {
+            if self.is_closed().await {
+                return;
+            }
+            self.close().await;
+        });
     }
 }

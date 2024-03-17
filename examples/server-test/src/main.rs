@@ -79,7 +79,11 @@ async fn handle(mut connection: Connection) {
                             .await
                             .unwrap()
                     }
-                    2 => panic!("Received ClientToServerHandshake packet successfully! :D"),
+                    2 => {
+                        println!("Received ServerToClientHandshake packet!");// {:?}", packet);
+                        // you should use conenction close in 254 but...
+                        connection.close().await;
+                    },
                     _ => todo!(),
                 };
 

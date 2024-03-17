@@ -8,4 +8,4 @@ edition = "2021"
 [dependencies]
 async-std = { version = "1.12.0", features = [ "unstable", "attributes" ] }
 binary-util = "0.3.4"
-rak-rs = { path = "../../../", features = [ "debug", "debug_all", "async-std" ]}
+rak-rs = { path = "../../../", features = [ "debug", "debug_all", "async-std", "mcpe"]}
