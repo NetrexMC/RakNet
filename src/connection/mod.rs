@@ -76,10 +76,23 @@ use tokio::{
     time::sleep,
 };
 #[cfg(feature = "async_tokio")]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RecvError {
     Closed,
     Timeout,
 }
+#[cfg(feature = "async_tokio")]
+impl std::fmt::Display for RecvError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RecvError::Closed => write!(f, "RecvError: Channel is closed!"),
+            RecvError::Timeout => write!(f, "RecvError: Timeout!"),
+        }
+    }
+}
+
+#[cfg(feature = "async_tokio")]
+impl std::error::Error for RecvError {}
 
 use crate::{
     notify::Notify,
@@ -554,6 +567,9 @@ impl Connection {
         send_q: &Arc<RwLock<SendQueue>>,
         state: &Arc<Mutex<ConnectionState>>,
     ) -> Result<bool, ()> {
+        if buffer.len() < 1 {
+            rakrs_debug!("[{}] Got packet: {}", to_address_token(*address), buffer[0]);
+        }
         if let Ok(online_packet) = OnlinePacket::read_from_slice(&buffer) {
             match online_packet {
                 OnlinePacket::ConnectedPing(pk) => {
@@ -620,6 +636,10 @@ impl Connection {
                 OnlinePacket::LostConnection(_) => {
                     // Disconnect the client immediately.
                     // connection.disconnect("Client disconnected.", false);
+                    rakrs_debug!(
+                        "[{}] Client has lost connection, disconnecting client!",
+                        to_address_token(*address)
+                    );
                     return Ok(true);
                 }
                 OnlinePacket::NewConnection(_) => {
@@ -764,6 +784,7 @@ impl Connection {
     /// ```
     pub async fn send(&self, buffer: &[u8], immediate: bool) -> Result<(), SendQueueError> {
         let mut q = self.send_queue.write().await;
+        rakrs_debug!("Send call, sending to write");
         if let Err(e) = q
             .insert(buffer, Reliability::ReliableOrd, immediate, Some(0))
             .await
@@ -776,7 +797,7 @@ impl Connection {
     /// This method should be used when you are ready to disconnect the client.
     /// this method will attempt to send a disconnect packet to the client, and
     /// then close the connection.
-    pub async fn close(&mut self) {
+    pub async fn close(&self) {
         rakrs_debug!(
             true,
             "[{}] Dropping connection!",
@@ -805,6 +826,32 @@ impl Connection {
             task.cancel().await;
             #[cfg(feature = "async_tokio")]
             task.abort();
+        }
+    }
+}
+
+impl Drop for Connection {
+    fn drop(&mut self) {
+        futures_executor::block_on(async {
+            if self.is_closed().await {
+                return;
+            }
+            self.close().await;
+        });
+    }
+}
+
+impl Clone for Connection {
+    fn clone(&self) -> Self {
+        return Connection {
+            address: self.address.clone(),
+            state: Arc::clone(&self.state),
+            send_queue: Arc::clone(&self.send_queue),
+            recv_queue: Arc::clone(&self.recv_queue),
+            internal_net_recv: Arc::clone(&self.internal_net_recv),
+            disconnect: Arc::clone(&self.disconnect),
+            recv_time: Arc::clone(&self.recv_time),
+            tasks: Arc::clone(&self.tasks)
         }
     }
 }

@@ -14,8 +14,8 @@ use crate::protocol::frame::{Frame, FramePacket};
 use crate::protocol::packet::RakPacket;
 use crate::protocol::reliability::Reliability;
 use crate::protocol::RAKNET_HEADER_FRAME_OVERHEAD;
-use crate::rakrs_debug;
 use crate::util::{to_address_token, SafeGenerator};
+use crate::{rakrs_debug, rakrs_debug_buffers};
 
 use super::{FragmentQueue, FragmentQueueError, NetQueue, RecoveryQueue};
 
@@ -30,6 +30,23 @@ pub enum SendQueueError {
     /// Send queue error
     SendError,
 }
+
+impl std::fmt::Display for SendQueueError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                SendQueueError::PacketTooLarge => "Packet too large".to_string(),
+                SendQueueError::ParseError => "Parse error".to_string(),
+                SendQueueError::FragmentError(e) => format!("Fragment error: {}", e),
+                SendQueueError::SendError => "Send error".to_string(),
+            }
+        )
+    }
+}
+
+impl std::error::Error for SendQueueError {}
 
 /// This queue is used to prioritize packets being sent out
 /// Packets that are old, are either dropped or requested again.
@@ -67,9 +84,9 @@ pub struct SendQueue {
 
     ready: Vec<Frame>,
 
-    socket: Arc<UdpSocket>,
+    pub(crate) socket: Arc<UdpSocket>,
 
-    address: SocketAddr,
+    pub(crate) address: SocketAddr,
 }
 
 impl SendQueue {
@@ -105,11 +122,19 @@ impl SendQueue {
         immediate: bool,
         channel: Option<u8>,
     ) -> Result<(), SendQueueError> {
+        rakrs_debug!(
+            true,
+            "Inserting packet into send queue: {} bytes",
+            packet.len()
+        );
+        rakrs_debug!("Write is now processing packet");
         let reliable = if packet.len() > (self.mtu_size + RAKNET_HEADER_FRAME_OVERHEAD) as usize {
             Reliability::ReliableOrd
         } else {
             reliability
         };
+
+        rakrs_debug!("Write is now processing packet: {:?}", reliable);
 
         match reliability {
             Reliability::Unreliable => {
@@ -135,6 +160,8 @@ impl SendQueue {
             let mut pk = FramePacket::new();
             pk.sequence = self.send_seq.next();
             pk.reliability = reliability;
+
+            rakrs_debug!("Write is now splitting, too large: {:?}", reliability);
 
             let fragmented = self.fragment_queue.split_insert(&packet, self.mtu_size);
 
@@ -162,6 +189,8 @@ impl SendQueue {
 
                 // Add this frame packet to the recovery queue.
                 if let Ok(p) = pk.write_to_bytes() {
+                    rakrs_debug!("Write is sending stream: {:?}", reliability);
+
                     self.send_stream(p.as_slice()).await;
                     self.ack.insert_id(pk.sequence, pk);
                     return Ok(());
@@ -228,11 +257,16 @@ impl SendQueue {
         }
 
         if let Ok(buf) = pk.write_to_bytes() {
+            rakrs_debug!("[!] Write sent the packet.. {:?}", buf.as_slice());
             self.send_stream(buf.as_slice()).await;
+        } else {
+            rakrs_debug_buffers!(true, "SendQ: Failed to send frame: {:?}", pk);
         }
     }
 
     pub(crate) async fn send_stream(&mut self, packet: &[u8]) {
+        rakrs_debug_buffers!(false, "SendQ: {}\n{:?}\n", packet.len(), packet);
+
         if let Err(e) = self.socket.send_to(packet, &self.address).await {
             // we couldn't sent the packet!
             rakrs_debug!(

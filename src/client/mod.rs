@@ -43,6 +43,7 @@ use std::{
     sync::{atomic::AtomicU64, Arc},
     time::Duration,
 };
+use std::ops::Deref;
 
 #[cfg(feature = "async_std")]
 use async_std::{
@@ -95,6 +96,7 @@ use crate::{
     rakrs_debug,
     server::{current_epoch, PossiblySocketAddr},
 };
+use crate::connection::Connection;
 
 #[cfg(feature = "mcpe")]
 use crate::protocol::mcpe::UnconnectedPong;
@@ -170,17 +172,22 @@ pub struct Client {
     /// The receive queue is used internally to receive packets from the server.
     /// This is read from before sending
     recv_queue: Arc<Mutex<RecvQueue>>,
-    /// The network recieve channel is used to receive raw packets from the server.
-    network_recv: Option<Arc<Mutex<Receiver<Vec<u8>>>>>,
     /// The internal channel that is used to dispatch packets to a higher level.
     internal_recv: Receiver<Vec<u8>>,
     internal_send: Sender<Vec<u8>>,
     /// A list of tasks that are killed when the connection drops.
     tasks: Arc<Mutex<Vec<JoinHandle<()>>>>,
     /// A notifier for when the client should kill threads.
-    close_notifier: Arc<Mutex<Notify>>,
+    close_notifier: Arc<Notify>,
     /// A int for the last time a packet was received.
     recv_time: Arc<AtomicU64>,
+    /// The time it takes to timeout a client.
+    /// This is used to determine if a client is still connected.
+    timeout: u64,
+    /// This is the time it takes to timeout during handshaking.
+    handshake_timeout: u16,
+    /// The amount of handshake attempts to make before giving up.
+    handshake_attempts: u8,
     /// The maximum packet size that can be sent to the server.
     mtu: u16,
     /// The RakNet version of the client.
@@ -207,16 +214,39 @@ impl Client {
             state: Arc::new(Mutex::new(ConnectionState::Offline)),
             send_queue: None,
             recv_queue: Arc::new(Mutex::new(RecvQueue::new())),
-            network_recv: None,
             mtu,
             version,
             tasks: Arc::new(Mutex::new(Vec::new())),
-            close_notifier: Arc::new(Mutex::new(Notify::new())),
+            close_notifier: Arc::new(Notify::new()),
             recv_time: Arc::new(AtomicU64::new(0)),
             internal_recv,
             internal_send,
             id: rand::random::<u64>(),
+            timeout: 5000,
+            handshake_timeout: 5000,
+            handshake_attempts: 5,
         }
+    }
+
+    /// Changes the amount of time it takes to timeout a client. (in seconds)
+    /// This is set to 20s by default.
+    pub fn with_timeout(mut self, timeout: u64) -> Self {
+        self.timeout = timeout;
+        self
+    }
+
+    /// Changes the amount of time it takes to timeout during handshaking. (in seconds)
+    /// This is set to 5s by default.
+    pub fn with_handshake_timeout(mut self, timeout: u16) -> Self {
+        self.handshake_timeout = timeout;
+        self
+    }
+
+    /// Changes the amount of handshake attempts to make before giving up.
+    /// This is set to 5 by default.
+    pub fn with_handshake_attempts(mut self, attempts: u8) -> Self {
+        self.handshake_attempts = attempts;
+        self
     }
 
     /// This method should be used after [`Client::new()`] to start the connection.
@@ -250,6 +280,7 @@ impl Client {
             Some(a) => a,
             None => {
                 rakrs_debug!("Invalid address provided");
+                self.update_state(ConnectionState::Offline).await;
                 return Err(ClientError::AddrBindErr);
             }
         };
@@ -258,6 +289,7 @@ impl Client {
             Ok(s) => s,
             Err(e) => {
                 rakrs_debug!("Failed to bind to address: {}", e);
+                self.update_state(ConnectionState::Offline).await;
                 return Err(ClientError::Killed);
             }
         };
@@ -272,8 +304,8 @@ impl Client {
 
         if res.is_err() {
             rakrs_debug!("[CLIENT] Failed to connect to address");
-            // todo: properly handle lock.
-            self.close_notifier.lock().await.notify().await;
+            self.close_notifier.notify().await;
+            self.update_state(ConnectionState::Offline).await;
             return Err(ClientError::Killed);
         }
 
@@ -289,21 +321,27 @@ impl Client {
         self.send_queue = Some(send_queue.clone());
         let (net_send, net_recv) = bounded::<Vec<u8>>(10);
 
-        self.network_recv = Some(Arc::new(Mutex::new(net_recv)));
-
         let closer = self.close_notifier.clone();
 
-        Self::ping(socket.clone()).await?;
+        Self::internal_ping(socket.clone()).await?;
 
         self.update_state(ConnectionState::Unidentified).await;
         rakrs_debug!(true, "[CLIENT] Starting connection handshake");
         // before we even start the connection, we need to complete the handshake
-        let handshake =
-            ClientHandshake::new(socket.clone(), self.id as i64, self.version, self.mtu, 5).await;
+        let handshake = ClientHandshake::new(
+            socket.clone(),
+            self.id as i64,
+            self.version,
+            self.mtu,
+            self.handshake_attempts,
+            self.handshake_timeout,
+        )
+        .await;
 
         if handshake != HandshakeStatus::Completed {
             rakrs_debug!("Failed to complete handshake: {:?}", handshake);
-            return Err(ClientError::Killed);
+            self.update_state(ConnectionState::Offline).await;
+            return Err(ClientError::HandshakeError(handshake));
         }
         self.update_state(ConnectionState::Identified).await;
 
@@ -311,7 +349,7 @@ impl Client {
 
         let socket_task = task::spawn(async move {
             let mut buf: [u8; 2048] = [0; 2048];
-            let notifier = closer.lock().await;
+            let notifier = closer.clone();
 
             loop {
                 let length: usize;
@@ -369,7 +407,7 @@ impl Client {
             }
         });
 
-        let recv_task = self.init_recv_task();
+        let recv_task = self.init_recv_task(net_recv);
         let tisk_task = self.init_connect_tick(send_queue.clone());
 
         if let Err(e) = recv_task {
@@ -414,7 +452,7 @@ impl Client {
     pub async fn close(&self) {
         self.update_state(ConnectionState::Disconnecting).await;
         let notifier = self.close_notifier.clone();
-        notifier.lock().await.notify().await;
+        notifier.notify().await;
         let mut tasks = self.tasks.lock().await;
         for task in tasks.drain(..) {
             #[cfg(feature = "async_std")]
@@ -482,6 +520,43 @@ impl Client {
         }
     }
 
+    /// ONLY USE IF YOU KNOW WHAT YOU ARE DOING
+    /// THIS WILL BREAK CONGESTION CONTROL
+    pub async fn send_raw(&self, buffer: &[u8]) -> Result<(), ClientError> {
+        if self.state.lock().await.is_available() {
+            let mut send_q = self.send_queue.as_ref().unwrap().write().await;
+            if let Err(send) = send_q
+                .insert(buffer, Reliability::Reliable, true, None)
+                .await
+            {
+                rakrs_debug!(true, "[CLIENT] Failed to insert packet into send queue!");
+                return Err(ClientError::SendQueueError(send));
+            }
+            Ok(())
+        } else {
+            Err(ClientError::Unavailable)
+        }
+    }
+
+    /// Sends a packet immediately, bypassing the send queue.
+    /// This is useful for things like player login and responses, however is discouraged
+    /// for general use, due to congestion control.
+    ///
+    /// # Example
+    /// ```rust ignore
+    /// use rak_rs::client::Client;
+    ///
+    /// #[async_std::main]
+    /// async fn main() {
+    ///    let mut client = Client::new(10, 1400);
+    ///    if let Err(e) = client.connect("my_server.net:19132").await {
+    ///        println!("Failed to connect! {}", e);
+    ///        return;
+    ///    }
+    ///    // Sent immediately.
+    ///    client.send_immediate(&[0, 1, 2, 3], Reliability::Reliable, 0).await.unwrap();
+    /// }
+    /// ```
     pub async fn send_immediate(
         &self,
         buffer: &[u8],
@@ -503,6 +578,9 @@ impl Client {
         }
     }
 
+    /// Attempts to flush the acknowledgement queue, this can be useful if you notice that
+    /// the client stops responding to packets, or you are handling large chunks of data
+    /// that is time sensitive.
     pub async fn flush_ack(&self) {
         let mut send_q = self.send_queue.as_ref().unwrap().write().await;
         let mut recv_q = self.recv_queue.lock().await;
@@ -525,23 +603,99 @@ impl Client {
 
     #[cfg(feature = "async_std")]
     pub async fn recv(&self) -> Result<Vec<u8>, RecvError> {
-        match self.internal_recv.recv().await {
-            #[cfg(feature = "async_std")]
-            Ok(packet) => Ok(packet),
-            #[cfg(feature = "async_std")]
-            Err(e) => Err(e),
+        select! {
+            packet = self.internal_recv.recv().fuse() => {
+                packet
+            }
+            _ = self.close_notifier.wait().fuse() => {
+                Err(RecvError)
+            }
         }
     }
 
     #[cfg(feature = "async_tokio")]
     pub async fn recv(&mut self) -> Result<Vec<u8>, RecvError> {
-        match self.internal_recv.recv().await {
-            Some(packet) => Ok(packet),
-            None => Err(RecvError::Closed),
+        tokio::select! {
+            packet = self.internal_recv.recv() => {
+                match packet {
+                    Some(packet) => Ok(packet),
+                    None => Err(RecvError::Closed),
+                }
+            },
+            _ = self.close_notifier.wait() => {
+                Err(RecvError::Closed)
+            }
         }
     }
 
-    pub async fn ping(socket: Arc<UdpSocket>) -> Result<UnconnectedPong, ClientError> {
+    /// Pings a server and returns the latency via [`UnconnectedPong`].
+    ///
+    /// [`UnconnectedPong`]: crate::protocol::packet::offline::UnconnectedPong
+    ///
+    /// # Example
+    /// ```rust ignore
+    /// use rak_rs::client::Client;
+    /// use std::sync::Arc;
+    ///
+    /// #[async_std::main]
+    /// async fn main() {
+    ///     if let Ok(pong) = Client::ping("zeqa.net:19132").await {
+    ///         println!("Latency: {}ms", pong.pong_time - pong.ping_time);
+    ///     }
+    /// }
+    /// ```
+    pub async fn ping<I: for<'a> Into<PossiblySocketAddr<'a>>>(
+        address: I,
+    ) -> Result<UnconnectedPong, ClientError> {
+        let a: PossiblySocketAddr = address.into();
+        let address_r: Option<SocketAddr> = a.to_socket_addr();
+
+        if address_r.is_none() {
+            return Err(ClientError::AddrBindErr);
+        }
+
+        let socket = match UdpSocket::bind("0.0.0.0:0").await {
+            Ok(s) => s,
+            Err(_) => return Err(ClientError::AddrBindErr),
+        };
+
+        if let Err(e) = socket.connect(address_r.unwrap()).await {
+            rakrs_debug!(
+                true,
+                "[CLIENT] Failed to connect to ({}): {}",
+                address_r.unwrap(),
+                e
+            );
+            return Err(ClientError::Reset);
+        }
+
+        let socket_arc = Arc::new(socket);
+
+        return Self::internal_ping(socket_arc).await;
+    }
+
+    /// Pings a server and returns the latency via [`UnconnectedPong`].
+    ///
+    /// [`UnconnectedPong`]: crate::protocol::packet::offline::UnconnectedPong
+    ///
+    /// # Example
+    /// ```rust ignore
+    /// use rak_rs::client::Client;
+    /// use std::sync::Arc;
+    /// use async_std::net::UdpSocket;
+    ///
+    /// #[async_std::main]
+    /// async fn main() {
+    ///     let mut socket = UdpSocket::bind("my_cool_server.net:19193").unwrap();
+    ///     let socket_arc = Arc::new(socket);
+    ///     if let Ok(pong) = Client::ping(socket).await {
+    ///         println!("Latency: {}ms", pong.pong_time - pong.ping_time);
+    ///     }
+    /// }
+    /// ```
+    pub(crate) async fn internal_ping(
+        socket: Arc<UdpSocket>,
+    ) -> Result<UnconnectedPong, ClientError> {
         let mut buf: [u8; 2048] = [0; 2048];
         let unconnected_ping = UnconnectedPing {
             timestamp: current_epoch(),
@@ -549,59 +703,92 @@ impl Client {
             client_id: rand::random::<i64>(),
         };
 
-        if let Err(_) = socket
+        if let Err(e) = socket
             .send(
-                RakPacket::from(unconnected_ping)
+                RakPacket::from(unconnected_ping.clone())
                     .write_to_bytes()
                     .unwrap()
                     .as_slice(),
             )
             .await
         {
-            rakrs_debug!(true, "[CLIENT] Failed to send ping packet!");
+            rakrs_debug!(true, "[CLIENT::PING]Failed to send ping packet!");
+            rakrs_debug!(true, "[CLIENT::PING] Failed to send ping packet: {}", e);
             return Err(ClientError::ServerOffline);
         }
 
         loop {
-            rakrs_debug!(true, "[CLIENT] Waiting for pong packet...");
+            rakrs_debug!(true, "[CLIENT::PING] Waiting for pong packet...");
             if let Ok(recvd) = timeout(Duration::from_millis(10000), socket.recv(&mut buf)).await {
                 match recvd {
                     Ok(l) => {
                         let mut reader = ByteReader::from(&buf[..l]);
-                        let packet = RakPacket::read(&mut reader).unwrap();
+                        let packet = match RakPacket::read(&mut reader) {
+                            Ok(p) => p,
+                            Err(_) => {
+                                continue;
+                            }
+                        };
 
                         match packet {
                             RakPacket::Offline(offline) => match offline {
                                 OfflinePacket::UnconnectedPong(pong) => {
-                                    rakrs_debug!(true, "[CLIENT] Recieved pong packet!");
+                                    rakrs_debug!(true, "[CLIENT::PING] Received pong packet!");
                                     return Ok(pong);
                                 }
-                                _ => {}
+                                _ => {
+                                    rakrs_debug!(
+                                        true,
+                                        "[CLIENT::PING] Received unknown packet: {:?}",
+                                        offline
+                                    );
+                                }
                             },
-                            _ => {}
+                            _ => {
+                                rakrs_debug!(
+                                    true,
+                                    "[CLIENT::PING] Received unknown packet: {:?}",
+                                    packet
+                                );
+                            }
                         }
                     }
                     Err(_) => {
-                        rakrs_debug!(true, "[CLIENT] Failed to recieve anything on netowrk channel, is there a sender?");
+                        rakrs_debug!(true, "[CLIENT::PING] Failed to recieve anything on netowrk channel, is there a sender?");
                         continue;
                     }
                 }
             } else {
-                rakrs_debug!(true, "[CLIENT] Ping Failed, server did not respond!");
+                rakrs_debug!(true, "[CLIENT::PING] Ping Failed, server did not respond!");
                 return Err(ClientError::ServerOffline);
             }
         }
     }
 
-    fn init_recv_task(&self) -> Result<JoinHandle<()>, ClientError> {
-        let net_recv = match self.network_recv {
-            Some(ref n) => n.clone(),
-            None => {
-                rakrs_debug!("[CLIENT] (recv_task) Network recv channel is not initialized");
-                return Err(ClientError::Killed);
-            }
-        };
+    /// This should only be used when you need to verify that the client is still connected.
+    /// Do not use this for anything else.
+    pub async fn is_connected(&self) -> bool {
+        self.state.lock().await.is_connected()
+    }
 
+    /// Returns the current state of the client.
+    /// Not to be confused with [`Client::is_connected()`].
+    ///
+    /// [`Client::is_connected()`]: crate::client::Client::is_connected
+    pub async fn get_state(&self) -> ConnectionState {
+        *self.state.lock().await
+    }
+
+    /// Internal, this is the task that is responsible for receiving packets and dispatching
+    /// them to the user.
+    ///
+    /// This is responsible for the user api on [`Client::recv()`].
+    ///
+    /// [`Client::recv()`]: crate::client::Client::recv
+    fn init_recv_task(
+        &self,
+        #[allow(unused_mut)] mut net_recv: Receiver<Vec<u8>>,
+    ) -> Result<JoinHandle<()>, ClientError> {
         let send_queue = match self.send_queue {
             Some(ref s) => s.clone(),
             None => {
@@ -618,29 +805,24 @@ impl Client {
 
         return Ok(task::spawn(async move {
             'task_loop: loop {
-                #[cfg(feature = "async_std")]
-                let net_dispatch = net_recv.lock().await;
-                #[cfg(feature = "async_tokio")]
-                let mut net_dispatch = net_recv.lock().await;
+                // #[cfg(feature = "async_tokio")]
+                let closed_dispatch = closed.clone();
 
-                let closed_dispatch = closed.lock().await;
                 macro_rules! recv_body {
                     ($pk_recv: expr) => {
                         #[cfg(feature = "async_std")]
                         if let Err(_) = $pk_recv {
-                            rakrs_debug!(true, "[CLIENT] (recv_task) Failed to recieve anything on netowrk channel, is there a sender?");
+                            rakrs_debug!(true, "[CLIENT] (recv_task) Failed to receive anything on network channel, is there a sender?");
                             continue;
                         }
 
                         #[cfg(feature = "async_tokio")]
                         if let None = $pk_recv {
-                            rakrs_debug!(true, "[CLIENT] (recv_task) Failed to recieve anything on netowrk channel, is there a sender?");
+                            rakrs_debug!(true, "[CLIENT] (recv_task) Failed to receive anything on network channel, is there a sender?");
                             continue;
                         }
 
                         recv_time.store(current_epoch(), std::sync::atomic::Ordering::Relaxed);
-
-                        rakrs_debug!(true, "[CLIENT] (recv_task) Recieved packet!");
 
                         let mut client_state = state.lock().await;
 
@@ -703,13 +885,13 @@ impl Client {
                                                             // todo: add ping time to client
                                                             rakrs_debug!(
                                                                 true,
-                                                                "[CLIENT] Recieved pong packet!"
+                                                                "[CLIENT] Received pong packet!"
                                                             );
                                                         }
                                                         OnlinePacket::Disconnect(_) => {
                                                             rakrs_debug!(
                                                                 true,
-                                                                "[CLIENT] Recieved disconnect packet!"
+                                                                "[CLIENT] Received disconnect packet!"
                                                             );
                                                             break 'task_loop;
                                                         }
@@ -727,7 +909,7 @@ impl Client {
                                                     }
                                                 },
                                                 RakPacket::Offline(_) => {
-                                                    rakrs_debug!("[CLIENT] Recieved offline packet after handshake! In future versions this will kill the client.");
+                                                    rakrs_debug!("[CLIENT] Received offline packet after handshake! In future versions this will kill the client.");
                                                 }
                                             }
                                         } else {
@@ -792,10 +974,10 @@ impl Client {
                     killed = closed_dispatch.wait().fuse() => {
                         if killed {
                             rakrs_debug!(true, "[CLIENT] Recv task closed");
-                            break;
+                            break 'task_loop;
                         }
                     }
-                    pk_recv = net_dispatch.recv().fuse() => {
+                    pk_recv = net_recv.recv().fuse() => {
                         recv_body!(pk_recv);
                     }
                 }
@@ -805,10 +987,10 @@ impl Client {
                     killed = closed_dispatch.wait() => {
                         if killed {
                             rakrs_debug!(true, "[CLIENT] Recv task closed");
-                            break;
+                            break 'task_loop;
                         }
                     }
-                    pk_recv = net_dispatch.recv() => {
+                    pk_recv = net_recv.recv() => {
                         recv_body!(pk_recv);
                     }
                 }
@@ -817,25 +999,25 @@ impl Client {
     }
 
     /// This is an internal function that initializes the client connection.
-    /// This is called by `Client::connect()`.
+    /// This is called by [`Client::connect()`].
+    ///
+    /// [`Client::connect()`]: crate::client::Client::connect
     fn init_connect_tick(
         &self,
         send_queue: Arc<RwLock<SendQueue>>,
     ) -> Result<task::JoinHandle<()>, ClientError> {
         // verify that the client is offline
-        let closer_dispatch = self.close_notifier.clone();
+        let closer = self.close_notifier.clone();
         let recv_queue = self.recv_queue.clone();
         let state = self.state.clone();
         let last_recv = self.recv_time.clone();
+        let timeout_time = self.timeout;
         let mut last_ping: u16 = 0;
 
         return Ok(task::spawn(async move {
             loop {
-                let closer = closer_dispatch.lock().await;
-
                 macro_rules! tick_body {
                     () => {
-                        rakrs_debug!(true, "[CLIENT] Running connect tick task");
                         let recv = last_recv.load(std::sync::atomic::Ordering::Relaxed);
                         let mut state = state.lock().await;
 
@@ -856,9 +1038,9 @@ impl Client {
                             continue;
                         }
 
-                        if (recv + 20) <= current_epoch() {
+                        if ((recv + timeout_time) <= current_epoch()) && recv != 0 {
                             *state = ConnectionState::Disconnected;
-                            rakrs_debug!(true, "[CLIENT] Client timed out. Closing connection...");
+                            rakrs_debug!(true, "[CLIENT] Client timed out. Closing connection... last={}, current={}", recv, current_epoch());
                             closer.notify().await;
                             break;
                         }
@@ -866,7 +1048,7 @@ impl Client {
                         let mut send_q = send_queue.write().await;
                         let mut recv_q = recv_queue.lock().await;
 
-                        if recv + 10 <= current_epoch() && state.is_reliable() {
+                        if (recv + (timeout_time / 2)) <= current_epoch() && state.is_reliable() {
                             *state = ConnectionState::TimingOut;
                             rakrs_debug!(
                                 true,
@@ -947,6 +1129,35 @@ impl Client {
 impl Drop for Client {
     fn drop(&mut self) {
         // todo: There is DEFINITELY a better way to do this...
-        futures_executor::block_on(async move { self.close_notifier.lock().await.notify().await });
+        futures_executor::block_on(async move { self.close_notifier.notify().await });
+    }
+}
+
+impl Clone for Client {
+    fn clone(&self) -> Self {
+        let send_queue = match &self.send_queue {
+            Some(q) => {
+                Some(Arc::clone(&q))
+            },
+            None => None
+        };
+        let (internal_send, internal_recv) = bounded::<Vec<u8>>(10);
+
+        Client {
+            state: Arc::clone(&self.state),
+            send_queue,
+            recv_queue: Arc::new(Mutex::new(RecvQueue::new())),
+            internal_recv,
+            internal_send,
+            tasks: Arc::clone(&self.tasks),
+            close_notifier: Arc::clone(&self.close_notifier),
+            recv_time: Arc::clone(&self.recv_time),
+            timeout: self.timeout.clone(),
+            handshake_timeout: self.handshake_timeout.clone(),
+            handshake_attempts: self.handshake_attempts.clone(),
+            mtu: self.mtu.clone(),
+            version: self.version.clone(),
+            id: self.id.clone(),
+        }
     }
 }
