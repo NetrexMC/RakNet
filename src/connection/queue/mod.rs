@@ -11,6 +11,7 @@ use crate::protocol::frame::FragmentMeta;
 use crate::protocol::frame::Frame;
 use crate::protocol::reliability::Reliability;
 use crate::protocol::RAKNET_HEADER_FRAME_OVERHEAD;
+use crate::rakrs_debug;
 use crate::server::current_epoch;
 
 #[derive(Debug, Clone)]
@@ -216,16 +217,41 @@ where
         missing
     }
 
+    /// Forcefully flushes the incoming queue resetting the highest window
+    /// to the lowest window.
+    ///
+    /// THIS IS A PATCH FIX UNTIL I CAN FIGURE OUT WHY THE OTHER FLUSH IS BROKEN
     pub fn flush(&mut self) -> Vec<Item> {
+        let mut items = Vec::new();
+        for i in self.window.0..self.window.1 {
+            if let Some(item) = self.queue.remove(&i) {
+                items.push(item);
+            }
+        }
+        self.window.0 = self.window.1;
+        items
+    }
+
+    /// Older, broken implementation, idk what is causing this to break
+    /// after index 3
+    /// The logic here is supposed to be, remove all indexes until the highest most up to date index.
+    /// and retain older indexes until the order is correct.
+    pub fn flush_old_impl(&mut self) -> Vec<Item> {
         let mut items = Vec::<(u32, Item)>::new();
-        while self.queue.contains_key(&self.window.0) {
-            if let Some(item) = self.queue.remove(&self.window.0) {
+
+        let mut i = self.window.0;
+
+        while self.queue.contains_key(&i) {
+            rakrs_debug!("[!>] Removing: {}", &i);
+            if let Some(item) = self.queue.remove(&i) {
                 items.push((self.window.0, item));
+                i += 1;
             } else {
                 break;
             }
-            self.window.0 = self.window.0.wrapping_add(1);
         }
+
+        self.window.0 = i;
 
         items.sort_by(|a, b| a.0.cmp(&b.0));
         return items
@@ -411,3 +437,22 @@ pub enum FragmentQueueError {
     FragmentsMissing,
     FrameIndexOutOfBounds,
 }
+
+impl std::fmt::Display for FragmentQueueError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                FragmentQueueError::FrameExists => "Frame already exists",
+                FragmentQueueError::FrameNotFragmented => "Frame is not fragmented",
+                FragmentQueueError::DoesNotNeedSplit => "Frame does not need to be split",
+                FragmentQueueError::FragmentInvalid => "Fragment is invalid",
+                FragmentQueueError::FragmentsMissing => "Fragments are missing",
+                FragmentQueueError::FrameIndexOutOfBounds => "Frame index is out of bounds",
+            }
+        )
+    }
+}
+
+impl std::error::Error for FragmentQueueError {}

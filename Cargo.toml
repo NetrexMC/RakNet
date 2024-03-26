@@ -1,6 +1,6 @@
 [package]
 name = "rak-rs"
-version = "0.3.2"
+version = "0.3.3-beta.1"
 authors = ["John Bergman <olybear9@gmail.com>"]
 edition = "2021"
 description = "A fully functional RakNet implementation in pure rust, asynchronously driven."
@@ -16,6 +16,7 @@ default = [ "async_std" ]
 mcpe = []
 debug = []
 debug_all = []
+debug_buffers = []
 async_std = [ "async-std" ]
 async_tokio = [ "tokio" ]
 

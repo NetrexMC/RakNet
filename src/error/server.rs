@@ -13,3 +13,21 @@ pub enum ServerError {
     /// The server has been closed, and can not be used again.
     Reset,
 }
+
+impl std::fmt::Display for ServerError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                ServerError::AddrBindErr => "Unable to bind to address",
+                ServerError::AlreadyOnline => "Already online",
+                ServerError::NotListening => "Not listening",
+                ServerError::Killed => "Killed",
+                ServerError::Reset => "Reset",
+            }
+        )
+    }
+}
+
+impl std::error::Error for ServerError {}

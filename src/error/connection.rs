@@ -11,3 +11,18 @@ pub enum ConnectionError {
     /// The connection has been closed by the peer.
     EventDispatchError,
 }
+
+impl std::fmt::Display for ConnectionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                ConnectionError::Closed => "Connection closed",
+                ConnectionError::EventDispatchError => "Event dispatch error",
+            }
+        )
+    }
+}
+
+impl std::error::Error for ConnectionError {}

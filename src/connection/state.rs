@@ -40,7 +40,9 @@ pub enum ConnectionState {
     /// The session is not connected and is not trying to connect.
     /// During this state the session will be dropped. This state occurs when a client
     /// has completely stopped responding to packets or their socket is destroyed.
-    /// This is not the same as the [Disconnected](rak_rs::conn::state::Disconnected) state.
+    /// This is not the same as the [`Disconnected`] state.
+    ///
+    /// [`Disconnected`]: crate::connection::state::ConnectionState::Disconnected
     Offline,
 }
 

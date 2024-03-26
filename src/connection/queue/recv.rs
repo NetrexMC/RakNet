@@ -5,8 +5,8 @@ use crate::protocol::ack::{Ack, Ackable, Record, SingleRecord};
 use crate::protocol::frame::{Frame, FramePacket};
 use crate::protocol::reliability::Reliability;
 use crate::protocol::MAX_FRAGS;
-use crate::rakrs_debug;
 use crate::server::current_epoch;
+use crate::{rakrs_debug, rakrs_debug_buffers};
 
 use super::{FragmentQueue, OrderedQueue};
 
@@ -101,6 +101,13 @@ impl RecvQueue {
             return;
         }
 
+        rakrs_debug_buffers!(
+            true,
+            "RecvQueue: {}\n{:?}\n",
+            frame.body.len(),
+            frame.body.clone()
+        );
+
         match frame.reliability {
             Reliability::Unreliable => {
                 self.ready.push(frame.body.clone());
@@ -133,8 +140,11 @@ impl Ackable for RecvQueue {
 
     fn ack(&mut self, ack: Ack) {
         if ack.is_nack() {
+            rakrs_debug!(true, "Invalid ack: {:?}", ack.clone());
             return;
         }
+
+        rakrs_debug!(true, "Got ack item: {:?}", ack.clone());
 
         // these packets are acknowledged, so we can remove them from the queue.
         for record in ack.records.iter() {

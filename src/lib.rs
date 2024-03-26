@@ -8,7 +8,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! rak-rs = "0.3.2"
+//! rak-rs = "0.3.3"
 //! ```
 //!
 //! ## Features
@@ -19,7 +19,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! rak-rs = { version = "0.3.2", default-features = false, features = [ "async_tokio", "mcpe" ] }
+//! rak-rs = { version = "0.3.3", default-features = false, features = [ "async_tokio", "mcpe" ] }
 //! ```
 //!
 //!
@@ -46,10 +46,9 @@
 //! #[async_std::main]
 //! async fn main() {
 //!     let version: u8 = 10;
-//!     let addr = "my_server.net:19132".to_socket_addrs().unwrap();
 //!     let mut client = Client::new(version, DEFAULT_MTU);
 //!
-//!     client.connect(addr.next().unwrap()).await.unwrap();
+//!     client.connect("my_server.net:19132").await.unwrap();
 //!
 //!     // receive packets
 //!     loop {

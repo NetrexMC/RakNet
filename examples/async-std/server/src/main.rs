@@ -20,15 +20,17 @@ async fn main() {
 }
 
 async fn handle(mut conn: Connection) {
+    let mut f = std::sync::Arc::new(conn);
     loop {
         // keeping the connection alive
-        if conn.is_closed().await {
+        if f.is_closed().await {
             println!("Connection closed!");
             break;
         }
-        if let Ok(pk) = conn.recv().await {
+
+        if let Ok(pk) = std::sync::Arc::<Connection>::get_mut(&mut f).unwrap().recv().await {
             println!("(RAKNET RECIEVE SIDE) Got a connection packet {:?} ", pk);
-            conn.send(&[254, 12, 143, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0], true).await.unwrap();
+            f.send(&[254, 12, 143, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0], true).await.unwrap();
         }
     }
 }

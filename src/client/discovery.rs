@@ -51,7 +51,7 @@ macro_rules! update_state {
     }};
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum DiscoveryStatus {
     /// The discovery has been initiated.
     /// This only occurs when the discovery is first created.
@@ -62,8 +62,26 @@ pub enum DiscoveryStatus {
     /// We failed to discover the MTU size.
     /// This is probably cause the server is offline.
     Failed,
+    /// The discovery has been canceled because the client is on a different protocol version.
+    IncompatibleVersion,
     /// We're still trying to find the MTU size.
     Undiscovered,
+}
+
+impl std::fmt::Display for DiscoveryStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                DiscoveryStatus::Initiated => "Initiated",
+                DiscoveryStatus::Discovered(_) => "Discovered",
+                DiscoveryStatus::Failed => "Failed",
+                DiscoveryStatus::IncompatibleVersion => "IncompatibleVersion",
+                DiscoveryStatus::Undiscovered => "Undiscovered",
+            }
+        )
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -71,6 +89,7 @@ pub struct MtuDiscoveryMeta {
     pub id: i64,
     pub version: u8,
     pub mtu: u16,
+    pub timeout: u16,
 }
 
 struct DiscoveryState {
@@ -94,6 +113,11 @@ impl MtuDiscovery {
         task::spawn(async move {
             // try to use the mtu provided by the user
             let valid_mtus: Vec<u16> = vec![discovery_info.mtu, 1506, 1492, 1400, 1200, 576];
+            // remove any mtu size that is larger than discovery_info.mtu
+            // let valid_mtus: Vec<u16> = valid_mtus
+            //     .into_iter()
+            //     .filter(|mtu| *mtu <= discovery_info.mtu)
+            //     .collect();
             for mtu in valid_mtus.iter() {
                 // send a connection request
                 let request = OpenConnectRequest {
@@ -113,6 +137,7 @@ impl MtuDiscovery {
 
                 let reply = match_ids!(
                     socket.clone(),
+                    discovery_info.timeout.into(),
                     // Open connect Reply
                     0x06,
                     // Incompatible protocol version
@@ -125,11 +150,18 @@ impl MtuDiscovery {
                     continue;
                 }
 
-                if let Ok(_) = IncompatibleProtocolVersion::read(&mut ByteReader::from(
+                // this is being triggered, why not returning???
+                if let Ok(pk) = IncompatibleProtocolVersion::read(&mut ByteReader::from(
                     &reply.clone().unwrap()[1..],
                 )) {
-                    update_state!(shared_state, DiscoveryStatus::Failed);
-                    break;
+                    rakrs_debug!(
+                        true,
+                        "[CLIENT] Protocol mismatch. Server={}, Client={}",
+                        pk.protocol,
+                        discovery_info.version
+                    );
+                    update_state!(shared_state, DiscoveryStatus::IncompatibleVersion);
+                    return;
                 }
 
                 let open_reply =
@@ -141,8 +173,13 @@ impl MtuDiscovery {
                 }
 
                 if let Ok(response) = open_reply {
-                    rakrs_debug!(true, "[CLIENT] Received OpenConnectReply from server!");
-                    update_state!(shared_state, DiscoveryStatus::Discovered(response.mtu_size));
+                    rakrs_debug!(
+                        true,
+                        "[CLIENT] Received OpenConnectReply from server! mtu={}",
+                        response.mtu_size
+                    );
+                    let mtu = response.mtu_size;
+                    update_state!(shared_state, DiscoveryStatus::Discovered(mtu));
                     return;
                 } else {
                     update_state!(shared_state, DiscoveryStatus::Undiscovered);
@@ -162,7 +199,9 @@ impl Future for MtuDiscovery {
     fn poll(self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let mut state = self.state.lock().unwrap();
         match state.status {
-            DiscoveryStatus::Failed | DiscoveryStatus::Discovered(_) => Poll::Ready(state.status),
+            DiscoveryStatus::Failed
+            | DiscoveryStatus::IncompatibleVersion
+            | DiscoveryStatus::Discovered(_) => Poll::Ready(state.status),
             _ => {
                 state.waker = Some(cx.waker().clone());
                 Poll::Pending
