@@ -84,9 +84,9 @@ pub struct SendQueue {
 
     ready: Vec<Frame>,
 
-    socket: Arc<UdpSocket>,
+    pub(crate) socket: Arc<UdpSocket>,
 
-    address: SocketAddr,
+    pub(crate) address: SocketAddr,
 }
 
 impl SendQueue {

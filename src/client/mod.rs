@@ -43,6 +43,7 @@ use std::{
     sync::{atomic::AtomicU64, Arc},
     time::Duration,
 };
+use std::ops::Deref;
 
 #[cfg(feature = "async_std")]
 use async_std::{
@@ -95,6 +96,7 @@ use crate::{
     rakrs_debug,
     server::{current_epoch, PossiblySocketAddr},
 };
+use crate::connection::Connection;
 
 #[cfg(feature = "mcpe")]
 use crate::protocol::mcpe::UnconnectedPong;
@@ -1128,5 +1130,34 @@ impl Drop for Client {
     fn drop(&mut self) {
         // todo: There is DEFINITELY a better way to do this...
         futures_executor::block_on(async move { self.close_notifier.notify().await });
+    }
+}
+
+impl Clone for Client {
+    fn clone(&self) -> Self {
+        let send_queue = match &self.send_queue {
+            Some(q) => {
+                Some(Arc::clone(&q))
+            },
+            None => None
+        };
+        let (internal_send, internal_recv) = bounded::<Vec<u8>>(10);
+
+        Client {
+            state: Arc::clone(&self.state),
+            send_queue,
+            recv_queue: Arc::new(Mutex::new(RecvQueue::new())),
+            internal_recv,
+            internal_send,
+            tasks: Arc::clone(&self.tasks),
+            close_notifier: Arc::clone(&self.close_notifier),
+            recv_time: Arc::clone(&self.recv_time),
+            timeout: self.timeout.clone(),
+            handshake_timeout: self.handshake_timeout.clone(),
+            handshake_attempts: self.handshake_attempts.clone(),
+            mtu: self.mtu.clone(),
+            version: self.version.clone(),
+            id: self.id.clone(),
+        }
     }
 }

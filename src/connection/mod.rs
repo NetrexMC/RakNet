@@ -840,3 +840,18 @@ impl Drop for Connection {
         });
     }
 }
+
+impl Clone for Connection {
+    fn clone(&self) -> Self {
+        return Connection {
+            address: self.address.clone(),
+            state: Arc::clone(&self.state),
+            send_queue: Arc::clone(&self.send_queue),
+            recv_queue: Arc::clone(&self.recv_queue),
+            internal_net_recv: Arc::clone(&self.internal_net_recv),
+            disconnect: Arc::clone(&self.disconnect),
+            recv_time: Arc::clone(&self.recv_time),
+            tasks: Arc::clone(&self.tasks)
+        }
+    }
+}
