@@ -1,6 +1,6 @@
 [package]
 name = "rak-rs"
-version = "0.3.3-beta.1"
+version = "0.3.3"
 authors = ["John Bergman <olybear9@gmail.com>"]
 edition = "2021"
 description = "A fully functional RakNet implementation in pure rust, asynchronously driven."
