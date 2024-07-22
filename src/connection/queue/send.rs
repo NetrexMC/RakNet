@@ -154,6 +154,7 @@ impl SendQueue {
 
         // do another integrity check
         // this is to check to see if we really need to split this packet.
+        // todo: #65, frames are getting improperly sent
         if packet.len() > (self.mtu_size + RAKNET_HEADER_FRAME_OVERHEAD) as usize {
             // we need to split this packet!
             // pass the buffer to the fragment queue.
@@ -228,6 +229,9 @@ impl SendQueue {
                 frame.sequence_index = Some(*seq_index);
             }
 
+            // todo: issue/#65, validate whether or not we even need this logic
+            //       this logic assumes that the frame is ordered, and we attempt
+            //       to wait until the next tick.
             if immediate {
                 self.send_frame(frame).await;
             } else {
